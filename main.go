@@ -42,20 +42,8 @@ func parseFlags() *Config {
 	return &cfg
 }
 
-func newProtocol(cfg *Config) Protocol {
-	switch cfg.Mode {
-	case "server":
-		return &ServerProtocol{cfg}
-	case "client":
-		return &ClientProtocol{cfg}
-	}
-	log.Fatalln("unsupported mode:", cfg.Mode)
-	return nil
-}
-
 func main() {
-	cfg := parseFlags()
-	server := &Server{Config: cfg, Protocol: newProtocol(cfg)}
+	server := NewServer(parseFlags())
 	if err := server.Start(); err != nil {
 		log.Fatalln(err)
 	}

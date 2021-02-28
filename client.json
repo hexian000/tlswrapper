@@ -1,5 +1,9 @@
 {
   "listen": "127.0.0.1:5202",
   "dial": "127.0.0.123:5202",
-  "password": "wa"
+  "cert": "clientcert.pem",
+  "key": "clientkey.pem",
+  "authcerts": [
+    "cert.pem"
+  ]
 }

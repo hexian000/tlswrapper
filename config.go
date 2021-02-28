@@ -1,29 +1,33 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
+	"log"
 	"net"
 	"time"
 )
 
+const serverName = "tlswrapper"
+
 // Config file
 type Config struct {
-	Mode        string `json:"mode"`
-	Cipher      string `json:"cipher"`
-	Listen      string `json:"listen"`
-	Dial        string `json:"dial"`
-	Password    string `json:"password"`
-	Tag         string `json:"authtag"`
-	KeepAlive   int    `json:"keepalive"`
-	NoDelay     bool   `json:"nodelay"`
-	ReadBuffer  int    `json:"recvbuf"`
-	WriteBuffer int    `json:"sendbuf"`
-	Linger      int    `json:"linger"`
+	Mode            string   `json:"mode"`
+	Listen          string   `json:"listen"`
+	Dial            string   `json:"dial"`
+	Certificate     string   `json:"cert"`
+	PrivateKey      string   `json:"key"`
+	AuthorizedCerts []string `json:"authcerts"`
+	KeepAlive       int      `json:"keepalive"`
+	NoDelay         bool     `json:"nodelay"`
+	ReadBuffer      int      `json:"recvbuf"`
+	WriteBuffer     int      `json:"sendbuf"`
+	Linger          int      `json:"linger"`
 }
 
 var defaultConfig = Config{
 	Mode:        "client",
-	Cipher:      "chacha20poly1305",
-	Tag:         "tcpcrypt :)",
 	KeepAlive:   300,
 	NoDelay:     false,
 	ReadBuffer:  0, // for system default
@@ -54,5 +58,37 @@ func (c *Config) SetConnParams(conn net.Conn) {
 		if c.WriteBuffer > 0 {
 			_ = tcpConn.SetWriteBuffer(c.WriteBuffer)
 		}
+	}
+}
+
+// NewTLSConfig creates tls.Config
+func (c *Config) NewTLSConfig() *tls.Config {
+	cert, err := tls.LoadX509KeyPair(c.Certificate, c.PrivateKey)
+	if err != nil {
+		log.Fatalln("load local cert:", err)
+	}
+	certPool := x509.NewCertPool()
+	for _, path := range c.AuthorizedCerts {
+		certBytes, err := ioutil.ReadFile(path)
+		if err != nil {
+			log.Fatalln("read authorized certs:", path, err)
+		}
+		ok := certPool.AppendCertsFromPEM(certBytes)
+		if !ok {
+			log.Fatalln("append authorized certs:", path)
+		}
+	}
+	if c.IsServer() {
+		return &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			ClientCAs:    certPool,
+			ServerName:   serverName,
+		}
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      certPool,
+		ServerName:   serverName,
 	}
 }

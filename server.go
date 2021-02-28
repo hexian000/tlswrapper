@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"log"
 	"net"
 )
@@ -12,7 +13,22 @@ type Server struct {
 	*Config
 	Protocol
 
-	l net.Listener
+	tlscfg *tls.Config
+	l      net.Listener
+}
+
+// NewServer creates a server object
+func NewServer(cfg *Config) *Server {
+	server := &Server{
+		Config: cfg,
+		tlscfg: cfg.NewTLSConfig(),
+	}
+	if cfg.IsServer() {
+		server.Protocol = &ServerProtocol{server}
+	} else {
+		server.Protocol = &ClientProtocol{server}
+	}
+	return server
 }
 
 func (s *Server) serve() {

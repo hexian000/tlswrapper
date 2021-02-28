@@ -2,5 +2,9 @@
   "mode": "server",
   "listen": "127.0.0.123:5202",
   "dial": "127.0.0.1:5201",
-  "password": "wa"
+  "cert": "cert.pem",
+  "key": "key.pem",
+  "authcerts": [
+    "clientcert.pem"
+  ]
 }

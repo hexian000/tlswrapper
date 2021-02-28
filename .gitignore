@@ -1,3 +1,4 @@
 /vendor
-/tcpcrypt
+/tlswrapper
+/*.pem
 /u.sh
