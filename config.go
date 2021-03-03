@@ -7,9 +7,11 @@ import (
 	"log"
 	"net"
 	"time"
+
+	"github.com/hashicorp/yamux"
 )
 
-const serverName = "tlswrapper"
+const serverName = "example.com"
 
 // Config file
 type Config struct {
@@ -90,5 +92,17 @@ func (c *Config) NewTLSConfig() *tls.Config {
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      certPool,
 		ServerName:   serverName,
+	}
+}
+
+// NewMuxConfig creates yamux.Config
+func (c *Config) NewMuxConfig() *yamux.Config {
+	return &yamux.Config{
+		AcceptBacklog:          16,
+		EnableKeepAlive:        false,
+		KeepAliveInterval:      30 * time.Second,
+		ConnectionWriteTimeout: 10 * time.Second,
+		MaxStreamWindowSize:    256 * 1024,
+		Logger:                 log.Default(),
 	}
 }

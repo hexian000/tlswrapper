@@ -12,11 +12,8 @@ import (
 	"time"
 )
 
-type logWriter struct {
-}
-
-func (writer logWriter) Write(bytes []byte) (int, error) {
-	return fmt.Printf("%s %s", time.Now().Format(time.RFC3339), string(bytes))
+func init() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
 func parseFlags() *Config {
@@ -29,8 +26,6 @@ func parseFlags() *Config {
 		flag.Usage()
 		os.Exit(0)
 	}
-	log.SetFlags(0)
-	log.SetOutput(new(logWriter))
 	b, err := ioutil.ReadFile(flagConfig)
 	if err != nil {
 		log.Fatalln("read config:", err)
