@@ -3,13 +3,11 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
 
 func init() {
