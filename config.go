@@ -20,21 +20,27 @@ type Config struct {
 	Certificate     string   `json:"cert"`
 	PrivateKey      string   `json:"key"`
 	AuthorizedCerts []string `json:"authcerts"`
-	KeepAlive       int      `json:"keepalive"`
 	NoDelay         bool     `json:"nodelay"`
 	ReadBuffer      int      `json:"recvbuf"`
 	WriteBuffer     int      `json:"sendbuf"`
 	Linger          int      `json:"linger"`
+	KeepAlive       int      `json:"keepalive"`
+	AcceptBacklog   int      `json:"backlog"`
+	SessionWindow   uint32   `json:"window"`
+	WriteTimeout    int      `json:"writetimeout"`
 }
 
 var defaultConfig = Config{
-	Mode:        "client",
-	ServerName:  "example.com",
-	KeepAlive:   300,
-	NoDelay:     false,
-	ReadBuffer:  0, // for system default
-	WriteBuffer: 0,
-	Linger:      -1,
+	Mode:          "client",
+	ServerName:    "example.com",
+	NoDelay:       false,
+	ReadBuffer:    0, // for system default
+	WriteBuffer:   0,
+	Linger:        -1,
+	KeepAlive:     60,
+	AcceptBacklog: 16,
+	SessionWindow: 2 * 1024 * 1024, // 2 MiB
+	WriteTimeout:  10,
 }
 
 // IsServer checks the config is in server mode
@@ -48,12 +54,7 @@ func (c *Config) SetConnParams(conn net.Conn) {
 	if tcpConn != nil {
 		_ = tcpConn.SetNoDelay(c.NoDelay)
 		_ = tcpConn.SetLinger(c.Linger)
-		if c.KeepAlive > 0 {
-			_ = tcpConn.SetKeepAlive(true)
-			_ = tcpConn.SetKeepAlivePeriod(time.Duration(c.KeepAlive) * time.Second)
-		} else if c.KeepAlive == 0 {
-			_ = tcpConn.SetKeepAlive(false)
-		}
+		_ = tcpConn.SetKeepAlive(false) // we have an encrypted one
 		if c.ReadBuffer > 0 {
 			_ = tcpConn.SetReadBuffer(c.ReadBuffer)
 		}
@@ -97,12 +98,13 @@ func (c *Config) NewTLSConfig() *tls.Config {
 
 // NewMuxConfig creates yamux.Config
 func (c *Config) NewMuxConfig() *yamux.Config {
+	enableKeepAlive := c.KeepAlive > 0
 	return &yamux.Config{
-		AcceptBacklog:          16,
-		EnableKeepAlive:        false,
-		KeepAliveInterval:      30 * time.Second,
-		ConnectionWriteTimeout: 10 * time.Second,
-		MaxStreamWindowSize:    256 * 1024,
+		AcceptBacklog:          c.AcceptBacklog,
+		EnableKeepAlive:        enableKeepAlive,
+		KeepAliveInterval:      time.Duration(c.KeepAlive) * time.Second,
+		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
+		MaxStreamWindowSize:    uint32(c.SessionWindow),
 		Logger:                 log.Default(),
 	}
 }
