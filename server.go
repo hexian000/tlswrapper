@@ -41,7 +41,7 @@ func connCopy(dst net.Conn, src net.Conn) {
 			log.Println(err)
 		}
 	} else {
-		log.Println("connection:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
+		log.Println("session:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
 	}
 }
 
