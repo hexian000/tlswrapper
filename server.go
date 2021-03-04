@@ -82,11 +82,6 @@ func (s *Server) runServer() {
 	}
 }
 
-type muxer struct {
-	conn    net.Conn
-	session *yamux.Session
-}
-
 func (s *Server) muxDial() (session *yamux.Session, err error) {
 	var dial net.Conn
 	dial, err = net.Dial(network, s.Dial)
@@ -158,6 +153,6 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown() error {
 	log.Fatalln("shutdown not implemented")
 	// _ = s.l.Close()
-	log.Println("shutting down gracefully")
+	// log.Println("shutting down gracefully")
 	return nil
 }
