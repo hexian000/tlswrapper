@@ -1,6 +1,10 @@
-#!/bin/sh
+#!/bin/sh -eu
 
-SSLNAME="example.com"
+if [ $# -lt 1 ]; then
+    SSLNAME="example.com"
+else
+    SSLNAME="$1"
+fi
 
 openssl req -newkey rsa:8192 \
     -new -nodes -x509 \

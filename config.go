@@ -11,11 +11,10 @@ import (
 	"github.com/hashicorp/yamux"
 )
 
-const serverName = "example.com"
-
 // Config file
 type Config struct {
 	Mode            string   `json:"mode"`
+	ServerName      string   `json:"sni"`
 	Listen          string   `json:"listen"`
 	Dial            string   `json:"dial"`
 	Certificate     string   `json:"cert"`
@@ -30,6 +29,7 @@ type Config struct {
 
 var defaultConfig = Config{
 	Mode:        "client",
+	ServerName:  "example.com",
 	KeepAlive:   300,
 	NoDelay:     false,
 	ReadBuffer:  0, // for system default
@@ -85,13 +85,13 @@ func (c *Config) NewTLSConfig() *tls.Config {
 			Certificates: []tls.Certificate{cert},
 			ClientAuth:   tls.RequireAndVerifyClientCert,
 			ClientCAs:    certPool,
-			ServerName:   serverName,
+			ServerName:   c.ServerName,
 		}
 	}
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      certPool,
-		ServerName:   serverName,
+		ServerName:   c.ServerName,
 	}
 }
 
