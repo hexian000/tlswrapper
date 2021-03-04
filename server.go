@@ -59,6 +59,7 @@ func (s *Server) runServer() {
 		}
 		s.SetConnParams(conn)
 		conn = tls.Server(conn, s.tlscfg)
+		log.Println("new connection from:", conn.RemoteAddr())
 		go func(conn net.Conn) {
 			session, err := yamux.Server(conn, s.muxcfg)
 			if err != nil {
@@ -70,6 +71,7 @@ func (s *Server) runServer() {
 				if err != nil {
 					return
 				}
+				log.Println("new session from:", session.RemoteAddr())
 				dial, err := net.Dial(network, s.Config.Dial)
 				if err != nil {
 					_ = conn.Close()
@@ -132,6 +134,7 @@ func (s *Server) runClient() {
 				_ = conn.Close()
 				return
 			}
+			log.Println("open session for:", conn.RemoteAddr())
 			go connCopy(conn, dial)
 			go connCopy(dial, conn)
 		}(session, conn)
