@@ -87,12 +87,16 @@ func (c *Config) NewTLSConfig() *tls.Config {
 			ClientAuth:   tls.RequireAndVerifyClientCert,
 			ClientCAs:    certPool,
 			ServerName:   c.ServerName,
+			MinVersion:   tls.VersionTLS13,
+			MaxVersion:   tls.VersionTLS13,
 		}
 	}
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      certPool,
 		ServerName:   c.ServerName,
+		MinVersion:   tls.VersionTLS13,
+		MaxVersion:   tls.VersionTLS13,
 	}
 }
 
