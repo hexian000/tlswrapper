@@ -38,10 +38,10 @@ func connCopy(dst net.Conn, src net.Conn) {
 	_, err := io.Copy(dst, src)
 	if err != nil {
 		if !errors.Is(err, net.ErrClosed) {
-			log.Println(err)
+			log.Println("session error:", err)
 		}
 	} else {
-		log.Println("session:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
+		log.Println("session close:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
 	}
 }
 
@@ -59,7 +59,7 @@ func (s *Server) runServer() {
 		}
 		s.SetConnParams(conn)
 		conn = tls.Server(conn, s.tlscfg)
-		log.Println("new connection from:", conn.RemoteAddr())
+		log.Println("connection:", conn.RemoteAddr(), "<->", conn.LocalAddr())
 		go func(conn net.Conn) {
 			session, err := yamux.Server(conn, s.muxcfg)
 			if err != nil {
@@ -71,7 +71,7 @@ func (s *Server) runServer() {
 				if err != nil {
 					return
 				}
-				log.Println("new session from:", session.RemoteAddr())
+				log.Println("session open:", session.RemoteAddr(), "->", conn.RemoteAddr())
 				dial, err := net.Dial(network, s.Config.Dial)
 				if err != nil {
 					_ = conn.Close()
@@ -134,7 +134,7 @@ func (s *Server) runClient() {
 				_ = conn.Close()
 				return
 			}
-			log.Println("open session for:", conn.RemoteAddr())
+			log.Println("session open:", conn.RemoteAddr(), "->", session.RemoteAddr())
 			go connCopy(conn, dial)
 			go connCopy(dial, conn)
 		}(session, conn)
