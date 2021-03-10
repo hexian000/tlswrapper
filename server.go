@@ -46,7 +46,7 @@ func connCopy(dst net.Conn, src net.Conn) {
 }
 
 func (s *Server) serveTLS() {
-	l, err := net.Listen(network, s.Config.Listen)
+	l, err := net.Listen(network, s.Config.TLSListen)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -70,34 +70,6 @@ func (s *Server) serveTLS() {
 	}
 }
 
-func (s *Server) dialTLS() (session *yamux.Session, err error) {
-	var dial net.Conn
-	dial, err = net.Dial(network, s.Dial)
-	if err != nil {
-		return
-	}
-	s.SetConnParams(dial)
-	dial = tls.Client(dial, s.tlscfg)
-	session, err = yamux.Client(dial, s.muxcfg)
-	if err != nil {
-		_ = dial.Close()
-		return
-	}
-	log.Println("TLS connection:", dial.LocalAddr(), "<->", dial.RemoteAddr())
-	return
-}
-
-func (s *Server) mustDialTLS() *yamux.Session {
-	for {
-		session, err := s.dialTLS()
-		if err == nil {
-			return session
-		}
-		log.Println(err)
-		time.Sleep(10 * time.Second)
-	}
-}
-
 func (s *Server) serveMux(session *yamux.Session) {
 	for {
 		conn, err := session.Accept()
@@ -114,6 +86,23 @@ func (s *Server) serveMux(session *yamux.Session) {
 		go connCopy(conn, dial)
 		go connCopy(dial, conn)
 	}
+}
+
+func (s *Server) dialTLS() (session *yamux.Session, err error) {
+	var dial net.Conn
+	dial, err = net.Dial(network, s.TLSDial)
+	if err != nil {
+		return
+	}
+	s.SetConnParams(dial)
+	dial = tls.Client(dial, s.tlscfg)
+	session, err = yamux.Client(dial, s.muxcfg)
+	if err != nil {
+		_ = dial.Close()
+		return
+	}
+	log.Println("TLS connection:", dial.LocalAddr(), "<->", dial.RemoteAddr())
+	return
 }
 
 func (s *Server) serveTCP(session *yamux.Session) {
