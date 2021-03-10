@@ -82,7 +82,7 @@ func (s *Server) serveMux(session *yamux.Session) {
 			_ = conn.Close()
 			continue
 		}
-		log.Println("session open:", session.RemoteAddr(), "->", conn.RemoteAddr())
+		log.Println("session open:", session.RemoteAddr(), "->", dial.RemoteAddr())
 		go connCopy(conn, dial)
 		go connCopy(dial, conn)
 	}
