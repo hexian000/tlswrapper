@@ -131,6 +131,7 @@ func (s *Server) serveTCP(session *yamux.Session) {
 			_ = conn.Close()
 			continue
 		}
+		log.Println("session open:", conn.RemoteAddr(), "->", session.RemoteAddr())
 		go connCopy(conn, dial)
 		go connCopy(dial, conn)
 	}
