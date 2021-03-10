@@ -95,7 +95,7 @@ func (c *Config) NewMuxConfig() *yamux.Config {
 		EnableKeepAlive:        enableKeepAlive,
 		KeepAliveInterval:      time.Duration(c.KeepAlive) * time.Second,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
-		MaxStreamWindowSize:    uint32(c.SessionWindow),
+		MaxStreamWindowSize:    c.SessionWindow,
 		Logger:                 log.Default(),
 	}
 }
