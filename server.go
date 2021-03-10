@@ -45,12 +45,12 @@ func connCopy(dst net.Conn, src net.Conn) {
 	}
 }
 
-func (s *Server) runServer() {
+func (s *Server) serveTLS() {
 	l, err := net.Listen(network, s.Config.Listen)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("forward:", l.Addr(), "->", s.Config.Dial)
+	log.Println("TLS listen:", l.Addr())
 
 	for {
 		conn, err := l.Accept()
@@ -59,32 +59,18 @@ func (s *Server) runServer() {
 		}
 		s.SetConnParams(conn)
 		conn = tls.Server(conn, s.tlscfg)
-		log.Println("connection:", conn.RemoteAddr(), "<->", conn.LocalAddr())
-		go func(conn net.Conn) {
-			session, err := yamux.Server(conn, s.muxcfg)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			for {
-				conn, err := session.Accept()
-				if err != nil {
-					return
-				}
-				log.Println("session open:", session.RemoteAddr(), "->", conn.RemoteAddr())
-				dial, err := net.Dial(network, s.Config.Dial)
-				if err != nil {
-					_ = conn.Close()
-					return
-				}
-				go connCopy(conn, dial)
-				go connCopy(dial, conn)
-			}
-		}(conn)
+
+		session, err := yamux.Server(conn, s.muxcfg)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		log.Println("TLS connection:", conn.RemoteAddr(), "<->", conn.LocalAddr())
+		go s.serveMux(session)
 	}
 }
 
-func (s *Server) muxDial() (session *yamux.Session, err error) {
+func (s *Server) dialTLS() (session *yamux.Session, err error) {
 	var dial net.Conn
 	dial, err = net.Dial(network, s.Dial)
 	if err != nil {
@@ -97,57 +83,77 @@ func (s *Server) muxDial() (session *yamux.Session, err error) {
 		_ = dial.Close()
 		return
 	}
-	log.Println("connection:", dial.LocalAddr(), "<->", dial.RemoteAddr())
+	log.Println("TLS connection:", dial.LocalAddr(), "<->", dial.RemoteAddr())
 	return
 }
 
-func (s *Server) runClient() {
+func (s *Server) mustDialTLS() *yamux.Session {
+	for {
+		session, err := s.dialTLS()
+		if err == nil {
+			return session
+		}
+		log.Println(err)
+		time.Sleep(10 * time.Second)
+	}
+}
+
+func (s *Server) serveMux(session *yamux.Session) {
+	for {
+		conn, err := session.Accept()
+		if err != nil {
+			return
+		}
+		dial, err := net.Dial(network, s.Config.Dial)
+		if err != nil {
+			log.Println("serveMux dial:", err)
+			_ = conn.Close()
+			continue
+		}
+		log.Println("session open:", session.RemoteAddr(), "->", conn.RemoteAddr())
+		go connCopy(conn, dial)
+		go connCopy(dial, conn)
+	}
+}
+
+func (s *Server) serveTCP(session *yamux.Session) {
 	l, err := net.Listen(network, s.Config.Listen)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("forward:", l.Addr(), "->", s.Config.Dial)
-	session, err := s.muxDial()
-	if err != nil {
-		log.Fatalln(err)
-	}
+	log.Println("TCP listen:", l.Addr())
 
 	for {
 		conn, err := l.Accept()
 		if err != nil {
 			return
 		}
-		s.SetConnParams(conn)
-
 		for session == nil || session.IsClosed() {
-			session, err = s.muxDial()
+			session, err = s.dialTLS()
 			if err != nil {
 				log.Println(err)
 				time.Sleep(10 * time.Second)
 			}
 		}
-		go func(session *yamux.Session, conn net.Conn) {
-			dial, err := session.Open()
-			if err != nil {
-				log.Println(err)
-				_ = session.Close()
-				_ = conn.Close()
-				return
-			}
-			log.Println("session open:", conn.RemoteAddr(), "->", session.RemoteAddr())
-			go connCopy(conn, dial)
-			go connCopy(dial, conn)
-		}(session, conn)
+		dial, err := session.Open()
+		if err != nil {
+			log.Println("session open:", err)
+			_ = session.Close()
+			_ = conn.Close()
+			continue
+		}
+		go connCopy(conn, dial)
+		go connCopy(dial, conn)
 	}
 }
 
 // Start the service
 func (s *Server) Start() error {
-	log.Println("starting in mode:", s.Mode)
-	if s.IsServer() {
-		go s.runServer()
-	} else {
-		go s.runClient()
+	if s.TLSListen != "" {
+		go s.serveTLS()
+	}
+	if s.Listen != "" {
+		go s.serveTCP(nil)
 	}
 	return nil
 }

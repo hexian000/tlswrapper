@@ -13,10 +13,11 @@ import (
 
 // Config file
 type Config struct {
-	Mode            string   `json:"mode"`
 	ServerName      string   `json:"sni"`
 	Listen          string   `json:"listen"`
 	Dial            string   `json:"dial"`
+	TLSListen       string   `json:"tlslisten"`
+	TLSDial         string   `json:"tlsdial"`
 	Certificate     string   `json:"cert"`
 	PrivateKey      string   `json:"key"`
 	AuthorizedCerts []string `json:"authcerts"`
@@ -31,7 +32,6 @@ type Config struct {
 }
 
 var defaultConfig = Config{
-	Mode:          "client",
 	ServerName:    "example.com",
 	NoDelay:       false,
 	ReadBuffer:    0, // for system default
@@ -41,11 +41,6 @@ var defaultConfig = Config{
 	AcceptBacklog: 16,
 	SessionWindow: 2 * 1024 * 1024, // 2 MiB
 	WriteTimeout:  10,
-}
-
-// IsServer checks the config is in server mode
-func (c *Config) IsServer() bool {
-	return c.Mode == "server"
 }
 
 // SetConnParams sets TCP params
@@ -81,18 +76,10 @@ func (c *Config) NewTLSConfig() *tls.Config {
 			log.Fatalln("append authorized certs:", path)
 		}
 	}
-	if c.IsServer() {
-		return &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			ClientAuth:   tls.RequireAndVerifyClientCert,
-			ClientCAs:    certPool,
-			ServerName:   c.ServerName,
-			MinVersion:   tls.VersionTLS13,
-			MaxVersion:   tls.VersionTLS13,
-		}
-	}
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    certPool,
 		RootCAs:      certPool,
 		ServerName:   c.ServerName,
 		MinVersion:   tls.VersionTLS13,
