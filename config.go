@@ -13,34 +13,36 @@ import (
 
 // Config file
 type Config struct {
-	ServerName      string   `json:"sni"`
-	Listen          string   `json:"listen"`
-	Dial            string   `json:"dial"`
-	TLSListen       string   `json:"tlslisten"`
-	TLSDial         string   `json:"tlsdial"`
-	Certificate     string   `json:"cert"`
-	PrivateKey      string   `json:"key"`
-	AuthorizedCerts []string `json:"authcerts"`
-	NoDelay         bool     `json:"nodelay"`
-	ReadBuffer      int      `json:"recvbuf"`
-	WriteBuffer     int      `json:"sendbuf"`
-	Linger          int      `json:"linger"`
-	KeepAlive       int      `json:"keepalive"`
-	AcceptBacklog   int      `json:"backlog"`
-	SessionWindow   uint32   `json:"window"`
-	WriteTimeout    int      `json:"writetimeout"`
+	ServerName         string   `json:"sni"`
+	Listen             string   `json:"listen"`
+	Dial               string   `json:"dial"`
+	TLSListen          string   `json:"tlslisten"`
+	TLSDial            string   `json:"tlsdial"`
+	Certificate        string   `json:"cert"`
+	PrivateKey         string   `json:"key"`
+	AuthorizedCerts    []string `json:"authcerts"`
+	NoDelay            bool     `json:"nodelay"`
+	ReadBuffer         int      `json:"recvbuf"`
+	WriteBuffer        int      `json:"sendbuf"`
+	Linger             int      `json:"linger"`
+	KeepAlive          int      `json:"keepalive"`
+	AcceptBacklog      int      `json:"backlog"`
+	SessionWindow      uint32   `json:"window"`
+	WriteTimeout       int      `json:"writetimeout"`
+	StreamCloseTimeout int      `json:"streamclosetimeout"`
 }
 
 var defaultConfig = Config{
-	ServerName:    "example.com",
-	NoDelay:       false,
-	ReadBuffer:    0, // for system default
-	WriteBuffer:   0,
-	Linger:        -1,
-	KeepAlive:     60,
-	AcceptBacklog: 16,
-	SessionWindow: 2 * 1024 * 1024, // 2 MiB
-	WriteTimeout:  10,
+	ServerName:         "example.com",
+	NoDelay:            false,
+	ReadBuffer:         0,  // system default
+	WriteBuffer:        0,  // system default
+	Linger:             -1, // system default
+	KeepAlive:          0,  // disabled
+	AcceptBacklog:      16,
+	SessionWindow:      2 * 1024 * 1024, // 2 MiB
+	WriteTimeout:       15,
+	StreamCloseTimeout: 60,
 }
 
 // SetConnParams sets TCP params
@@ -96,6 +98,7 @@ func (c *Config) NewMuxConfig() *yamux.Config {
 		KeepAliveInterval:      time.Duration(c.KeepAlive) * time.Second,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
 		MaxStreamWindowSize:    c.SessionWindow,
+		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
 		Logger:                 log.Default(),
 	}
 }
