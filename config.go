@@ -92,6 +92,10 @@ func (c *Config) NewTLSConfig() *tls.Config {
 // NewMuxConfig creates yamux.Config
 func (c *Config) NewMuxConfig() *yamux.Config {
 	enableKeepAlive := c.KeepAlive > 0
+	// A temporary workaround for passing yamux.VerifyConfig
+	if !enableKeepAlive {
+		c.KeepAlive = 300
+	}
 	return &yamux.Config{
 		AcceptBacklog:          c.AcceptBacklog,
 		EnableKeepAlive:        enableKeepAlive,
