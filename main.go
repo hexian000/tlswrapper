@@ -45,8 +45,8 @@ func main() {
 	configs := parseFlags()
 	log.Printf("starting %d servers\n", len(configs))
 	servers := make([]*Server, 0, len(configs))
-	for _, cfg := range configs {
-		servers = append(servers, NewServer(&cfg))
+	for i := range configs {
+		servers = append(servers, NewServer(&configs[i]))
 	}
 	for _, server := range servers {
 		if err := server.Start(); err != nil {
