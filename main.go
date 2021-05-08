@@ -27,6 +27,7 @@ func parseFlags() []Config {
 	configs := make([]Config, 0)
 	files := strings.Split(flagConfig, ":")
 	for _, file := range files {
+		log.Println("read config:", file)
 		b, err := ioutil.ReadFile(file)
 		if err != nil {
 			log.Fatalln("read config:", err)
@@ -42,6 +43,7 @@ func parseFlags() []Config {
 
 func main() {
 	configs := parseFlags()
+	log.Printf("starting %d servers\n", len(configs))
 	servers := make([]*Server, 0, len(configs))
 	for _, cfg := range configs {
 		servers = append(servers, NewServer(&cfg))
