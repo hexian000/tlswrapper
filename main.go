@@ -7,14 +7,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"syscall"
+	"strings"
 )
 
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-func parseFlags() *Config {
+func parseFlags() []Config {
 	var flagHelp bool
 	var flagConfig string
 	flag.BoolVar(&flagHelp, "h", false, "help")
@@ -24,26 +24,41 @@ func parseFlags() *Config {
 		flag.Usage()
 		os.Exit(0)
 	}
-	b, err := ioutil.ReadFile(flagConfig)
-	if err != nil {
-		log.Fatalln("read config:", err)
+	configs := make([]Config, 0)
+	files := strings.Split(flagConfig, ":")
+	for _, file := range files {
+		b, err := ioutil.ReadFile(file)
+		if err != nil {
+			log.Fatalln("read config:", err)
+		}
+		cfg := defaultConfig
+		if err := json.Unmarshal(b, &cfg); err != nil {
+			log.Fatalln("parse config:", err)
+		}
+		configs = append(configs, cfg)
 	}
-	cfg := defaultConfig
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		log.Fatalln("parse config:", err)
-	}
-	return &cfg
+	return configs
 }
 
 func main() {
-	server := NewServer(parseFlags())
-	if err := server.Start(); err != nil {
-		log.Fatalln(err)
+	configs := parseFlags()
+	servers := make([]*Server, 0, len(configs))
+	for _, cfg := range configs {
+		servers = append(servers, NewServer(&cfg))
+	}
+	for _, server := range servers {
+		if err := server.Start(); err != nil {
+			log.Fatalln(err)
+		}
 	}
 
-	ch := make(chan os.Signal)
-	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
-
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt)
 	<-ch
-	_ = server.Shutdown()
+
+	for _, server := range servers {
+		if err := server.Shutdown(); err != nil {
+			log.Println(err)
+		}
+	}
 }

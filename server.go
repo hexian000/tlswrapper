@@ -150,8 +150,7 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
-	log.Fatalln("shutdown not implemented")
 	// _ = s.l.Close()
 	// log.Println("shutting down gracefully")
-	return nil
+	return errors.New("graceful shutdown not implemented")
 }
