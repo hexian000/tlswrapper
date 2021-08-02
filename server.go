@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -15,10 +16,13 @@ const network = "tcp"
 
 // Server object
 type Server struct {
+	mu *sync.Mutex
 	*Config
 
 	tlscfg *tls.Config
 	muxcfg *yamux.Config
+
+	lastSeen time.Time
 }
 
 // NewServer creates a server object
@@ -30,10 +34,11 @@ func NewServer(cfg *Config) *Server {
 	}
 }
 
-func connCopy(dst net.Conn, src net.Conn) {
+func (s *Server) connCopy(dst net.Conn, src net.Conn) {
 	defer func() {
 		_ = src.Close()
 		_ = dst.Close()
+		s.seen()
 	}()
 	_, err := io.Copy(dst, src)
 	if err != nil {
@@ -67,6 +72,7 @@ func (s *Server) serveTLS() {
 		}
 		log.Println("TLS connection:", conn.RemoteAddr(), "<->", conn.LocalAddr())
 		go s.serveMux(session)
+		go s.checkIdle(session)
 	}
 }
 
@@ -83,8 +89,8 @@ func (s *Server) serveMux(session *yamux.Session) {
 			continue
 		}
 		log.Println("session open:", session.RemoteAddr(), "->", dial.RemoteAddr())
-		go connCopy(conn, dial)
-		go connCopy(dial, conn)
+		go s.connCopy(conn, dial)
+		go s.connCopy(dial, conn)
 	}
 }
 
@@ -102,6 +108,7 @@ func (s *Server) dialTLS() (session *yamux.Session, err error) {
 		return
 	}
 	log.Println("TLS connection:", dial.LocalAddr(), "<->", dial.RemoteAddr())
+	go s.checkIdle(session)
 	return
 }
 
@@ -132,8 +139,37 @@ func (s *Server) serveTCP(session *yamux.Session) {
 			continue
 		}
 		log.Println("session open:", conn.RemoteAddr(), "->", session.RemoteAddr())
-		go connCopy(conn, dial)
-		go connCopy(dial, conn)
+		go s.connCopy(conn, dial)
+		go s.connCopy(dial, conn)
+	}
+}
+
+func (s *Server) seen() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastSeen = time.Now()
+}
+
+func (s *Server) checkIdle(session *yamux.Session) {
+	timeout := time.Duration(s.IdleTimeout) * time.Second
+	ticker := time.NewTicker(10 * time.Second)
+	for range ticker.C {
+		if session.NumStreams() != 0 {
+			continue
+		}
+		lastSeen := func() time.Time {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.lastSeen
+		}()
+		if time.Since(lastSeen) <= timeout {
+			continue
+		}
+
+		log.Println("TLS idle close:", session.LocalAddr(), "-x>", session.RemoteAddr())
+		_ = session.Close()
+		ticker.Stop()
+		return
 	}
 }
 

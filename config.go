@@ -26,6 +26,7 @@ type Config struct {
 	WriteBuffer        int      `json:"sendbuf"`
 	Linger             int      `json:"linger"`
 	KeepAlive          int      `json:"keepalive"`
+	IdleTimeout        int      `json:"idletimeout"`
 	AcceptBacklog      int      `json:"backlog"`
 	SessionWindow      uint32   `json:"window"`
 	WriteTimeout       int      `json:"writetimeout"`
@@ -35,10 +36,11 @@ type Config struct {
 var defaultConfig = Config{
 	ServerName:         "example.com",
 	NoDelay:            false,
-	ReadBuffer:         0,  // system default
-	WriteBuffer:        0,  // system default
-	Linger:             -1, // system default
-	KeepAlive:          0,  // disabled
+	ReadBuffer:         0,   // system default
+	WriteBuffer:        0,   // system default
+	Linger:             -1,  // system default
+	KeepAlive:          30,  // every 30s
+	IdleTimeout:        900, // 15min
 	AcceptBacklog:      16,
 	SessionWindow:      2 * 1024 * 1024, // 2 MiB
 	WriteTimeout:       15,
@@ -94,7 +96,7 @@ func (c *Config) NewMuxConfig() *yamux.Config {
 	enableKeepAlive := c.KeepAlive > 0
 	// A temporary workaround for passing yamux.VerifyConfig
 	if !enableKeepAlive {
-		c.KeepAlive = 300
+		c.KeepAlive = 30
 	}
 	return &yamux.Config{
 		AcceptBacklog:          c.AcceptBacklog,
