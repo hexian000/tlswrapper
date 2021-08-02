@@ -44,10 +44,10 @@ func (s *Server) connCopy(dst net.Conn, src net.Conn) {
 	_, err := io.Copy(dst, src)
 	if err != nil {
 		if !errors.Is(err, net.ErrClosed) {
-			log.Println("session error:", err)
+			log.Println("stream error:", err)
 		}
 	} else {
-		log.Println("session close:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
+		log.Println("stream close:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
 	}
 }
 
@@ -71,7 +71,7 @@ func (s *Server) serveTLS() {
 			log.Println(err)
 			continue
 		}
-		log.Println("TLS connection:", conn.RemoteAddr(), "<->", conn.LocalAddr())
+		log.Println("open server session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
 		go s.serveMux(session)
 		go s.checkIdle(session)
 	}
@@ -85,11 +85,11 @@ func (s *Server) serveMux(session *yamux.Session) {
 		}
 		dial, err := net.Dial(network, s.Config.Dial)
 		if err != nil {
-			log.Println("serveMux dial:", err)
+			log.Println("stream dial:", err)
 			_ = conn.Close()
 			continue
 		}
-		log.Println("session open:", session.RemoteAddr(), "->", dial.RemoteAddr())
+		log.Println("stream open:", session.RemoteAddr(), "->", dial.RemoteAddr())
 		go s.connCopy(conn, dial)
 		go s.connCopy(dial, conn)
 	}
@@ -108,7 +108,7 @@ func (s *Server) dialTLS() (session *yamux.Session, err error) {
 		_ = dial.Close()
 		return
 	}
-	log.Println("TLS connection:", dial.LocalAddr(), "<->", dial.RemoteAddr())
+	log.Println("open client session:", dial.LocalAddr(), "<->", dial.RemoteAddr())
 	go s.checkIdle(session)
 	return
 }
@@ -129,17 +129,17 @@ func (s *Server) serveTCP(session *yamux.Session) {
 			session, err = s.dialTLS()
 			if err != nil {
 				log.Println(err)
-				time.Sleep(10 * time.Second)
+				time.Sleep(5 * time.Second)
 			}
 		}
 		dial, err := session.Open()
 		if err != nil {
-			log.Println("session open:", err)
+			log.Println("stream open:", err)
 			_ = session.Close()
 			_ = conn.Close()
 			continue
 		}
-		log.Println("session open:", conn.RemoteAddr(), "->", session.RemoteAddr())
+		log.Println("stream open:", conn.RemoteAddr(), "->", session.RemoteAddr())
 		go s.connCopy(conn, dial)
 		go s.connCopy(dial, conn)
 	}
@@ -152,9 +152,28 @@ func (s *Server) seen() {
 }
 
 func (s *Server) checkIdle(session *yamux.Session) {
+	if s.IdleTimeout <= 0 {
+		return
+	}
 	timeout := time.Duration(s.IdleTimeout) * time.Second
 	ticker := time.NewTicker(10 * time.Second)
+	defer func() {
+		ticker.Stop()
+		log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
+		_ = session.Close()
+	}()
+
+	lastTick := time.Now()
 	for range ticker.C {
+		if session.IsClosed() {
+			return
+		}
+		now := time.Now()
+		if now.Sub(lastTick) > timeout {
+			log.Println("system hang detected, tick time:", lastTick, "->", now)
+			return
+		}
+		lastTick = now
 		if session.NumStreams() != 0 {
 			continue
 		}
@@ -163,13 +182,11 @@ func (s *Server) checkIdle(session *yamux.Session) {
 			defer s.mu.Unlock()
 			return s.lastSeen
 		}()
-		if time.Since(lastSeen) <= timeout {
+		if now.Sub(lastSeen) <= timeout {
 			continue
 		}
 
-		log.Println("TLS idle close:", session.LocalAddr(), "-x>", session.RemoteAddr())
-		_ = session.Close()
-		ticker.Stop()
+		log.Println("idle timeout expired")
 		return
 	}
 }
