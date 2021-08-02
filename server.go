@@ -170,7 +170,7 @@ func (s *Server) checkIdle(session *yamux.Session) {
 		}
 		now := time.Now()
 		if now.Sub(lastTick) > timeout {
-			log.Println("system hang detected, tick time:", lastTick, "->", now)
+			log.Println("system hang detected, tick time:", now.Sub(lastTick))
 			return
 		}
 		lastTick = now
