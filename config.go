@@ -42,7 +42,7 @@ var defaultConfig = Config{
 	KeepAlive:          30,  // every 30s
 	IdleTimeout:        900, // 15min
 	AcceptBacklog:      16,
-	SessionWindow:      2 * 1024 * 1024, // 2 MiB
+	SessionWindow:      256 * 1024, // 256 KiB
 	WriteTimeout:       15,
 	StreamCloseTimeout: 60,
 }
