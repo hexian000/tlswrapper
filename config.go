@@ -11,26 +11,34 @@ import (
 	"github.com/hashicorp/yamux"
 )
 
+type ServerConfig struct {
+	Listen  string `json:"listen"`
+	Forward string `json:"forward"`
+}
+
+type ClientConfig struct {
+	Listen string `json:"listen"`
+	Dial   string `json:"dial"`
+}
+
 // Config file
 type Config struct {
-	ServerName         string   `json:"sni"`
-	Listen             string   `json:"listen"`
-	Dial               string   `json:"dial"`
-	TLSListen          string   `json:"tlslisten"`
-	TLSDial            string   `json:"tlsdial"`
-	Certificate        string   `json:"cert"`
-	PrivateKey         string   `json:"key"`
-	AuthorizedCerts    []string `json:"authcerts"`
-	NoDelay            bool     `json:"nodelay"`
-	ReadBuffer         int      `json:"recvbuf"`
-	WriteBuffer        int      `json:"sendbuf"`
-	Linger             int      `json:"linger"`
-	KeepAlive          int      `json:"keepalive"`
-	IdleTimeout        int      `json:"idletimeout"`
-	AcceptBacklog      int      `json:"backlog"`
-	SessionWindow      uint32   `json:"window"`
-	WriteTimeout       int      `json:"writetimeout"`
-	StreamCloseTimeout int      `json:"streamclosetimeout"`
+	ServerName         string         `json:"sni"`
+	Server             []ServerConfig `json:"server"`
+	Client             []ClientConfig `json:"client"`
+	Certificate        string         `json:"cert"`
+	PrivateKey         string         `json:"key"`
+	AuthorizedCerts    []string       `json:"authcerts"`
+	NoDelay            bool           `json:"nodelay"`
+	ReadBuffer         int            `json:"recvbuf"`
+	WriteBuffer        int            `json:"sendbuf"`
+	Linger             int            `json:"linger"`
+	KeepAlive          int            `json:"keepalive"`
+	IdleTimeout        int            `json:"idletimeout"`
+	AcceptBacklog      int            `json:"backlog"`
+	SessionWindow      uint32         `json:"window"`
+	WriteTimeout       int            `json:"writetimeout"`
+	StreamCloseTimeout int            `json:"streamclosetimeout"`
 }
 
 var defaultConfig = Config{
@@ -39,11 +47,11 @@ var defaultConfig = Config{
 	ReadBuffer:         0,   // system default
 	WriteBuffer:        0,   // system default
 	Linger:             -1,  // system default
-	KeepAlive:          30,  // every 30s
+	KeepAlive:          60,  // every 30s
 	IdleTimeout:        900, // 15min
 	AcceptBacklog:      16,
 	SessionWindow:      256 * 1024, // 256 KiB
-	WriteTimeout:       15,
+	WriteTimeout:       30,
 	StreamCloseTimeout: 60,
 }
 

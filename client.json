@@ -1,9 +1,0 @@
-{
-  "listen": "127.0.0.1:5202",
-  "tlsdial": "127.0.0.123:5202",
-  "cert": "clientcert.pem",
-  "key": "clientkey.pem",
-  "authcerts": [
-    "cert.pem"
-  ]
-}

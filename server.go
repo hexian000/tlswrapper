@@ -16,6 +16,16 @@ const network = "tcp"
 
 var verbose = false
 
+const (
+	redialDelay       = 5 * time.Second
+	checkIdleInterval = 10 * time.Second
+)
+
+type sessionState struct {
+	idle     bool
+	lastSeen time.Time
+}
+
 // Server object
 type Server struct {
 	mu sync.Mutex
@@ -24,7 +34,8 @@ type Server struct {
 	tlscfg *tls.Config
 	muxcfg *yamux.Config
 
-	lastSeen time.Time
+	listeners []net.Listener
+	sessions  map[*yamux.Session]sessionState
 }
 
 // NewServer creates a server object
@@ -41,7 +52,6 @@ func (s *Server) connCopy(dst net.Conn, src net.Conn) {
 	defer func() {
 		_ = src.Close()
 		_ = dst.Close()
-		s.seen()
 	}()
 	_, err := io.Copy(dst, src)
 	if err != nil {
@@ -55,15 +65,9 @@ func (s *Server) connCopy(dst net.Conn, src net.Conn) {
 	}
 }
 
-func (s *Server) serveTLS() {
-	l, err := net.Listen(network, s.Config.TLSListen)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	log.Println("TLS listen:", l.Addr())
-
+func (s *Server) serveTLS(listener net.Listener, forwardAddr string) {
 	for {
-		conn, err := l.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
@@ -75,19 +79,26 @@ func (s *Server) serveTLS() {
 			log.Println(err)
 			continue
 		}
-		log.Println("open server session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
-		go s.serveMux(session)
+		func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			s.sessions[session] = sessionState{true, time.Now()}
+			if verbose {
+				log.Println("new incoming session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
+			}
+		}()
+		go s.serveMux(session, forwardAddr)
 		go s.checkIdle(session)
 	}
 }
 
-func (s *Server) serveMux(session *yamux.Session) {
+func (s *Server) serveMux(session *yamux.Session, forwardAddr string) {
 	for {
 		conn, err := session.Accept()
 		if err != nil {
 			return
 		}
-		dial, err := net.Dial(network, s.Config.Dial)
+		dial, err := net.Dial(network, forwardAddr)
 		if err != nil {
 			log.Println("stream dial:", err)
 			_ = conn.Close()
@@ -101,9 +112,9 @@ func (s *Server) serveMux(session *yamux.Session) {
 	}
 }
 
-func (s *Server) dialTLS() (session *yamux.Session, err error) {
+func (s *Server) dialTLS(dialAddr string) (session *yamux.Session, err error) {
 	var dial net.Conn
-	dial, err = net.Dial(network, s.TLSDial)
+	dial, err = net.Dial(network, dialAddr)
 	if err != nil {
 		return
 	}
@@ -114,28 +125,24 @@ func (s *Server) dialTLS() (session *yamux.Session, err error) {
 		_ = dial.Close()
 		return
 	}
-	log.Println("open client session:", dial.LocalAddr(), "<->", dial.RemoteAddr())
+	log.Println("new session:", dial.LocalAddr(), "<->", dial.RemoteAddr())
 	go s.checkIdle(session)
 	return
 }
 
-func (s *Server) serveTCP(session *yamux.Session) {
-	l, err := net.Listen(network, s.Config.Listen)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	log.Println("TCP listen:", l.Addr())
+func (s *Server) serveTCP(listener net.Listener, dialAddr string) {
+	var session *yamux.Session = nil
 
 	for {
-		conn, err := l.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
 		for session == nil || session.IsClosed() {
-			session, err = s.dialTLS()
+			session, err = s.dialTLS(dialAddr)
 			if err != nil {
 				log.Println(err)
-				time.Sleep(5 * time.Second)
+				time.Sleep(redialDelay)
 			}
 		}
 		dial, err := session.Open()
@@ -153,24 +160,24 @@ func (s *Server) serveTCP(session *yamux.Session) {
 	}
 }
 
-func (s *Server) seen() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.lastSeen = time.Now()
-}
-
 func (s *Server) checkIdle(session *yamux.Session) {
 	if s.IdleTimeout <= 0 {
 		return
 	}
 	timeout := time.Duration(s.IdleTimeout) * time.Second
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(checkIdleInterval)
 	defer func() {
 		ticker.Stop()
-		if verbose {
-			log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
-		}
 		_ = session.Close()
+		func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			delete(s.sessions, session)
+			log.Println("idle timeout expired")
+			if verbose {
+				log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
+			}
+		}()
 	}()
 
 	lastTick := time.Now()
@@ -184,37 +191,71 @@ func (s *Server) checkIdle(session *yamux.Session) {
 			return
 		}
 		lastTick = now
-		if session.NumStreams() != 0 {
+		numStreams := session.NumStreams()
+		if numStreams > 0 {
+			func() {
+				s.mu.Lock()
+				defer s.mu.Unlock()
+				s.sessions[session] = sessionState{false, now}
+			}()
 			continue
 		}
-		lastSeen := func() time.Time {
+		idleSince := now
+		func() {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			return s.lastSeen
+			state := s.sessions[session]
+			if !state.idle {
+				s.sessions[session] = sessionState{true, idleSince}
+			} else {
+				idleSince = state.lastSeen
+			}
 		}()
-		if now.Sub(lastSeen) <= timeout {
+		if now.Sub(idleSince) <= timeout {
 			continue
 		}
-
-		log.Println("idle timeout expired")
 		return
 	}
 }
 
 // Start the service
 func (s *Server) Start() error {
-	if s.TLSListen != "" {
-		go s.serveTLS()
+	for _, server := range s.Server {
+		listener, err := net.Listen(network, server.Listen)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		s.listeners = append(s.listeners, listener)
+		log.Println("TLS listen:", listener.Addr())
+		go s.serveTLS(listener, server.Forward)
 	}
-	if s.Listen != "" {
-		go s.serveTCP(nil)
+	for _, client := range s.Client {
+		listener, err := net.Listen(network, client.Listen)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		s.listeners = append(s.listeners, listener)
+		log.Println("TCP listen:", listener.Addr())
+		go s.serveTCP(listener, client.Dial)
 	}
 	return nil
 }
 
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
-	// _ = s.l.Close()
-	// log.Println("shutting down gracefully")
-	return errors.New("graceful shutdown not implemented")
+	log.Println("shutting down gracefully")
+	for _, listener := range s.listeners {
+		err := listener.Close()
+		if err != nil {
+			return err
+		}
+	}
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for session := range s.sessions {
+			_ = session.Close()
+		}
+	}()
+	return nil
 }
