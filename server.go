@@ -174,7 +174,6 @@ func (s *Server) checkIdle(session *yamux.Session) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			delete(s.sessions, session)
-			log.Println("idle timeout expired")
 			if verbose {
 				log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
 			}
@@ -215,6 +214,7 @@ func (s *Server) checkIdle(session *yamux.Session) {
 		if now.Sub(idleSince) <= timeout {
 			continue
 		}
+		log.Println("idle timeout expired")
 		return
 	}
 }
