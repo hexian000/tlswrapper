@@ -11,8 +11,8 @@ while [ -n "$1" ]; do
     openssl req -newkey rsa:8192 \
         -new -nodes -x509 \
         -days 36500 \
-        -out cert.pem \
-        -keyout key.pem \
+        -out "${NAME}-cert.pem" \
+        -keyout "${NAME}-key.pem" \
         -subj "/C=US/ST=California/L=Mountain View/O=Your Organization/OU=Your Unit/CN=${SSLNAME}" \
         -addext "subjectAltName = DNS:${SSLNAME}"
 
