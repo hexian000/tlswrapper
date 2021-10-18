@@ -19,6 +19,7 @@ func parseFlags() []Config {
 	var flagConfig string
 	flag.BoolVar(&flagHelp, "h", false, "help")
 	flag.StringVar(&flagConfig, "c", "", "config file")
+	flag.BoolVar(&verbose, "v", false, "verbose mode")
 	flag.Parse()
 	if flagHelp || flagConfig == "" {
 		flag.Usage()
@@ -27,7 +28,9 @@ func parseFlags() []Config {
 	configs := make([]Config, 0)
 	files := strings.Split(flagConfig, ":")
 	for _, file := range files {
-		log.Println("read config:", file)
+		if verbose {
+			log.Println("read config:", file)
+		}
 		b, err := ioutil.ReadFile(file)
 		if err != nil {
 			log.Fatalln("read config:", err)

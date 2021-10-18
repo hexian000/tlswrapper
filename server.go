@@ -14,6 +14,8 @@ import (
 
 const network = "tcp"
 
+var verbose = false
+
 // Server object
 type Server struct {
 	mu sync.Mutex
@@ -43,11 +45,13 @@ func (s *Server) connCopy(dst net.Conn, src net.Conn) {
 	}()
 	_, err := io.Copy(dst, src)
 	if err != nil {
-		if !errors.Is(err, net.ErrClosed) {
+		if !errors.Is(err, net.ErrClosed) && !errors.Is(err, yamux.ErrStreamClosed) {
 			log.Println("stream error:", err)
 		}
 	} else {
-		log.Println("stream close:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
+		if verbose {
+			log.Println("stream close:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
+		}
 	}
 }
 
@@ -89,7 +93,9 @@ func (s *Server) serveMux(session *yamux.Session) {
 			_ = conn.Close()
 			continue
 		}
-		log.Println("stream open:", session.RemoteAddr(), "->", dial.RemoteAddr())
+		if verbose {
+			log.Println("stream open:", session.RemoteAddr(), "->", dial.RemoteAddr())
+		}
 		go s.connCopy(conn, dial)
 		go s.connCopy(dial, conn)
 	}
@@ -139,7 +145,9 @@ func (s *Server) serveTCP(session *yamux.Session) {
 			_ = conn.Close()
 			continue
 		}
-		log.Println("stream open:", conn.RemoteAddr(), "->", session.RemoteAddr())
+		if verbose {
+			log.Println("stream open:", conn.LocalAddr(), "->", session.RemoteAddr())
+		}
 		go s.connCopy(conn, dial)
 		go s.connCopy(dial, conn)
 	}
@@ -159,7 +167,9 @@ func (s *Server) checkIdle(session *yamux.Session) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer func() {
 		ticker.Stop()
-		log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
+		if verbose {
+			log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
+		}
 		_ = session.Close()
 	}()
 
