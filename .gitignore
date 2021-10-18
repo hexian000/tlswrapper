@@ -1,4 +1,4 @@
 /vendor
 /tlswrapper
-/*.pem
+/certs
 /u.sh
