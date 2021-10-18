@@ -41,10 +41,11 @@ type Server struct {
 // NewServer creates a server object
 func NewServer(cfg *Config) *Server {
 	return &Server{
-		mu:     sync.Mutex{},
-		Config: cfg,
-		tlscfg: cfg.NewTLSConfig(),
-		muxcfg: cfg.NewMuxConfig(),
+		mu:       sync.Mutex{},
+		Config:   cfg,
+		tlscfg:   cfg.NewTLSConfig(),
+		muxcfg:   cfg.NewMuxConfig(),
+		sessions: make(map[*yamux.Session]sessionState),
 	}
 }
 
