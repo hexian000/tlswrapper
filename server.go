@@ -247,13 +247,16 @@ func (s *Server) checkIdle(session *yamux.Session) {
 			_ = session.Close()
 			return
 		case <-pingTicker.C:
-			_, err := session.Ping()
+			rtt, err := session.Ping()
 			if err != nil {
 				if err != yamux.ErrSessionShutdown {
 					log.Println("keepalive error:", err)
 				}
 				_ = session.Close()
 				return
+			}
+			if verbose {
+				log.Println("keepalive:", session.LocalAddr(), "<->", session.RemoteAddr(), "rtt:", rtt)
 			}
 		case <-session.CloseChan():
 			log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
