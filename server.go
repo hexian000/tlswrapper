@@ -255,7 +255,7 @@ func (s *Server) checkIdle(session *yamux.Session) {
 
 // Start the service
 func (s *Server) Start() error {
-	for _, server := range s.Server {
+	for i, server := range s.Server {
 		addr := server.Listen
 		if s.listeners[addr] != nil {
 			continue
@@ -267,9 +267,9 @@ func (s *Server) Start() error {
 		s.listeners[addr] = listener
 		log.Println("TLS listen:", listener.Addr())
 		s.wg.Add(1)
-		go s.serveTLS(listener, &server)
+		go s.serveTLS(listener, &s.Server[i])
 	}
-	for _, client := range s.Client {
+	for i, client := range s.Client {
 		addr := client.Listen
 		if s.listeners[addr] != nil {
 			continue
@@ -281,7 +281,7 @@ func (s *Server) Start() error {
 		s.listeners[addr] = listener
 		log.Println("TCP listen:", listener.Addr())
 		s.wg.Add(1)
-		go s.serveTCP(listener, &client)
+		go s.serveTCP(listener, &s.Client[i])
 	}
 	return nil
 }
