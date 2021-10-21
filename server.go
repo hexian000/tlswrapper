@@ -214,7 +214,7 @@ func (s *Server) checkIdle(session *yamux.Session) {
 		if now.Sub(idleSince) <= timeout {
 			continue
 		}
-		log.Println("idle timeout expired")
+		log.Println("idle timeout expired: ", session.RemoteAddr())
 		return
 	}
 }
