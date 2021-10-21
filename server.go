@@ -23,8 +23,8 @@ const (
 )
 
 type sessionState struct {
-	idle     bool
-	lastSeen time.Time
+	numStreams int
+	lastSeen   time.Time
 }
 
 // Server object
@@ -78,16 +78,10 @@ func (s *Server) serveTLS(listener net.Listener, forwardAddr string) {
 			log.Println(err)
 			continue
 		}
-		func() {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			s.sessions[session] = sessionState{true, time.Now()}
-			if verbose {
-				log.Println("new incoming session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
-			}
-		}()
+		if verbose {
+			log.Println("new session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
+		}
 		go s.serveMux(session, forwardAddr)
-		go s.checkIdle(session)
 	}
 }
 
@@ -172,9 +166,7 @@ func (s *Server) checkIdle(session *yamux.Session) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			delete(s.sessions, session)
-			if verbose {
-				log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
-			}
+			log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
 		}()
 	}()
 
@@ -188,31 +180,21 @@ func (s *Server) checkIdle(session *yamux.Session) {
 			log.Println("system hang detected, tick time:", now.Sub(lastTick))
 			return
 		}
-		lastTick = now
 		numStreams := session.NumStreams()
-		if numStreams > 0 {
-			func() {
-				s.mu.Lock()
-				defer s.mu.Unlock()
-				s.sessions[session] = sessionState{false, now}
-			}()
-			continue
-		}
-		idleSince := now
-		func() {
+		lastSeen := func(state sessionState) time.Time {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			state := s.sessions[session]
-			if !state.idle {
-				s.sessions[session] = sessionState{true, idleSince}
-			} else {
-				idleSince = state.lastSeen
+			lastState, ok := s.sessions[session]
+			if !ok || numStreams > 0 || lastState.numStreams > 0 {
+				s.sessions[session] = state
+				return state.lastSeen
 			}
-		}()
-		if now.Sub(idleSince) <= timeout {
+			return lastState.lastSeen
+		}(sessionState{numStreams, now})
+		if numStreams > 0 || now.Sub(lastSeen) <= timeout {
 			continue
 		}
-		log.Println("idle timeout expired: ", session.RemoteAddr())
+		log.Println("idle timeout expired:", session.RemoteAddr())
 		return
 	}
 }

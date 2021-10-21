@@ -30,8 +30,6 @@ type Config struct {
 	PrivateKey         string         `json:"key"`
 	AuthorizedCerts    []string       `json:"authcerts"`
 	NoDelay            bool           `json:"nodelay"`
-	ReadBuffer         int            `json:"recvbuf"`
-	WriteBuffer        int            `json:"sendbuf"`
 	Linger             int            `json:"linger"`
 	KeepAlive          int            `json:"keepalive"`
 	IdleTimeout        int            `json:"idletimeout"`
@@ -44,10 +42,8 @@ type Config struct {
 var defaultConfig = Config{
 	ServerName:         "example.com",
 	NoDelay:            false,
-	ReadBuffer:         0,   // system default
-	WriteBuffer:        0,   // system default
 	Linger:             -1,  // system default
-	KeepAlive:          60,  // every 30s
+	KeepAlive:          25,  // every 25s
 	IdleTimeout:        900, // 15min
 	AcceptBacklog:      16,
 	SessionWindow:      256 * 1024, // 256 KiB
@@ -57,17 +53,10 @@ var defaultConfig = Config{
 
 // SetConnParams sets TCP params
 func (c *Config) SetConnParams(conn net.Conn) {
-	tcpConn := conn.(*net.TCPConn)
-	if tcpConn != nil {
+	if tcpConn := conn.(*net.TCPConn); tcpConn != nil {
 		_ = tcpConn.SetNoDelay(c.NoDelay)
 		_ = tcpConn.SetLinger(c.Linger)
 		_ = tcpConn.SetKeepAlive(false) // we have an encrypted one
-		if c.ReadBuffer > 0 {
-			_ = tcpConn.SetReadBuffer(c.ReadBuffer)
-		}
-		if c.WriteBuffer > 0 {
-			_ = tcpConn.SetWriteBuffer(c.WriteBuffer)
-		}
 	}
 }
 
