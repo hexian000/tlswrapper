@@ -265,17 +265,10 @@ func (s *Server) Shutdown() error {
 	return nil
 }
 
-// Load or reload configuration
-func (s *Server) LoadConfig(cfg *Config) error {
-	tlscfg := cfg.NewTLSConfig()
-	if tlscfg == nil {
-		return errors.New("TLS config error")
+func (s *Server) closeChangedListener(cfg *Config) {
+	if s.Config == nil {
+		return
 	}
-	muxcfg := cfg.NewMuxConfig()
-	if muxcfg == nil {
-		return errors.New("mux config error")
-	}
-
 	for _, server := range s.Server {
 		found := false
 		for _, newServer := range cfg.Server {
@@ -306,7 +299,19 @@ func (s *Server) LoadConfig(cfg *Config) error {
 			delete(s.listeners, addr)
 		}
 	}
+}
 
+// Load or reload configuration
+func (s *Server) LoadConfig(cfg *Config) error {
+	tlscfg := cfg.NewTLSConfig()
+	if tlscfg == nil {
+		return errors.New("TLS config error")
+	}
+	muxcfg := cfg.NewMuxConfig()
+	if muxcfg == nil {
+		return errors.New("mux config error")
+	}
+	s.closeChangedListener(cfg)
 	s.Config = cfg
 	s.tlscfg = cfg.NewTLSConfig()
 	s.muxcfg = cfg.NewMuxConfig()
