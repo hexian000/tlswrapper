@@ -39,12 +39,8 @@ type Server struct {
 }
 
 // NewServer creates a server object
-func NewServer(cfg *Config) *Server {
+func NewServer() *Server {
 	return &Server{
-		mu:       sync.Mutex{},
-		Config:   cfg,
-		tlscfg:   cfg.NewTLSConfig(),
-		muxcfg:   cfg.NewMuxConfig(),
 		sessions: make(map[*yamux.Session]sessionState),
 	}
 }
@@ -59,10 +55,10 @@ func (s *Server) connCopy(dst net.Conn, src net.Conn) {
 		if !errors.Is(err, net.ErrClosed) && !errors.Is(err, yamux.ErrStreamClosed) {
 			log.Println("stream error:", err)
 		}
-	} else {
-		if verbose {
-			log.Println("stream close:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
-		}
+		return
+	}
+	if verbose {
+		log.Println("stream close:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
 	}
 }
 
@@ -219,6 +215,13 @@ func (s *Server) checkIdle(session *yamux.Session) {
 	}
 }
 
+func (s *Server) closeListeners() {
+	for _, listener := range s.listeners {
+		_ = listener.Close()
+	}
+	s.listeners = nil
+}
+
 // Start the service
 func (s *Server) Start() error {
 	for _, server := range s.Server {
@@ -244,13 +247,7 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
-	log.Println("shutting down gracefully")
-	for _, listener := range s.listeners {
-		err := listener.Close()
-		if err != nil {
-			return err
-		}
-	}
+	s.closeListeners()
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -259,4 +256,21 @@ func (s *Server) Shutdown() error {
 		}
 	}()
 	return nil
+}
+
+// Load or reload configuration
+func (s *Server) LoadConfig(cfg *Config) error {
+	tlscfg := cfg.NewTLSConfig()
+	if tlscfg == nil {
+		return errors.New("TLS config error")
+	}
+	muxcfg := cfg.NewMuxConfig()
+	if muxcfg == nil {
+		return errors.New("mux config error")
+	}
+	s.Config = cfg
+	s.tlscfg = cfg.NewTLSConfig()
+	s.muxcfg = cfg.NewMuxConfig()
+	s.closeListeners()
+	return s.Start()
 }

@@ -7,13 +7,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"syscall"
 )
 
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-func parseFlags() *Config {
+func parseFlags() string {
 	var flagHelp bool
 	var flagConfig string
 	flag.BoolVar(&flagHelp, "h", false, "help")
@@ -22,13 +23,16 @@ func parseFlags() *Config {
 	flag.Parse()
 	if flagHelp || flagConfig == "" {
 		flag.Usage()
-		os.Exit(0)
+		os.Exit(1)
 	}
+	return flagConfig
+}
 
+func readConfig(path string) *Config {
 	if verbose {
-		log.Println("read config:", flagConfig)
+		log.Println("read config:", path)
 	}
-	b, err := ioutil.ReadFile(flagConfig)
+	b, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.Fatalln("read config:", err)
 	}
@@ -40,17 +44,36 @@ func parseFlags() *Config {
 }
 
 func main() {
-	cfg := parseFlags()
+	path := parseFlags()
+	cfg := readConfig(path)
 	log.Printf("starting server...\n")
-	server := NewServer(cfg)
+	server := NewServer()
+	if err := server.LoadConfig(cfg); err != nil {
+		log.Fatalln(err)
+	}
 	if err := server.Start(); err != nil {
 		log.Fatalln(err)
 	}
 
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, os.Interrupt)
-	<-ch
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	for {
+		sig := <-ch
+		if verbose {
+			log.Println("got signal ", sig)
+		}
+		if sig != syscall.SIGHUP {
+			break
+		}
+		// reload
+		log.Println("reloading configurations")
+		cfg := readConfig(path)
+		if err := server.LoadConfig(cfg); err != nil {
+			log.Println(err)
+		}
+	}
 
+	log.Println("shutting down gracefully")
 	if err := server.Shutdown(); err != nil {
 		log.Println(err)
 	}

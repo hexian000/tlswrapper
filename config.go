@@ -75,17 +75,20 @@ func (c *Config) SetConnParams(conn net.Conn) {
 func (c *Config) NewTLSConfig() *tls.Config {
 	cert, err := tls.LoadX509KeyPair(c.Certificate, c.PrivateKey)
 	if err != nil {
-		log.Fatalln("load local cert:", err)
+		log.Println("load local cert:", err)
+		return nil
 	}
 	certPool := x509.NewCertPool()
 	for _, path := range c.AuthorizedCerts {
 		certBytes, err := ioutil.ReadFile(path)
 		if err != nil {
-			log.Fatalln("read authorized certs:", path, err)
+			log.Println("read authorized certs:", path, err)
+			return nil
 		}
 		ok := certPool.AppendCertsFromPEM(certBytes)
 		if !ok {
-			log.Fatalln("append authorized certs:", path)
+			log.Println("append authorized certs:", path)
+			return nil
 		}
 	}
 	return &tls.Config{
