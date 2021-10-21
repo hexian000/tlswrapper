@@ -35,6 +35,7 @@ type Config struct {
 	IdleTimeout        int            `json:"idletimeout"`
 	AcceptBacklog      int            `json:"backlog"`
 	SessionWindow      uint32         `json:"window"`
+	ConnectTimeout     int            `json:"connecttimeout"`
 	WriteTimeout       int            `json:"writetimeout"`
 	StreamCloseTimeout int            `json:"streamclosetimeout"`
 }
@@ -47,6 +48,7 @@ var defaultConfig = Config{
 	IdleTimeout:        900, // 15min
 	AcceptBacklog:      16,
 	SessionWindow:      256 * 1024, // 256 KiB
+	ConnectTimeout:     15,
 	WriteTimeout:       30,
 	StreamCloseTimeout: 60,
 }
@@ -93,15 +95,10 @@ func (c *Config) NewTLSConfig() *tls.Config {
 
 // NewMuxConfig creates yamux.Config
 func (c *Config) NewMuxConfig() *yamux.Config {
-	enableKeepAlive := c.KeepAlive > 0
-	// A temporary workaround for passing yamux.VerifyConfig
-	if !enableKeepAlive {
-		c.KeepAlive = 30
-	}
 	return &yamux.Config{
 		AcceptBacklog:          c.AcceptBacklog,
-		EnableKeepAlive:        enableKeepAlive,
-		KeepAliveInterval:      time.Duration(c.KeepAlive) * time.Second,
+		EnableKeepAlive:        false,
+		KeepAliveInterval:      30,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
 		MaxStreamWindowSize:    c.SessionWindow,
 		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,

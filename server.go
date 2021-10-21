@@ -30,6 +30,7 @@ type sessionState struct {
 // Server object
 type Server struct {
 	mu sync.Mutex
+	wg sync.WaitGroup
 	*Config
 
 	tlscfg *tls.Config
@@ -37,17 +38,21 @@ type Server struct {
 
 	listeners map[string]net.Listener
 	sessions  map[*yamux.Session]sessionState
+
+	shutdownCh chan struct{}
 }
 
 // NewServer creates a server object
 func NewServer() *Server {
 	return &Server{
-		listeners: make(map[string]net.Listener),
-		sessions:  make(map[*yamux.Session]sessionState),
+		listeners:  make(map[string]net.Listener),
+		sessions:   make(map[*yamux.Session]sessionState),
+		shutdownCh: make(chan struct{}),
 	}
 }
 
 func (s *Server) connCopy(dst net.Conn, src net.Conn) {
+	defer s.wg.Done()
 	defer func() {
 		_ = src.Close()
 		_ = dst.Close()
@@ -64,7 +69,8 @@ func (s *Server) connCopy(dst net.Conn, src net.Conn) {
 	}
 }
 
-func (s *Server) serveTLS(listener net.Listener, forwardAddr string) {
+func (s *Server) serveTLS(listener net.Listener, config *ServerConfig) {
+	defer s.wg.Done()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -81,49 +87,85 @@ func (s *Server) serveTLS(listener net.Listener, forwardAddr string) {
 		if verbose {
 			log.Println("new session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
 		}
-		go s.serveMux(session, forwardAddr)
+		s.wg.Add(1)
+		go s.serveMux(session, config)
 	}
 }
 
-func (s *Server) serveMux(session *yamux.Session, forwardAddr string) {
+func (s *Server) dialTCP(from net.Addr, conn net.Conn, config *ServerConfig) {
+	defer s.wg.Done()
+	timeout := time.Duration(s.ConnectTimeout) * time.Second
+	dial, err := net.DialTimeout(network, config.Forward, timeout)
+	if err != nil {
+		log.Println("dial TCP:", err)
+		_ = conn.Close()
+		return
+	}
+	if verbose {
+		log.Println("stream open:", from, "->", dial.RemoteAddr())
+	}
+	s.wg.Add(1)
+	go s.connCopy(conn, dial)
+	s.wg.Add(1)
+	go s.connCopy(dial, conn)
+}
+
+func (s *Server) serveMux(session *yamux.Session, config *ServerConfig) {
+	defer s.wg.Done()
 	for {
 		conn, err := session.Accept()
 		if err != nil {
 			return
 		}
-		dial, err := net.Dial(network, forwardAddr)
-		if err != nil {
-			log.Println("stream dial:", err)
-			_ = conn.Close()
-			continue
-		}
-		if verbose {
-			log.Println("stream open:", session.RemoteAddr(), "->", dial.RemoteAddr())
-		}
-		go s.connCopy(conn, dial)
-		go s.connCopy(dial, conn)
+		s.wg.Add(1)
+		go s.dialTCP(session.RemoteAddr(), conn, config)
 	}
 }
 
-func (s *Server) dialTLS(dialAddr string) (session *yamux.Session, err error) {
-	var dial net.Conn
-	dial, err = net.Dial(network, dialAddr)
+func (s *Server) dialTLS(addr string) (*yamux.Session, error) {
+	timeout := time.Duration(s.ConnectTimeout) * time.Second
+	dial, err := net.DialTimeout(network, addr, timeout)
 	if err != nil {
-		return
+		return nil, err
 	}
 	s.SetConnParams(dial)
 	dial = tls.Client(dial, s.tlscfg)
-	session, err = yamux.Client(dial, s.muxcfg)
+	session, err := yamux.Client(dial, s.muxcfg)
 	if err != nil {
 		_ = dial.Close()
-		return
+		return nil, err
 	}
-	log.Println("new session:", dial.LocalAddr(), "<->", dial.RemoteAddr())
+	rtt, err := session.Ping()
+	if err != nil {
+		_ = session.Close()
+		return nil, err
+	}
+	log.Println("new session:", dial.LocalAddr(), "<->", dial.RemoteAddr(), "rtt:", rtt)
+	s.wg.Add(1)
 	go s.checkIdle(session)
-	return
+	return session, nil
 }
 
-func (s *Server) serveTCP(listener net.Listener, dialAddr string) {
+func (s *Server) dialMux(session *yamux.Session, conn net.Conn, config *ClientConfig) {
+	defer s.wg.Done()
+	dial, err := session.Open()
+	if err != nil {
+		log.Println("dial mux:", err)
+		_ = session.Close()
+		_ = conn.Close()
+		return
+	}
+	if verbose {
+		log.Println("stream open:", conn.LocalAddr(), "->", session.RemoteAddr())
+	}
+	s.wg.Add(1)
+	go s.connCopy(conn, dial)
+	s.wg.Add(1)
+	go s.connCopy(dial, conn)
+}
+
+func (s *Server) serveTCP(listener net.Listener, config *ClientConfig) {
+	defer s.wg.Done()
 	var session *yamux.Session = nil
 
 	for {
@@ -132,70 +174,81 @@ func (s *Server) serveTCP(listener net.Listener, dialAddr string) {
 			return
 		}
 		for session == nil || session.IsClosed() {
-			session, err = s.dialTLS(dialAddr)
+			session, err = s.dialTLS(config.Dial)
 			if err != nil {
 				log.Println(err)
-				time.Sleep(redialDelay)
+				timer := time.NewTimer(redialDelay)
+				select {
+				case <-timer.C:
+					timer.Stop()
+				case <-s.shutdownCh:
+					timer.Stop()
+					_ = conn.Close()
+					return
+				}
 			}
 		}
-		dial, err := session.Open()
-		if err != nil {
-			log.Println("stream open:", err)
-			_ = session.Close()
-			_ = conn.Close()
-			continue
-		}
-		if verbose {
-			log.Println("stream open:", conn.LocalAddr(), "->", session.RemoteAddr())
-		}
-		go s.connCopy(conn, dial)
-		go s.connCopy(dial, conn)
+		s.wg.Add(1)
+		go s.dialMux(session, conn, config)
 	}
 }
 
 func (s *Server) checkIdle(session *yamux.Session) {
+	defer s.wg.Done()
 	if s.IdleTimeout <= 0 {
 		return
 	}
 	timeout := time.Duration(s.IdleTimeout) * time.Second
-	ticker := time.NewTicker(checkIdleInterval)
+	idleTicker := time.NewTicker(checkIdleInterval)
+	defer idleTicker.Stop()
+	pingTicker := time.NewTicker(time.Duration(s.KeepAlive) * time.Second)
+	defer pingTicker.Stop()
 	defer func() {
-		ticker.Stop()
-		_ = session.Close()
-		func() {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			delete(s.sessions, session)
-			log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
-		}()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		delete(s.sessions, session)
 	}()
 
 	lastTick := time.Now()
-	for range ticker.C {
-		if session.IsClosed() {
-			return
-		}
-		now := time.Now()
-		if now.Sub(lastTick) > timeout {
-			log.Println("system hang detected, tick time:", now.Sub(lastTick))
-			return
-		}
-		numStreams := session.NumStreams()
-		lastSeen := func(state sessionState) time.Time {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			lastState, ok := s.sessions[session]
-			if !ok || numStreams > 0 || lastState.numStreams > 0 {
-				s.sessions[session] = state
-				return state.lastSeen
+	for {
+		select {
+		case <-idleTicker.C:
+			now := time.Now()
+			if now.Sub(lastTick) > timeout {
+				log.Println("system hang detected, tick time:", now.Sub(lastTick))
+				_ = session.Close()
+				return
 			}
-			return lastState.lastSeen
-		}(sessionState{numStreams, now})
-		if numStreams > 0 || now.Sub(lastSeen) <= timeout {
-			continue
+			numStreams := session.NumStreams()
+			lastSeen := func(state sessionState) time.Time {
+				s.mu.Lock()
+				defer s.mu.Unlock()
+				lastState, ok := s.sessions[session]
+				if !ok || numStreams > 0 || lastState.numStreams > 0 {
+					s.sessions[session] = state
+					return state.lastSeen
+				}
+				return lastState.lastSeen
+			}(sessionState{numStreams, now})
+			if numStreams > 0 || now.Sub(lastSeen) <= timeout {
+				continue
+			}
+			log.Println("idle timeout expired:", session.LocalAddr(), "<x>", session.RemoteAddr())
+			_ = session.Close()
+			return
+		case <-pingTicker.C:
+			_, err := session.Ping()
+			if err != nil {
+				if err != yamux.ErrSessionShutdown {
+					log.Println("keepalive error:", err)
+				}
+				_ = session.Close()
+				return
+			}
+		case <-session.CloseChan():
+			log.Println("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
+			return
 		}
-		log.Println("idle timeout expired:", session.RemoteAddr())
-		return
 	}
 }
 
@@ -212,7 +265,8 @@ func (s *Server) Start() error {
 		}
 		s.listeners[addr] = listener
 		log.Println("TLS listen:", listener.Addr())
-		go s.serveTLS(listener, server.Forward)
+		s.wg.Add(1)
+		go s.serveTLS(listener, &server)
 	}
 	for _, client := range s.Client {
 		addr := client.Listen
@@ -225,13 +279,15 @@ func (s *Server) Start() error {
 		}
 		s.listeners[addr] = listener
 		log.Println("TCP listen:", listener.Addr())
-		go s.serveTCP(listener, client.Dial)
+		s.wg.Add(1)
+		go s.serveTCP(listener, &client)
 	}
 	return nil
 }
 
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
+	close(s.shutdownCh)
 	for addr, listener := range s.listeners {
 		log.Println("listener close:", addr)
 		_ = listener.Close()
@@ -244,6 +300,7 @@ func (s *Server) Shutdown() error {
 			_ = session.Close()
 		}
 	}()
+	s.wg.Wait()
 	return nil
 }
 
