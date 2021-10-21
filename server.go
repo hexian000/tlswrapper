@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"reflect"
 	"sync"
 	"time"
 
@@ -34,14 +35,15 @@ type Server struct {
 	tlscfg *tls.Config
 	muxcfg *yamux.Config
 
-	listeners []net.Listener
+	listeners map[string]net.Listener
 	sessions  map[*yamux.Session]sessionState
 }
 
 // NewServer creates a server object
 func NewServer() *Server {
 	return &Server{
-		sessions: make(map[*yamux.Session]sessionState),
+		listeners: make(map[string]net.Listener),
+		sessions:  make(map[*yamux.Session]sessionState),
 	}
 }
 
@@ -215,30 +217,31 @@ func (s *Server) checkIdle(session *yamux.Session) {
 	}
 }
 
-func (s *Server) closeListeners() {
-	for _, listener := range s.listeners {
-		_ = listener.Close()
-	}
-	s.listeners = nil
-}
-
 // Start the service
 func (s *Server) Start() error {
 	for _, server := range s.Server {
-		listener, err := net.Listen(network, server.Listen)
+		addr := server.Listen
+		if s.listeners[addr] != nil {
+			continue
+		}
+		listener, err := net.Listen(network, addr)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		s.listeners = append(s.listeners, listener)
+		s.listeners[addr] = listener
 		log.Println("TLS listen:", listener.Addr())
 		go s.serveTLS(listener, server.Forward)
 	}
 	for _, client := range s.Client {
-		listener, err := net.Listen(network, client.Listen)
+		addr := client.Listen
+		if s.listeners[addr] != nil {
+			continue
+		}
+		listener, err := net.Listen(network, addr)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		s.listeners = append(s.listeners, listener)
+		s.listeners[addr] = listener
 		log.Println("TCP listen:", listener.Addr())
 		go s.serveTCP(listener, client.Dial)
 	}
@@ -247,7 +250,11 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
-	s.closeListeners()
+	for addr, listener := range s.listeners {
+		log.Println("listener close:", addr)
+		_ = listener.Close()
+	}
+	s.listeners = make(map[string]net.Listener)
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -268,9 +275,40 @@ func (s *Server) LoadConfig(cfg *Config) error {
 	if muxcfg == nil {
 		return errors.New("mux config error")
 	}
+
+	for _, server := range s.Server {
+		found := false
+		for _, newServer := range cfg.Server {
+			if reflect.DeepEqual(server, newServer) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			addr := server.Listen
+			log.Println("listener close:", addr)
+			_ = s.listeners[addr].Close()
+			delete(s.listeners, addr)
+		}
+	}
+	for _, client := range s.Client {
+		found := false
+		for _, newClient := range cfg.Client {
+			if reflect.DeepEqual(client, newClient) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			addr := client.Listen
+			log.Println("listener close:", addr)
+			_ = s.listeners[addr].Close()
+			delete(s.listeners, addr)
+		}
+	}
+
 	s.Config = cfg
 	s.tlscfg = cfg.NewTLSConfig()
 	s.muxcfg = cfg.NewMuxConfig()
-	s.closeListeners()
-	return s.Start()
+	return nil
 }
