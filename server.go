@@ -219,6 +219,7 @@ func (s *Server) checkIdle(session *yamux.Session) {
 				_ = session.Close()
 				return
 			}
+			lastTick = now
 			numStreams := session.NumStreams()
 			lastSeen := func(state sessionState) time.Time {
 				s.mu.Lock()
