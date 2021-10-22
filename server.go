@@ -205,7 +205,6 @@ func (s *Server) checkIdle(session *yamux.Session) {
 		delete(s.sessions, session)
 	}()
 
-	keepAliveCount := 0
 	lastTick := time.Now()
 	for {
 		select {
@@ -235,18 +234,12 @@ func (s *Server) checkIdle(session *yamux.Session) {
 			}
 			rtt, err := session.Ping()
 			if err != nil {
-				if err == yamux.ErrTimeout && keepAliveCount < s.KeepAliveCountMax {
-					keepAliveCount++
-					slog.Verbose("keepalive error:", err, "count:", keepAliveCount)
-					continue
-				}
 				if err != yamux.ErrSessionShutdown {
-					slog.Error("keepalive error:", err)
+					slog.Error("keepalive:", session.LocalAddr(), "<x>", session.RemoteAddr(), "error:", err)
+					_ = session.Close()
 				}
-				_ = session.Close()
 				return
 			}
-			keepAliveCount = 0
 			slog.Verbose("keepalive:", session.LocalAddr(), "<->", session.RemoteAddr(), "rtt:", rtt)
 		case <-session.CloseChan():
 			slog.Info("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
