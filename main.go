@@ -4,77 +4,88 @@ import (
 	"encoding/json"
 	"flag"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"tlswrapper/slog"
 )
 
 func init() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	slog.Default().Level = slog.LevelInfo
 }
 
 func parseFlags() string {
 	var flagHelp bool
 	var flagConfig string
+	var flagVerbose bool
 	flag.BoolVar(&flagHelp, "h", false, "help")
 	flag.StringVar(&flagConfig, "c", "", "config file")
-	flag.BoolVar(&verbose, "v", false, "verbose mode")
+	flag.BoolVar(&flagVerbose, "v", false, "verbose mode")
 	flag.Parse()
 	if flagHelp || flagConfig == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
+	if flagVerbose {
+		slog.Default().Level = slog.LevelVerbose
+	}
 	return flagConfig
 }
 
-func readConfig(path string) *Config {
-	if verbose {
-		log.Println("read config:", path)
-	}
+func readConfig(path string) (*Config, error) {
+	slog.Verbose("read config:", path)
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Fatalln("read config:", err)
+		return nil, err
 	}
 	cfg := defaultConfig
 	if err := json.Unmarshal(b, &cfg); err != nil {
-		log.Fatalln("parse config:", err)
+		return nil, err
 	}
-	return &cfg
+	return &cfg, nil
 }
 
 func main() {
 	path := parseFlags()
-	cfg := readConfig(path)
-	log.Printf("starting server...\n")
+	cfg, err := readConfig(path)
+	if err != nil {
+		slog.Fatal("read config:", err)
+		os.Exit(1)
+	}
 	server := NewServer()
 	if err := server.LoadConfig(cfg); err != nil {
-		log.Fatalln(err)
+		slog.Fatal("load config:", err)
+		os.Exit(1)
 	}
+	slog.Info("server starting\n")
 	if err := server.Start(); err != nil {
-		log.Fatalln(err)
+		slog.Fatal("server start:", err)
+		os.Exit(1)
 	}
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	for {
 		sig := <-ch
-		if verbose {
-			log.Println("got signal ", sig)
-		}
+		slog.Verbose("got signal ", sig)
 		if sig != syscall.SIGHUP {
 			break
 		}
 		// reload
-		log.Println("reloading configurations")
-		cfg := readConfig(path)
+		slog.Info("reloading configurations")
+		cfg, err := readConfig(path)
+		if err != nil {
+			slog.Error("read config:", err)
+			continue
+		}
 		if err := server.LoadConfig(cfg); err != nil {
-			log.Println(err)
+			slog.Error("load config:", err)
 		}
 	}
 
-	log.Println("shutting down gracefully")
+	slog.Info("shutting down gracefully")
 	if err := server.Shutdown(); err != nil {
-		log.Println(err)
+		slog.Fatal("server shutdown:", err)
+		os.Exit(1)
 	}
 }
