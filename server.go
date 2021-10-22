@@ -17,10 +17,7 @@ const network = "tcp"
 
 var verbose = false
 
-const (
-	redialDelay       = 5 * time.Second
-	checkIdleInterval = 10 * time.Second
-)
+const redialDelay = 5 * time.Second
 
 type sessionState struct {
 	numStreams int
@@ -208,20 +205,19 @@ func (s *Server) checkIdle(session *yamux.Session) {
 		return
 	}
 	timeout := time.Duration(s.IdleTimeout) * time.Second
-	idleTicker := time.NewTicker(checkIdleInterval)
-	defer idleTicker.Stop()
-	pingTicker := time.NewTicker(time.Duration(s.KeepAlive) * time.Second)
-	defer pingTicker.Stop()
+	ticker := time.NewTicker(time.Duration(s.KeepAlive) * time.Second)
+	defer ticker.Stop()
 	defer func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		delete(s.sessions, session)
 	}()
 
+	keepAliveCount := 0
 	lastTick := time.Now()
 	for {
 		select {
-		case <-idleTicker.C:
+		case <-ticker.C:
 			now := time.Now()
 			if now.Sub(lastTick) > timeout {
 				log.Println("system hang detected, tick time:", now.Sub(lastTick))
@@ -240,21 +236,24 @@ func (s *Server) checkIdle(session *yamux.Session) {
 				}
 				return lastState.lastSeen
 			}(sessionState{numStreams, now})
-			if numStreams > 0 || now.Sub(lastSeen) <= timeout {
-				continue
+			if numStreams == 0 && now.Sub(lastSeen) > timeout {
+				log.Println("idle timeout expired:", session.LocalAddr(), "<x>", session.RemoteAddr())
+				_ = session.Close()
+				return
 			}
-			log.Println("idle timeout expired:", session.LocalAddr(), "<x>", session.RemoteAddr())
-			_ = session.Close()
-			return
-		case <-pingTicker.C:
 			rtt, err := session.Ping()
 			if err != nil {
+				if err == yamux.ErrTimeout && keepAliveCount < s.KeepAliveCountMax {
+					keepAliveCount++
+					continue
+				}
 				if err != yamux.ErrSessionShutdown {
 					log.Println("keepalive error:", err)
 				}
 				_ = session.Close()
 				return
 			}
+			keepAliveCount = 0
 			if verbose {
 				log.Println("keepalive:", session.LocalAddr(), "<->", session.RemoteAddr(), "rtt:", rtt)
 			}

@@ -32,6 +32,7 @@ type Config struct {
 	NoDelay            bool           `json:"nodelay"`
 	Linger             int            `json:"linger"`
 	KeepAlive          int            `json:"keepalive"`
+	KeepAliveCountMax  int            `json:"keepalivecountmax"`
 	IdleTimeout        int            `json:"idletimeout"`
 	AcceptBacklog      int            `json:"backlog"`
 	SessionWindow      uint32         `json:"window"`
@@ -43,8 +44,9 @@ type Config struct {
 var defaultConfig = Config{
 	ServerName:         "example.com",
 	NoDelay:            false,
-	Linger:             -1,  // system default
-	KeepAlive:          25,  // every 25s
+	Linger:             -1, // system default
+	KeepAlive:          25, // every 25s
+	KeepAliveCountMax:  3,
 	IdleTimeout:        900, // 15min
 	AcceptBacklog:      16,
 	SessionWindow:      256 * 1024, // 256 KiB
