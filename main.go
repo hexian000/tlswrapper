@@ -48,6 +48,7 @@ func readConfig(path string) (*Config, error) {
 
 func setUDPLog(addr string) error {
 	if addr == "" {
+		slog.Default().Logger.SetOutput(os.Stderr)
 		return nil
 	}
 	conn, err := net.Dial("udp", addr)
