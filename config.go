@@ -39,6 +39,7 @@ type Config struct {
 	ConnectTimeout     int            `json:"connecttimeout"`
 	WriteTimeout       int            `json:"writetimeout"`
 	StreamCloseTimeout int            `json:"streamclosetimeout"`
+	UDPLog             string         `json:"udplog"`
 }
 
 var defaultConfig = Config{

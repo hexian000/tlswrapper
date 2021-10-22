@@ -148,7 +148,6 @@ func (s *Server) dialTLS(addr string) (*yamux.Session, error) {
 
 func (s *Server) dialMux(session *yamux.Session, conn net.Conn, config *ClientConfig) {
 	defer s.wg.Done()
-	slog.Verbose("dial mux:", session.RemoteAddr())
 	dial, err := session.Open()
 	if err != nil {
 		slog.Error("dial mux:", err)
