@@ -19,6 +19,8 @@ const (
 	LevelSilence
 )
 
+const ISO8601Milli = "2006-01-02T15:04:05.000Z07:00"
+
 var levelChar = [...]rune{
 	'V', 'D', 'I', 'W', 'E', 'F',
 }
@@ -41,105 +43,105 @@ func (l *Logger) output(calldepth int, level int, message string) {
 	now := time.Now()
 	_, file, line, ok := runtime.Caller(calldepth)
 	if !ok {
-		file, line = "<unknown>", 0
+		file, line = "???", 0
 	} else {
 		file = path.Base(file)
 	}
-	l.Printf("%c %s %s:%d %s\n", levelChar[level], now.Format(time.RFC3339Nano), file, line, message)
+	l.Printf("%c %s %s:%d %s", levelChar[level], now.Format(ISO8601Milli), file, line, message)
 }
 
 func (l *Logger) Verbose(v ...interface{}) {
-	l.output(2, LevelVerbose, fmt.Sprint(v...))
+	l.output(2, LevelVerbose, fmt.Sprintln(v...))
 }
 
 func (l *Logger) Verbosef(format string, v ...interface{}) {
-	l.output(2, LevelVerbose, fmt.Sprintf(format, v...))
+	l.output(2, LevelVerbose, fmt.Sprintf(format+"\n", v...))
 }
 
 func (l *Logger) Debug(v ...interface{}) {
-	l.output(2, LevelDebug, fmt.Sprint(v...))
+	l.output(2, LevelDebug, fmt.Sprintln(v...))
 }
 
 func (l *Logger) Debugf(format string, v ...interface{}) {
-	l.output(2, LevelDebug, fmt.Sprintf(format, v...))
+	l.output(2, LevelDebug, fmt.Sprintf(format+"\n", v...))
 }
 
 func (l *Logger) Info(v ...interface{}) {
-	l.output(2, LevelInfo, fmt.Sprint(v...))
+	l.output(2, LevelInfo, fmt.Sprintln(v...))
 }
 
 func (l *Logger) Infof(format string, v ...interface{}) {
-	l.output(2, LevelInfo, fmt.Sprintf(format, v...))
+	l.output(2, LevelInfo, fmt.Sprintf(format+"\n", v...))
 }
 
 func (l *Logger) Warning(v ...interface{}) {
-	l.output(2, LevelWarning, fmt.Sprint(v...))
+	l.output(2, LevelWarning, fmt.Sprintln(v...))
 }
 
 func (l *Logger) Warningf(format string, v ...interface{}) {
-	l.output(2, LevelWarning, fmt.Sprintf(format, v...))
+	l.output(2, LevelWarning, fmt.Sprintf(format+"\n", v...))
 }
 
 func (l *Logger) Error(v ...interface{}) {
-	l.output(2, LevelError, fmt.Sprint(v...))
+	l.output(2, LevelError, fmt.Sprintln(v...))
 }
 
 func (l *Logger) Errorf(format string, v ...interface{}) {
-	l.output(2, LevelError, fmt.Sprintf(format, v...))
+	l.output(2, LevelError, fmt.Sprintf(format+"\n", v...))
 }
 
 func (l *Logger) Fatal(v ...interface{}) {
-	l.output(2, LevelFatal, fmt.Sprint(v...))
+	l.output(2, LevelFatal, fmt.Sprintln(v...))
 }
 
 func (l *Logger) Fatalf(format string, v ...interface{}) {
-	l.output(2, LevelFatal, fmt.Sprintf(format, v...))
+	l.output(2, LevelFatal, fmt.Sprintf(format+"\n", v...))
 }
 
 func Verbose(v ...interface{}) {
-	std.output(2, LevelVerbose, fmt.Sprint(v...))
+	std.output(2, LevelVerbose, fmt.Sprintln(v...))
 }
 
 func Verbosef(format string, v ...interface{}) {
-	std.output(2, LevelVerbose, fmt.Sprintf(format, v...))
+	std.output(2, LevelVerbose, fmt.Sprintf(format+"\n", v...))
 }
 
 func Debug(v ...interface{}) {
-	std.output(2, LevelDebug, fmt.Sprint(v...))
+	std.output(2, LevelDebug, fmt.Sprintln(v...))
 }
 
 func Debugf(format string, v ...interface{}) {
-	std.output(2, LevelDebug, fmt.Sprintf(format, v...))
+	std.output(2, LevelDebug, fmt.Sprintf(format+"\n", v...))
 }
 
 func Info(v ...interface{}) {
-	std.output(2, LevelInfo, fmt.Sprint(v...))
+	std.output(2, LevelInfo, fmt.Sprintln(v...))
 }
 
 func Infof(format string, v ...interface{}) {
-	std.output(2, LevelInfo, fmt.Sprintf(format, v...))
+	std.output(2, LevelInfo, fmt.Sprintf(format+"\n", v...))
 }
 
 func Warning(v ...interface{}) {
-	std.output(2, LevelWarning, fmt.Sprint(v...))
+	std.output(2, LevelWarning, fmt.Sprintln(v...))
 }
 
 func Warningf(format string, v ...interface{}) {
-	std.output(2, LevelWarning, fmt.Sprintf(format, v...))
+	std.output(2, LevelWarning, fmt.Sprintf(format+"\n", v...))
 }
 
 func Error(v ...interface{}) {
-	std.output(2, LevelError, fmt.Sprint(v...))
+	std.output(2, LevelError, fmt.Sprintln(v...))
 }
 
 func Errorf(format string, v ...interface{}) {
-	std.output(2, LevelError, fmt.Sprintf(format, v...))
+	std.output(2, LevelError, fmt.Sprintf(format+"\n", v...))
 }
 
 func Fatal(v ...interface{}) {
-	std.output(2, LevelFatal, fmt.Sprint(v...))
+	std.output(2, LevelFatal, fmt.Sprintln(v...))
 }
 
 func Fatalf(format string, v ...interface{}) {
-	std.output(2, LevelFatal, fmt.Sprintf(format, v...))
+	std.output(2, LevelFatal, fmt.Sprintf(format+"\n", v...))
 }
