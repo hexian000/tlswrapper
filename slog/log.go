@@ -73,6 +73,7 @@ func (l *Logger) Output(calldepth int, level int, s string) {
 	buf := l.buf[:0]
 	buf = append(buf, levelChar[level], ' ')
 	buf = now.AppendFormat(buf, ISO8601Milli)
+	buf = append(buf, ' ')
 	buf = append(buf, file...)
 	buf = append(buf, ':')
 	buf = strconv.AppendInt(buf, int64(line), 10)
