@@ -283,8 +283,8 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
-	for addr, listener := range s.listeners {
-		slog.Info("listener close:", addr)
+	for _, listener := range s.listeners {
+		slog.Info("listener close:", listener.Addr())
 		_ = listener.Close()
 	}
 	close(s.shutdownCh)
