@@ -86,7 +86,7 @@ func main() {
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	for {
 		sig := <-ch
-		slog.Verbose("got signal ", sig)
+		slog.Verbose("got signal:", sig)
 		if sig != syscall.SIGHUP {
 			break
 		}
@@ -107,9 +107,9 @@ func main() {
 		slog.Info("config successfully reloaded")
 	}
 
-	slog.Info("shutting down gracefully")
 	if err := server.Shutdown(); err != nil {
 		slog.Fatal("server shutdown:", err)
 		os.Exit(1)
 	}
+	slog.Info("server stopped gracefully")
 }

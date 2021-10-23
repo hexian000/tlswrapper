@@ -292,11 +292,13 @@ func (s *Server) Shutdown() error {
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		slog.Infof("closing %d sessions", len(s.sessions))
 		for session := range s.sessions {
 			_ = session.Close()
 		}
 		s.sessions = nil
 	}()
+	slog.Info("waiting for unfinished pipes")
 	s.wg.Wait()
 	return nil
 }
