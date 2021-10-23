@@ -6,7 +6,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"strings"
 	"time"
+	"tlswrapper/slog"
 
 	"github.com/hashicorp/yamux"
 )
@@ -44,8 +46,8 @@ type Config struct {
 var defaultConfig = Config{
 	ServerName:         "example.com",
 	NoDelay:            false,
-	Linger:             -1, // system default
-	KeepAlive:          25, // every 25s
+	Linger:             -1,  // system default
+	KeepAlive:          25,  // every 25s
 	IdleTimeout:        900, // 15min
 	AcceptBacklog:      16,
 	SessionWindow:      256 * 1024, // 256 KiB
@@ -94,6 +96,23 @@ func (c *Config) NewTLSConfig() *tls.Config {
 	}
 }
 
+type LogWrapper struct {
+	*slog.Logger
+}
+
+func (w *LogWrapper) Write(p []byte) (n int, err error) {
+	msg := string(p)
+	switch true {
+	case strings.HasPrefix(msg, "[ERR] "):
+		w.Output(3, slog.LevelError, strings.TrimPrefix(msg, "[ERR] "))
+	case strings.HasPrefix(msg, "[WARN] "):
+		w.Output(3, slog.LevelWarning, strings.TrimPrefix(msg, "[WARN] "))
+	default:
+		w.Output(3, slog.LevelError, msg)
+	}
+	return len(p), nil
+}
+
 // NewMuxConfig creates yamux.Config
 func (c *Config) NewMuxConfig() *yamux.Config {
 	return &yamux.Config{
@@ -103,6 +122,6 @@ func (c *Config) NewMuxConfig() *yamux.Config {
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
 		MaxStreamWindowSize:    c.SessionWindow,
 		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
-		Logger:                 log.Default(),
+		Logger:                 log.New(&LogWrapper{slog.Default()}, "", 0),
 	}
 }
