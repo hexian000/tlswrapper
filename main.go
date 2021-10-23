@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	slog.Default().Level = slog.LevelInfo
+	slog.Default().SetLevel(slog.LevelInfo)
 }
 
 func parseFlags() string {
@@ -28,7 +28,7 @@ func parseFlags() string {
 		os.Exit(1)
 	}
 	if flagVerbose {
-		slog.Default().Level = slog.LevelVerbose
+		slog.Default().SetLevel(slog.LevelVerbose)
 	}
 	return flagConfig
 }
@@ -48,7 +48,7 @@ func readConfig(path string) (*Config, error) {
 
 func setUDPLog(addr string) error {
 	if addr == "" {
-		slog.Default().Logger.SetOutput(os.Stderr)
+		slog.Default().SetOutput(os.Stderr)
 		return nil
 	}
 	conn, err := net.Dial("udp", addr)
@@ -56,7 +56,7 @@ func setUDPLog(addr string) error {
 		return err
 	}
 	slog.Verbose("logging to", addr)
-	slog.Default().Logger.SetOutput(conn)
+	slog.Default().SetOutput(conn)
 	return nil
 }
 

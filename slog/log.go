@@ -2,10 +2,12 @@ package slog
 
 import (
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"path"
 	"runtime"
+	"strconv"
+	"sync"
 	"time"
 )
 
@@ -21,33 +23,66 @@ const (
 
 const ISO8601Milli = "2006-01-02T15:04:05.000Z07:00"
 
-var levelChar = [...]rune{
+var levelChar = [...]byte{
 	'V', 'D', 'I', 'W', 'E', 'F',
 }
 
 type Logger struct {
-	*log.Logger
-	Level int
+	out   io.Writer
+	mu    sync.Mutex
+	level int
+	buf   []byte
 }
 
-var std = &Logger{log.New(os.Stderr, "", 0), LevelVerbose}
+var std = &Logger{out: os.Stderr}
 
 func Default() *Logger {
 	return std
 }
 
-func (l *Logger) Output(calldepth int, level int, message string) {
-	if level < l.Level {
+func (l *Logger) SetLevel(level int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.level = level
+}
+
+func (l *Logger) SetOutput(out io.Writer) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.out = out
+}
+
+func (l *Logger) Output(calldepth int, level int, s string) {
+	now := time.Now()
+	if func() bool {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		return level < l.level
+	}() {
 		return
 	}
-	now := time.Now()
 	_, file, line, ok := runtime.Caller(calldepth)
 	if !ok {
 		file, line = "???", 0
 	} else {
 		file = path.Base(file)
 	}
-	l.Printf("%c %s %s:%d %s", levelChar[level], now.Format(ISO8601Milli), file, line, message)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	buf := l.buf[:0]
+	buf = append(buf, levelChar[level], ' ')
+	buf = now.AppendFormat(buf, ISO8601Milli)
+	buf = append(buf, file...)
+	buf = append(buf, ':')
+	buf = strconv.AppendInt(buf, int64(line), 10)
+	buf = append(buf, ' ')
+	buf = append(buf, s...)
+	if len(s) == 0 || s[len(s)-1] != '\n' {
+		buf = append(buf, '\n')
+	}
+	l.buf = buf
+	l.out.Write(buf)
 }
 
 func (l *Logger) Verbose(v ...interface{}) {
@@ -55,7 +90,7 @@ func (l *Logger) Verbose(v ...interface{}) {
 }
 
 func (l *Logger) Verbosef(format string, v ...interface{}) {
-	l.Output(2, LevelVerbose, fmt.Sprintf(format+"\n", v...))
+	l.Output(2, LevelVerbose, fmt.Sprintf(format, v...))
 }
 
 func (l *Logger) Debug(v ...interface{}) {
@@ -63,7 +98,7 @@ func (l *Logger) Debug(v ...interface{}) {
 }
 
 func (l *Logger) Debugf(format string, v ...interface{}) {
-	l.Output(2, LevelDebug, fmt.Sprintf(format+"\n", v...))
+	l.Output(2, LevelDebug, fmt.Sprintf(format, v...))
 }
 
 func (l *Logger) Info(v ...interface{}) {
@@ -71,7 +106,7 @@ func (l *Logger) Info(v ...interface{}) {
 }
 
 func (l *Logger) Infof(format string, v ...interface{}) {
-	l.Output(2, LevelInfo, fmt.Sprintf(format+"\n", v...))
+	l.Output(2, LevelInfo, fmt.Sprintf(format, v...))
 }
 
 func (l *Logger) Warning(v ...interface{}) {
@@ -79,7 +114,7 @@ func (l *Logger) Warning(v ...interface{}) {
 }
 
 func (l *Logger) Warningf(format string, v ...interface{}) {
-	l.Output(2, LevelWarning, fmt.Sprintf(format+"\n", v...))
+	l.Output(2, LevelWarning, fmt.Sprintf(format, v...))
 }
 
 func (l *Logger) Error(v ...interface{}) {
@@ -87,7 +122,7 @@ func (l *Logger) Error(v ...interface{}) {
 }
 
 func (l *Logger) Errorf(format string, v ...interface{}) {
-	l.Output(2, LevelError, fmt.Sprintf(format+"\n", v...))
+	l.Output(2, LevelError, fmt.Sprintf(format, v...))
 }
 
 func (l *Logger) Fatal(v ...interface{}) {
@@ -95,7 +130,7 @@ func (l *Logger) Fatal(v ...interface{}) {
 }
 
 func (l *Logger) Fatalf(format string, v ...interface{}) {
-	l.Output(2, LevelFatal, fmt.Sprintf(format+"\n", v...))
+	l.Output(2, LevelFatal, fmt.Sprintf(format, v...))
 }
 
 func Verbose(v ...interface{}) {
@@ -103,7 +138,7 @@ func Verbose(v ...interface{}) {
 }
 
 func Verbosef(format string, v ...interface{}) {
-	std.Output(2, LevelVerbose, fmt.Sprintf(format+"\n", v...))
+	std.Output(2, LevelVerbose, fmt.Sprintf(format, v...))
 }
 
 func Debug(v ...interface{}) {
@@ -111,7 +146,7 @@ func Debug(v ...interface{}) {
 }
 
 func Debugf(format string, v ...interface{}) {
-	std.Output(2, LevelDebug, fmt.Sprintf(format+"\n", v...))
+	std.Output(2, LevelDebug, fmt.Sprintf(format, v...))
 }
 
 func Info(v ...interface{}) {
@@ -119,7 +154,7 @@ func Info(v ...interface{}) {
 }
 
 func Infof(format string, v ...interface{}) {
-	std.Output(2, LevelInfo, fmt.Sprintf(format+"\n", v...))
+	std.Output(2, LevelInfo, fmt.Sprintf(format, v...))
 }
 
 func Warning(v ...interface{}) {
@@ -127,7 +162,7 @@ func Warning(v ...interface{}) {
 }
 
 func Warningf(format string, v ...interface{}) {
-	std.Output(2, LevelWarning, fmt.Sprintf(format+"\n", v...))
+	std.Output(2, LevelWarning, fmt.Sprintf(format, v...))
 }
 
 func Error(v ...interface{}) {
@@ -135,7 +170,7 @@ func Error(v ...interface{}) {
 }
 
 func Errorf(format string, v ...interface{}) {
-	std.Output(2, LevelError, fmt.Sprintf(format+"\n", v...))
+	std.Output(2, LevelError, fmt.Sprintf(format, v...))
 }
 
 func Fatal(v ...interface{}) {
@@ -143,5 +178,9 @@ func Fatal(v ...interface{}) {
 }
 
 func Fatalf(format string, v ...interface{}) {
-	std.Output(2, LevelFatal, fmt.Sprintf(format+"\n", v...))
+	std.Output(2, LevelFatal, fmt.Sprintf(format, v...))
+}
+
+func Output(calldepth int, level int, message string) {
+	std.Output(calldepth+1, level, message)
 }
