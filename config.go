@@ -101,14 +101,13 @@ type LogWrapper struct {
 }
 
 func (w *LogWrapper) Write(p []byte) (n int, err error) {
-	msg := string(p)
-	switch true {
-	case strings.HasPrefix(msg, "[ERR] "):
-		w.Output(3, slog.LevelError, strings.TrimPrefix(msg, "[ERR] "))
-	case strings.HasPrefix(msg, "[WARN] "):
-		w.Output(3, slog.LevelWarning, strings.TrimPrefix(msg, "[WARN] "))
-	default:
+	raw := string(p)
+	if msg := strings.TrimPrefix(raw, "[ERR] "); len(msg) != len(raw) {
 		w.Output(3, slog.LevelError, msg)
+	} else if msg := strings.TrimPrefix(raw, "[WARN] "); len(msg) != len(raw) {
+		w.Output(3, slog.LevelWarning, msg)
+	} else {
+		w.Output(3, slog.LevelError, raw)
 	}
 	return len(p), nil
 }
