@@ -118,7 +118,8 @@ func (s *Server) dialTCP(from net.Addr, conn net.Conn, config *ServerConfig) {
 
 func (s *Server) dialTLS(addr string) (*yamux.Session, error) {
 	slog.Verbose("dial TLS:", addr)
-	timeout := time.Duration(s.ConnectTimeout) * time.Second
+	setupTime := time.Now()
+	timeout := time.Duration(s.WriteTimeout) * time.Second
 	dial, err := net.DialTimeout(network, addr, timeout)
 	if err != nil {
 		return nil, err
@@ -135,7 +136,7 @@ func (s *Server) dialTLS(addr string) (*yamux.Session, error) {
 		_ = session.Close()
 		return nil, err
 	}
-	slog.Info("new session:", dial.LocalAddr(), "<->", dial.RemoteAddr(), "rtt:", rtt)
+	slog.Info("new session:", dial.LocalAddr(), "<->", dial.RemoteAddr(), "setup:", time.Since(setupTime), "rtt:", rtt)
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
