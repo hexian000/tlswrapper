@@ -287,7 +287,6 @@ func (s *Server) Shutdown() error {
 		slog.Info("listener close:", addr)
 		_ = listener.Close()
 	}
-	s.listeners = nil
 	close(s.shutdownCh)
 	func() {
 		s.mu.Lock()
@@ -296,7 +295,6 @@ func (s *Server) Shutdown() error {
 		for session := range s.sessions {
 			_ = session.Close()
 		}
-		s.sessions = nil
 	}()
 	slog.Info("waiting for unfinished pipes")
 	s.wg.Wait()
