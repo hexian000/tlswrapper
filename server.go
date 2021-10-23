@@ -76,11 +76,11 @@ func (s *Server) serveTLS(listener net.Listener, config *ServerConfig) {
 			slog.Error(err)
 			continue
 		}
+		slog.Verbose("new session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
 		func() {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			s.sessions[session] = sessionState{0, time.Now()}
-			slog.Verbose("new session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
 		}()
 		s.wg.Add(1)
 		go s.serveMux(session, config)
@@ -135,11 +135,11 @@ func (s *Server) dialTLS(addr string) (*yamux.Session, error) {
 		_ = session.Close()
 		return nil, err
 	}
+	slog.Info("new session:", dial.LocalAddr(), "<->", dial.RemoteAddr(), "rtt:", rtt)
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.sessions[session] = sessionState{0, time.Now()}
-		slog.Info("new session:", dial.LocalAddr(), "<->", dial.RemoteAddr(), "rtt:", rtt)
 	}()
 	s.wg.Add(1)
 	go s.checkIdle(session)
