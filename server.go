@@ -301,44 +301,14 @@ func (s *Server) Shutdown() error {
 	return nil
 }
 
-func (s *Server) closeChangedListener(cfg *Config) {
-	if s.Config == nil {
-		return
-	}
-	for _, server := range s.Server {
-		found := false
-		for _, newServer := range cfg.Server {
-			if reflect.DeepEqual(server, newServer) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			addr := server.Listen
-			slog.Info("listener close:", addr)
-			_ = s.listeners[addr].Close()
-			delete(s.listeners, addr)
-		}
-	}
-	for _, client := range s.Client {
-		found := false
-		for _, newClient := range cfg.Client {
-			if reflect.DeepEqual(client, newClient) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			addr := client.Listen
-			slog.Info("listener close:", addr)
-			_ = s.listeners[addr].Close()
-			delete(s.listeners, addr)
-		}
-	}
-}
-
 // Load or reload configuration
 func (s *Server) LoadConfig(cfg *Config) error {
+	if s.Config != nil {
+		if !reflect.DeepEqual(s.Config.Server, cfg.Server) ||
+			!reflect.DeepEqual(s.Config.Client, cfg.Client) {
+			slog.Warning("listener config changes are ignored")
+		}
+	}
 	tlscfg := cfg.NewTLSConfig()
 	if tlscfg == nil {
 		return errors.New("TLS config error")
@@ -347,7 +317,6 @@ func (s *Server) LoadConfig(cfg *Config) error {
 	if muxcfg == nil {
 		return errors.New("mux config error")
 	}
-	s.closeChangedListener(cfg)
 	s.Config = cfg
 	s.tlscfg = cfg.NewTLSConfig()
 	s.muxcfg = cfg.NewMuxConfig()
