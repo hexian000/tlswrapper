@@ -1,4 +1,3 @@
+/build
 /vendor
-/tlswrapper
-/certs
-/u.sh
+*.pem

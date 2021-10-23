@@ -1,5 +1,10 @@
 #!/bin/sh -e
 
+if [ $# = 0 ]; then
+    echo "usage: $0 peer1 [peer2 [...]]"
+    exit 1
+fi
+
 if [ -z "$SSLNAME" ]; then
     SSLNAME="example.com"
 fi
