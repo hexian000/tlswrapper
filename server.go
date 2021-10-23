@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"io"
@@ -70,8 +71,8 @@ func (s *Server) serveTLS(listener net.Listener, config *ServerConfig) {
 			return
 		}
 		s.SetConnParams(conn)
-		conn = tls.Server(conn, s.tlscfg)
-		session, err := yamux.Server(conn, s.muxcfg)
+		tlsConn := tls.Server(conn, s.tlscfg)
+		session, err := yamux.Server(tlsConn, s.muxcfg)
 		if err != nil {
 			slog.Error(err)
 			continue
@@ -118,25 +119,26 @@ func (s *Server) dialTCP(from net.Addr, conn net.Conn, config *ServerConfig) {
 
 func (s *Server) dialTLS(addr string) (*yamux.Session, error) {
 	slog.Verbose("dial TLS:", addr)
-	setupTime := time.Now()
-	timeout := time.Duration(s.WriteTimeout) * time.Second
-	dial, err := net.DialTimeout(network, addr, timeout)
+	startTime := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.ConnectTimeout)*time.Second)
+	defer cancel()
+	var dailer net.Dialer
+	conn, err := dailer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
-	s.SetConnParams(dial)
-	dial = tls.Client(dial, s.tlscfg)
-	session, err := yamux.Client(dial, s.muxcfg)
-	if err != nil {
-		_ = dial.Close()
+	s.SetConnParams(conn)
+	tlsConn := tls.Client(conn, s.tlscfg)
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		_ = tlsConn.Close()
 		return nil, err
 	}
-	rtt, err := session.Ping()
+	session, err := yamux.Client(tlsConn, s.muxcfg)
 	if err != nil {
-		_ = session.Close()
+		_ = tlsConn.Close()
 		return nil, err
 	}
-	slog.Info("new session:", dial.LocalAddr(), "<->", dial.RemoteAddr(), "setup:", time.Since(setupTime), "rtt:", rtt)
+	slog.Info("new session:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
