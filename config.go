@@ -101,13 +101,14 @@ type LogWrapper struct {
 }
 
 func (w *LogWrapper) Write(p []byte) (n int, err error) {
+	const calldepth = 4
 	raw := string(p)
 	if msg := strings.TrimPrefix(raw, "[ERR] "); len(msg) != len(raw) {
-		w.Output(3, slog.LevelError, msg)
+		w.Output(calldepth, slog.LevelError, msg)
 	} else if msg := strings.TrimPrefix(raw, "[WARN] "); len(msg) != len(raw) {
-		w.Output(3, slog.LevelWarning, msg)
+		w.Output(calldepth, slog.LevelWarning, msg)
 	} else {
-		w.Output(3, slog.LevelError, raw)
+		w.Output(calldepth, slog.LevelError, raw)
 	}
 	return len(p), nil
 }
