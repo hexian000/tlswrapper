@@ -55,7 +55,7 @@ func setUDPLog(addr string) error {
 	if err != nil {
 		return err
 	}
-	slog.Info("logging to", addr)
+	slog.Verbose("logging to", addr)
 	slog.Default().Logger.SetOutput(conn)
 	return nil
 }
