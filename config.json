@@ -1,0 +1,19 @@
+{
+  "server": [
+    {
+      "listen": "0.0.0.0:52010",
+      "forward": "127.0.0.1:8118"
+    }
+  ],
+  "client": [
+    {
+      "listen": "127.0.0.1:8119",
+      "dial": "example.com:52010"
+    }
+  ],
+  "cert": "peer1-cert.pem",
+  "key": "peer1-key.pem",
+  "authcerts": [
+    "peer2-cert.pem"
+  ]
+}
