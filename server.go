@@ -54,10 +54,8 @@ func (s *Server) connCopy(dst net.Conn, src net.Conn) {
 		_ = dst.Close()
 	}()
 	_, err := io.Copy(dst, src)
-	if err != nil {
-		if !errors.Is(err, net.ErrClosed) && !errors.Is(err, yamux.ErrStreamClosed) {
-			slog.Error("stream error:", err)
-		}
+	if err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, yamux.ErrStreamClosed) {
+		slog.Error("stream error:", err)
 		return
 	}
 	slog.Verbose("stream close:", src.RemoteAddr(), "-x>", dst.RemoteAddr())
@@ -237,7 +235,9 @@ func (s *Server) checkIdle(session *yamux.Session) {
 			}
 			rtt, err := session.Ping()
 			if err != nil {
-				if err != yamux.ErrSessionShutdown {
+				if errors.Is(err, yamux.ErrSessionShutdown) {
+					slog.Info("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
+				} else {
 					slog.Error("keepalive:", session.LocalAddr(), "<x>", session.RemoteAddr(), "error:", err)
 					_ = session.Close()
 				}
@@ -312,16 +312,12 @@ func (s *Server) LoadConfig(cfg *Config) error {
 			slog.Warning("listener config changes are ignored")
 		}
 	}
-	tlscfg := cfg.NewTLSConfig()
-	if tlscfg == nil {
-		return errors.New("TLS config error")
-	}
-	muxcfg := cfg.NewMuxConfig()
-	if muxcfg == nil {
-		return errors.New("mux config error")
+	tlscfg, err := cfg.NewTLSConfig()
+	if err != nil {
+		return err
 	}
 	s.Config = cfg
-	s.tlscfg = cfg.NewTLSConfig()
+	s.tlscfg = tlscfg
 	s.muxcfg = cfg.NewMuxConfig()
 	return nil
 }

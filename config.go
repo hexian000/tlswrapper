@@ -66,23 +66,20 @@ func (c *Config) SetConnParams(conn net.Conn) {
 }
 
 // NewTLSConfig creates tls.Config
-func (c *Config) NewTLSConfig() *tls.Config {
+func (c *Config) NewTLSConfig() (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(c.Certificate, c.PrivateKey)
 	if err != nil {
-		log.Println("load local cert:", err)
-		return nil
+		return nil, err
 	}
 	certPool := x509.NewCertPool()
 	for _, path := range c.AuthorizedCerts {
 		certBytes, err := ioutil.ReadFile(path)
 		if err != nil {
-			log.Println("read authorized certs:", path, err)
-			return nil
+			return nil, err
 		}
 		ok := certPool.AppendCertsFromPEM(certBytes)
 		if !ok {
-			log.Println("append authorized certs:", path)
-			return nil
+			return nil, err
 		}
 	}
 	return &tls.Config{
@@ -93,7 +90,7 @@ func (c *Config) NewTLSConfig() *tls.Config {
 		ServerName:   c.ServerName,
 		MinVersion:   tls.VersionTLS13,
 		MaxVersion:   tls.VersionTLS13,
-	}
+	}, nil
 }
 
 type LogWrapper struct {
