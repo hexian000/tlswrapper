@@ -9,11 +9,15 @@ if [ -z "$SSLNAME" ]; then
     SSLNAME="example.com"
 fi
 
+if [ -z "$RSABITS" ]; then
+    RSABITS="2048"
+fi
+
 while [ -n "$1" ]; do
     NAME="$1"
     echo "+ ${NAME}"
 
-    openssl req -newkey rsa:8192 \
+    openssl req -newkey "rsa:${RSABITS}" \
         -new -nodes -x509 \
         -days 36500 \
         -out "${NAME}-cert.pem" \
