@@ -46,7 +46,7 @@ type Config struct {
 var defaultConfig = Config{
 	ServerName:         "example.com",
 	NoDelay:            false,
-	Linger:             -1,  // system default
+	Linger:             30,
 	KeepAlive:          25,  // every 25s
 	IdleTimeout:        900, // 15min
 	AcceptBacklog:      16,
@@ -112,10 +112,14 @@ func (w *LogWrapper) Write(p []byte) (n int, err error) {
 
 // NewMuxConfig creates yamux.Config
 func (c *Config) NewMuxConfig() *yamux.Config {
+	keepAliveInterval := time.Duration(c.KeepAlive) * time.Second
+	if c.KeepAlive <= 0 {
+		keepAliveInterval = 25 * time.Second
+	}
 	return &yamux.Config{
 		AcceptBacklog:          c.AcceptBacklog,
-		EnableKeepAlive:        false,
-		KeepAliveInterval:      30,
+		EnableKeepAlive:        c.KeepAlive > 0,
+		KeepAliveInterval:      keepAliveInterval,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
 		MaxStreamWindowSize:    c.SessionWindow,
 		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
