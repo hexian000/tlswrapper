@@ -17,7 +17,6 @@ func init() {
 	println("tlswrapper", version)
 	println("  https://github.com/hexian000/tlswrapper")
 	println()
-	slog.Default().SetLevel(slog.LevelInfo)
 }
 
 func parseFlags() string {
@@ -34,6 +33,8 @@ func parseFlags() string {
 	}
 	if flagVerbose {
 		slog.Default().SetLevel(slog.LevelVerbose)
+	} else {
+		slog.Default().SetLevel(slog.LevelInfo)
 	}
 	return flagConfig
 }

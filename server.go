@@ -50,21 +50,23 @@ func NewServer() *Server {
 }
 
 func (s *Server) newContext(timeout time.Duration) context.Context {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	s.contexts[ctx] = cancel
 	return ctx
 }
 
 func (s *Server) deleteContext(ctx context.Context) {
-	func() func() {
+	if cancel := func() func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		cancel := s.contexts[ctx]
 		delete(s.contexts, ctx)
 		return cancel
-	}()()
+	}(); cancel != nil {
+		cancel()
+	}
 }
 
 func (s *Server) connCopy(dst net.Conn, src net.Conn) {
@@ -174,9 +176,7 @@ func (s *Server) delay(time.Duration) bool {
 	defer timer.Stop()
 	select {
 	case <-timer.C:
-		timer.Stop()
 	case <-s.shutdownCh:
-		timer.Stop()
 		return false
 	}
 	return true
