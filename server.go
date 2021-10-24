@@ -166,7 +166,7 @@ func (s *Server) dialTCP(addr string) (net.Conn, error) {
 	return dialed, nil
 }
 
-func (s *Server) dialTLS(addr string, ctx context.Context) (*yamux.Session, error) {
+func (s *Server) dialTLS(addr string, tlscfg *tls.Config, ctx context.Context) (*yamux.Session, error) {
 	slog.Verbose("dial TLS:", addr)
 	startTime := time.Now()
 	var dailer net.Dialer
@@ -175,7 +175,7 @@ func (s *Server) dialTLS(addr string, ctx context.Context) (*yamux.Session, erro
 		return nil, err
 	}
 	s.SetConnParams(conn)
-	tlsConn := tls.Client(conn, s.tlscfg)
+	tlsConn := tls.Client(conn, tlscfg)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		_ = tlsConn.Close()
 		return nil, err
@@ -191,14 +191,14 @@ func (s *Server) dialTLS(addr string, ctx context.Context) (*yamux.Session, erro
 	return session, nil
 }
 
-func (s *Server) tryDialTLS(addr string) (*yamux.Session, bool) {
+func (s *Server) tryDialTLS(addr string, tlscfg *tls.Config) (*yamux.Session, bool) {
 	ctx := s.newContext(time.Duration(s.ConnectTimeout) * time.Second)
 	if ctx == nil {
 		return nil, false
 	}
 	defer s.deleteContext(ctx)
 
-	session, err := s.dialTLS(addr, ctx)
+	session, err := s.dialTLS(addr, tlscfg, ctx)
 	if err == nil {
 		return session, false
 	}
@@ -214,7 +214,7 @@ func (s *Server) tryDialTLS(addr string) (*yamux.Session, bool) {
 	return nil, true
 }
 
-func (s *Server) serveTCP(listener net.Listener, config *ClientConfig) {
+func (s *Server) serveTCP(listener net.Listener, tlscfg *tls.Config, config *ClientConfig) {
 	defer s.wg.Done()
 	var mux *yamux.Session = nil
 
@@ -225,7 +225,7 @@ func (s *Server) serveTCP(listener net.Listener, config *ClientConfig) {
 		}
 		for mux == nil || mux.IsClosed() {
 			var retry bool
-			mux, retry = s.tryDialTLS(config.Dial)
+			mux, retry = s.tryDialTLS(config.Dial, tlscfg)
 			if mux == nil && !retry {
 				_ = accepted.Close()
 				return
@@ -302,7 +302,6 @@ func (s *Server) watchSession(session *yamux.Session) {
 	select {
 	case <-session.CloseChan():
 	case <-s.shutdownCh:
-		_ = session.GoAway()
 		_ = session.Close()
 	}
 }
@@ -328,6 +327,10 @@ func (s *Server) Start() error {
 		if s.listeners[addr] != nil {
 			continue
 		}
+		tlscfg, err := s.NewTLSConfig(client.ServerName)
+		if err != nil {
+			return err
+		}
 		listener, err := net.Listen(network, addr)
 		if err != nil {
 			return err
@@ -335,7 +338,7 @@ func (s *Server) Start() error {
 		s.listeners[addr] = listener
 		slog.Info("TCP listen:", listener.Addr())
 		s.wg.Add(1)
-		go s.serveTCP(listener, &s.Client[i])
+		go s.serveTCP(listener, tlscfg, &s.Client[i])
 	}
 	return nil
 }
@@ -369,7 +372,7 @@ func (s *Server) LoadConfig(cfg *Config) error {
 			slog.Warning("listener config changes are ignored")
 		}
 	}
-	tlscfg, err := cfg.NewTLSConfig()
+	tlscfg, err := cfg.NewTLSConfig("")
 	if err != nil {
 		return err
 	}

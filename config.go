@@ -19,8 +19,9 @@ type ServerConfig struct {
 }
 
 type ClientConfig struct {
-	Listen string `json:"listen"`
-	Dial   string `json:"dial"`
+	ServerName string `json:"sni"`
+	Listen     string `json:"listen"`
+	Dial       string `json:"dial"`
 }
 
 // Config file
@@ -66,7 +67,10 @@ func (c *Config) SetConnParams(conn net.Conn) {
 }
 
 // NewTLSConfig creates tls.Config
-func (c *Config) NewTLSConfig() (*tls.Config, error) {
+func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
+	if sni == "" {
+		sni = c.ServerName
+	}
 	cert, err := tls.LoadX509KeyPair(c.Certificate, c.PrivateKey)
 	if err != nil {
 		return nil, err
@@ -87,7 +91,7 @@ func (c *Config) NewTLSConfig() (*tls.Config, error) {
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    certPool,
 		RootCAs:      certPool,
-		ServerName:   c.ServerName,
+		ServerName:   sni,
 		MinVersion:   tls.VersionTLS13,
 		MaxVersion:   tls.VersionTLS13,
 	}, nil
