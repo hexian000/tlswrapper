@@ -11,7 +11,12 @@ import (
 	"tlswrapper/slog"
 )
 
+var version = "development build"
+
 func init() {
+	println("tlswrapper", version)
+	println("  https://github.com/hexian000/tlswrapper")
+	println()
 	slog.Default().SetLevel(slog.LevelInfo)
 }
 
