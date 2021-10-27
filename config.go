@@ -40,6 +40,7 @@ type Config struct {
 	SessionWindow      uint32         `json:"window"`
 	ConnectTimeout     int            `json:"connecttimeout"`
 	WriteTimeout       int            `json:"writetimeout"`
+	StreamOpenTimeout  int            `json:"streamopentimeout"`
 	StreamCloseTimeout int            `json:"streamclosetimeout"`
 	UDPLog             string         `json:"udplog"`
 }
@@ -48,13 +49,14 @@ var defaultConfig = Config{
 	ServerName:         "example.com",
 	NoDelay:            false,
 	Linger:             30,
-	KeepAlive:          25,  // every 25s
+	KeepAlive:          15,  // every 15s
 	IdleTimeout:        900, // 15min
 	AcceptBacklog:      16,
 	SessionWindow:      256 * 1024, // 256 KiB
 	ConnectTimeout:     15,
 	WriteTimeout:       30,
-	StreamCloseTimeout: 60,
+	StreamOpenTimeout:  15,
+	StreamCloseTimeout: 15,
 }
 
 // SetConnParams sets TCP params
@@ -118,7 +120,7 @@ func (w *LogWrapper) Write(p []byte) (n int, err error) {
 func (c *Config) NewMuxConfig() *yamux.Config {
 	keepAliveInterval := time.Duration(c.KeepAlive) * time.Second
 	if c.KeepAlive <= 0 {
-		keepAliveInterval = 25 * time.Second
+		keepAliveInterval = 15 * time.Second
 	}
 	return &yamux.Config{
 		AcceptBacklog:          c.AcceptBacklog,
@@ -126,6 +128,7 @@ func (c *Config) NewMuxConfig() *yamux.Config {
 		KeepAliveInterval:      keepAliveInterval,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
 		MaxStreamWindowSize:    c.SessionWindow,
+		StreamOpenTimeout:      time.Duration(c.StreamOpenTimeout) * time.Second,
 		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
 		Logger:                 log.New(&LogWrapper{slog.Default()}, "", 0),
 	}

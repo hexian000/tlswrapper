@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"reflect"
@@ -21,9 +22,9 @@ const (
 	idleCheckInterval = 10 * time.Second
 )
 
-type sessionState struct {
-	numStreams int
-	lastSeen   time.Time
+type sessionInfo struct {
+	session  *yamux.Session
+	lastSeen time.Time
 }
 
 // Server object
@@ -36,7 +37,7 @@ type Server struct {
 	muxcfg *yamux.Config
 
 	listeners map[string]net.Listener
-	sessions  map[*yamux.Session]sessionState
+	sessions  map[string]sessionInfo
 	contexts  map[context.Context]func()
 
 	shutdownCh chan struct{}
@@ -46,7 +47,7 @@ type Server struct {
 func NewServer() *Server {
 	return &Server{
 		listeners:  make(map[string]net.Listener),
-		sessions:   make(map[*yamux.Session]sessionState),
+		sessions:   make(map[string]sessionInfo),
 		contexts:   make(map[context.Context]func()),
 		shutdownCh: make(chan struct{}),
 	}
@@ -93,7 +94,7 @@ func (s *Server) pipe(accepted net.Conn, dialed net.Conn) {
 		}()
 		_, err := io.Copy(dst, src)
 		if err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, yamux.ErrStreamClosed) {
-			slog.Error("stream error:", err)
+			slog.Verbose("stream error:", err)
 			return
 		}
 		slog.Verbose("stream close:", accepted.LocalAddr(), "-x>", dialed.RemoteAddr())
@@ -118,16 +119,11 @@ func (s *Server) serveTLS(listener net.Listener, config *ServerConfig) {
 			slog.Error(err)
 			continue
 		}
-		slog.Verbose("accept session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
-		func() {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			s.sessions[session] = sessionState{0, time.Now()}
-		}()
+		slog.Info("accept session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
 		s.wg.Add(1)
 		go s.serveMux(session, config)
 		s.wg.Add(1)
-		go s.watchSession(session)
+		go s.watchSession(fmt.Sprintf("%p", session), session)
 	}
 }
 
@@ -136,6 +132,7 @@ func (s *Server) serveMux(session *yamux.Session, config *ServerConfig) {
 	for {
 		accepted, err := session.Accept()
 		if err != nil {
+			_ = session.Close()
 			return
 		}
 		s.wg.Add(1)
@@ -187,7 +184,7 @@ func (s *Server) dialTLS(addr string, tlscfg *tls.Config, ctx context.Context) (
 	}
 	slog.Info("dial session:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
 	s.wg.Add(1)
-	go s.watchSession(session)
+	go s.watchSession(addr, session)
 	return session, nil
 }
 
@@ -202,7 +199,7 @@ func (s *Server) tryDialTLS(addr string, tlscfg *tls.Config) (*yamux.Session, bo
 	if err == nil {
 		return session, false
 	}
-	slog.Warning(err)
+	slog.Warning("dial TLS:", err)
 
 	timer := time.NewTimer(redialDelay)
 	defer timer.Stop()
@@ -242,62 +239,68 @@ func (s *Server) serveTCP(listener net.Listener, tlscfg *tls.Config, config *Cli
 	}
 }
 
-func (s *Server) checkIdle(session *yamux.Session) {
-	defer s.wg.Done()
+func (s *Server) closeAllSessions() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, item := range s.sessions {
+		_ = item.session.Close()
+	}
+}
+
+func (s *Server) checkIdle() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	timeout := time.Duration(s.IdleTimeout) * time.Second
+	for _, item := range s.sessions {
+		numStreams := item.session.NumStreams()
+		if numStreams > 0 {
+			item.lastSeen = time.Now()
+			continue
+		}
+		if time.Since(item.lastSeen) > timeout {
+			slog.Info("idle timeout expired:", item.session.LocalAddr(), "<x>", item.session.RemoteAddr())
+			_ = item.session.Close()
+		}
+	}
+}
+
+func (s *Server) watchdog() {
+	defer s.wg.Done()
 	ticker := time.NewTicker(idleCheckInterval)
 	defer ticker.Stop()
-
 	lastTick := time.Now()
 	for {
 		select {
 		case <-ticker.C:
 			now := time.Now()
-			if now.Sub(lastTick) > timeout {
+			if now.Sub(lastTick) > 2*idleCheckInterval {
 				slog.Warning("system hang detected, tick time:", now.Sub(lastTick))
-				_ = session.Close()
+				s.closeAllSessions()
 				return
 			}
 			lastTick = now
-			numStreams := session.NumStreams()
-			lastSeen := func(state sessionState) time.Time {
-				s.mu.Lock()
-				defer s.mu.Unlock()
-				lastState, ok := s.sessions[session]
-				if !ok || numStreams > 0 || lastState.numStreams > 0 {
-					s.sessions[session] = state
-					return state.lastSeen
-				}
-				return lastState.lastSeen
-			}(sessionState{numStreams, now})
-			if numStreams == 0 && now.Sub(lastSeen) > timeout {
-				slog.Info("idle timeout expired:", session.LocalAddr(), "<x>", session.RemoteAddr())
-				_ = session.Close()
-				return
+			if s.IdleTimeout > 0 {
+				s.checkIdle()
 			}
-		case <-session.CloseChan():
+		case <-s.shutdownCh:
 			return
 		}
 	}
 }
 
-func (s *Server) watchSession(session *yamux.Session) {
+func (s *Server) watchSession(name string, session *yamux.Session) {
 	defer s.wg.Done()
 	defer slog.Info("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		s.sessions[session] = sessionState{0, time.Now()}
+		s.sessions[name] = sessionInfo{session, time.Now()}
 	}()
 	defer func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		delete(s.sessions, session)
+		delete(s.sessions, name)
 	}()
-	if s.IdleTimeout > 0 {
-		s.wg.Add(1)
-		go s.checkIdle(session)
-	}
 
 	select {
 	case <-session.CloseChan():
@@ -340,6 +343,8 @@ func (s *Server) Start() error {
 		s.wg.Add(1)
 		go s.serveTCP(listener, tlscfg, &s.Client[i])
 	}
+	s.wg.Add(1)
+	go s.watchdog()
 	return nil
 }
 
