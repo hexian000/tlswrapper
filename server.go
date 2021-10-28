@@ -163,7 +163,7 @@ func (s *Server) dialTCP(addr string) (net.Conn, error) {
 	return dialed, nil
 }
 
-func (s *Server) dialTLS(addr string, tlscfg *tls.Config, ctx context.Context) (*yamux.Session, error) {
+func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (*yamux.Session, error) {
 	slog.Verbose("dial TLS:", addr)
 	startTime := time.Now()
 	var dailer net.Dialer
@@ -195,7 +195,7 @@ func (s *Server) tryDialTLS(addr string, tlscfg *tls.Config) (*yamux.Session, bo
 	}
 	defer s.deleteContext(ctx)
 
-	session, err := s.dialTLS(addr, tlscfg, ctx)
+	session, err := s.dialTLS(ctx, addr, tlscfg)
 	if err == nil {
 		return session, false
 	}

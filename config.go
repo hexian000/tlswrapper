@@ -13,11 +13,13 @@ import (
 	"github.com/hashicorp/yamux"
 )
 
+// ServerConfig contains configs for a TLS server
 type ServerConfig struct {
 	Listen  string `json:"listen"`
 	Forward string `json:"forward"`
 }
 
+// ClientConfig contains configs for a TLS client
 type ClientConfig struct {
 	ServerName string `json:"sni"`
 	Listen     string `json:"listen"`
@@ -99,11 +101,11 @@ func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
 	}, nil
 }
 
-type LogWrapper struct {
+type logWrapper struct {
 	*slog.Logger
 }
 
-func (w *LogWrapper) Write(p []byte) (n int, err error) {
+func (w *logWrapper) Write(p []byte) (n int, err error) {
 	const calldepth = 4
 	raw := string(p)
 	if msg := strings.TrimPrefix(raw, "[ERR] "); len(msg) != len(raw) {
@@ -130,6 +132,6 @@ func (c *Config) NewMuxConfig() *yamux.Config {
 		MaxStreamWindowSize:    c.SessionWindow,
 		StreamOpenTimeout:      time.Duration(c.StreamOpenTimeout) * time.Second,
 		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
-		Logger:                 log.New(&LogWrapper{slog.Default()}, "", 0),
+		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
 	}
 }
