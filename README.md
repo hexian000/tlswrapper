@@ -1,5 +1,7 @@
 # tlswrapper
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/hexian000/tlswrapper)](https://goreportcard.com/report/github.com/hexian000/tlswrapper)
+
 ## What for
 
 This proxy transmits any TCP services through multiplexed mTLS 1.3 tunnels.
