@@ -142,6 +142,7 @@ func (s *Server) serveMux(session *yamux.Session, config *ServerConfig) {
 			if err != nil {
 				_ = accepted.Close()
 				slog.Error("dial TCP:", err)
+				return
 			}
 			s.pipe(accepted, dialed)
 		}()
