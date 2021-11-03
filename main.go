@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"tlswrapper/daemon"
 	"tlswrapper/slog"
 )
 
@@ -87,6 +88,7 @@ func main() {
 		slog.Fatal("server start:", err)
 		os.Exit(1)
 	}
+	_, _ = daemon.Notify(daemon.Ready)
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -94,9 +96,11 @@ func main() {
 		sig := <-ch
 		slog.Verbose("got signal:", sig)
 		if sig != syscall.SIGHUP {
+			_, _ = daemon.Notify(daemon.Stopping)
 			break
 		}
 		// reload
+		_, _ = daemon.Notify(daemon.Reloading)
 		newCfg, err := readConfig(path)
 		if err != nil {
 			slog.Error("read config:", err)
@@ -110,6 +114,7 @@ func main() {
 			slog.Error("load config:", err)
 			continue
 		}
+		_, _ = daemon.Notify(daemon.Ready)
 		slog.Info("config successfully reloaded")
 	}
 
