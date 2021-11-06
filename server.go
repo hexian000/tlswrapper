@@ -164,82 +164,6 @@ func (s *Server) dialTCP(addr string) (net.Conn, error) {
 	return dialed, nil
 }
 
-func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (*yamux.Session, error) {
-	slog.Verbose("dial TLS:", addr)
-	startTime := time.Now()
-	var dailer net.Dialer
-	conn, err := dailer.DialContext(ctx, network, addr)
-	if err != nil {
-		return nil, err
-	}
-	s.SetConnParams(conn)
-	tlsConn := tls.Client(conn, tlscfg)
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		_ = tlsConn.Close()
-		return nil, err
-	}
-	session, err := yamux.Client(tlsConn, s.muxcfg)
-	if err != nil {
-		_ = tlsConn.Close()
-		return nil, err
-	}
-	slog.Info("dial session:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
-	s.wg.Add(1)
-	go s.watchSession(addr, session)
-	return session, nil
-}
-
-func (s *Server) tryDialTLS(addr string, tlscfg *tls.Config) (*yamux.Session, bool) {
-	ctx := s.newContext(time.Duration(s.ConnectTimeout) * time.Second)
-	if ctx == nil {
-		return nil, false
-	}
-	defer s.deleteContext(ctx)
-
-	session, err := s.dialTLS(ctx, addr, tlscfg)
-	if err == nil {
-		return session, false
-	}
-	slog.Warning("dial TLS:", err)
-
-	timer := time.NewTimer(redialDelay)
-	defer timer.Stop()
-	select {
-	case <-s.shutdownCh:
-		return nil, false
-	case <-timer.C:
-	}
-	return nil, true
-}
-
-func (s *Server) serveTCP(listener net.Listener, tlscfg *tls.Config, config *ClientConfig) {
-	defer s.wg.Done()
-	var mux *yamux.Session = nil
-
-	for {
-		accepted, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		for mux == nil || mux.IsClosed() {
-			var retry bool
-			mux, retry = s.tryDialTLS(config.Dial, tlscfg)
-			if mux == nil && !retry {
-				_ = accepted.Close()
-				return
-			}
-		}
-		dialed, err := mux.Open()
-		if err != nil {
-			slog.Error("dial mux:", err)
-			_ = accepted.Close()
-			_ = mux.Close()
-			continue
-		}
-		s.pipe(accepted, dialed)
-	}
-}
-
 func (s *Server) closeAllSessions() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -327,22 +251,35 @@ func (s *Server) Start() error {
 		go s.serveTLS(listener, &s.Server[i])
 	}
 	for i, client := range s.Client {
-		addr := client.Listen
-		if s.listeners[addr] != nil {
-			continue
-		}
 		tlscfg, err := s.NewTLSConfig(client.ServerName)
 		if err != nil {
 			return err
 		}
-		listener, err := net.Listen(network, addr)
-		if err != nil {
-			return err
+		c := newClientSession(s, tlscfg, &s.Client[i])
+		if addr := client.Listen; addr != "" && s.listeners[addr] == nil {
+			listener, err := net.Listen(network, addr)
+			if err != nil {
+				return err
+			}
+			s.listeners[addr] = listener
+			slog.Info("TCP listen:", listener.Addr())
+			s.wg.Add(1)
+			go c.serveTCP(listener)
 		}
-		s.listeners[addr] = listener
-		slog.Info("TCP listen:", listener.Addr())
-		s.wg.Add(1)
-		go s.serveTCP(listener, tlscfg, &s.Client[i])
+		for j, forward := range client.ProxyForwards {
+			addr := forward.Listen
+			if s.listeners[addr] != nil {
+				continue
+			}
+			listener, err := net.Listen(network, addr)
+			if err != nil {
+				return err
+			}
+			s.listeners[addr] = listener
+			slog.Info("  forward:", listener.Addr(), "->", forward.Forward)
+			s.wg.Add(1)
+			go c.serveForward(listener, &s.Client[i].ProxyForwards[j])
+		}
 	}
 	s.wg.Add(1)
 	go s.watchdog()

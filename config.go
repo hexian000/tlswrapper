@@ -19,11 +19,19 @@ type ServerConfig struct {
 	Forward string `json:"forward"`
 }
 
+// ForwardConfig contains configs for a HTTP proxy forward over
+// the client mux streams
+type ForwardConfig struct {
+	Listen  string `json:"listen"`
+	Forward string `json:"forward"`
+}
+
 // ClientConfig contains configs for a TLS client
 type ClientConfig struct {
-	ServerName string `json:"sni"`
-	Listen     string `json:"listen"`
-	Dial       string `json:"dial"`
+	ServerName    string          `json:"sni"`
+	Listen        string          `json:"listen"`
+	Dial          string          `json:"dial"`
+	ProxyForwards []ForwardConfig `json:"proxy"`
 }
 
 // Config file
