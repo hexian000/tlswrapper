@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/tlswrapper/proxy"
 	"github.com/hexian000/tlswrapper/slog"
 )
 
@@ -136,17 +137,28 @@ func (s *Server) serveMux(session *yamux.Session, config *ServerConfig) {
 			return
 		}
 		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			dialed, err := s.dialTCP(config.Forward)
-			if err != nil {
-				_ = accepted.Close()
-				slog.Error("dial TCP:", err)
-				return
-			}
-			s.pipe(accepted, dialed)
-		}()
+		go s.forward(accepted, config.Forward)
 	}
+}
+
+func (s *Server) forward(accepted net.Conn, address string) {
+	defer s.wg.Done()
+	if address == "" {
+		conn := proxy.Server(accepted)
+		if err := conn.Handshake(); err != nil {
+			_ = accepted.Close()
+			slog.Error("proxy:", err)
+			return
+		}
+		address = conn.Host()
+	}
+	dialed, err := s.dialTCP(address)
+	if err != nil {
+		_ = accepted.Close()
+		slog.Error("dial TCP:", err)
+		return
+	}
+	s.pipe(accepted, dialed)
 }
 
 func (s *Server) dialTCP(addr string) (net.Conn, error) {

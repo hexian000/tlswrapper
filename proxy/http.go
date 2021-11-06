@@ -92,6 +92,7 @@ func (c *Conn) serverHandshake() error {
 	if req.Method != http.MethodConnect {
 		return http.ErrNotSupported
 	}
+	c.host = req.Host
 	resp := &http.Response{
 		Status:        "200 OK",
 		StatusCode:    http.StatusOK,
