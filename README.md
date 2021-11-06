@@ -6,7 +6,7 @@
 
 This proxy transmits any TCP services through multiplexed mTLS 1.3 tunnels.
 
-## Authenticate Model
+## Authentication Model
 
 Like SSH, each peer needs to generate a key pair(certificate + private key). Only certificate in a peer's authorized certificates list can communicate with this peer.
 
@@ -16,26 +16,27 @@ By default, all certificates are self-signed. This will not reduce security.
 
 ## Quick Start
 
-### Generate key pair (or use your own):
+### 1. Generate key pair (or use your own):
 
 ```sh
 ./gencerts.sh peer1 peer2
 ```
 
-### Create "config.json" per peer
+### 2. Create "config.json" per peer
+
+#### Peer1
 
 ```json
 {
   "server": [
     {
-      "listen": "0.0.0.0:52010",
-      "forward": "127.0.0.1:8118"
+      "listen": "0.0.0.0:52010"
     }
   ],
   "client": [
     {
-      "listen": "127.0.0.1:8119",
-      "dial": "example.com:52010"
+      "listen": "127.0.0.1:8080",
+      "dial": "peer2.example.com:52010"
     }
   ],
   "cert": "peer1-cert.pem",
@@ -46,6 +47,31 @@ By default, all certificates are self-signed. This will not reduce security.
 }
 ```
 
+#### Peer2
+
+```json
+{
+  "server": [
+    {
+      "listen": "0.0.0.0:52010"
+    }
+  ],
+  "client": [
+    {
+      "listen": "127.0.0.1:8080",
+      "dial": "peer1.example.com:52010"
+    }
+  ],
+  "cert": "peer2-cert.pem",
+  "key": "peer2-key.pem",
+  "authcerts": [
+    "peer1-cert.pem"
+  ]
+}
+```
+
+#### Options
+
 - "server": Listen for tunnel clients and forward to any TCP service
 - "client": Listen for TCP and forward through tunnel
 - "cert": Local certificate.
@@ -53,7 +79,7 @@ By default, all certificates are self-signed. This will not reduce security.
 - "authcerts": Local authorized certificates list.
 
 
-### Start
+### 3. Start
 
 ```sh
 ./tlswrapper -c config.json
