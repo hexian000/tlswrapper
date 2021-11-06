@@ -8,7 +8,13 @@
   "client": [
     {
       "listen": "127.0.0.1:8119",
-      "dial": "example.com:52010"
+      "dial": "example.com:52010",
+      "proxy": [
+        {
+          "listen": ":12345",
+          "forward": "127.0.0.1:12345"
+        }
+      ]
     }
   ],
   "cert": "peer1-cert.pem",
