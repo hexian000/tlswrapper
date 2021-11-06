@@ -75,14 +75,8 @@ func (c *clientSession) serveForward(listener net.Listener, config *ForwardConfi
 			_ = accepted.Close()
 			continue
 		}
-		conn, err := proxy.Client(dialed, config.Forward)
-		if err != nil {
-			_ = dialed.Close()
-			_ = accepted.Close()
-			slog.Errorf("forward failed: %s", err)
-			continue
-		}
-		c.s.pipe(accepted, conn)
+		dialed = proxy.Client(dialed, config.Forward)
+		c.s.pipe(accepted, dialed)
 	}
 }
 
