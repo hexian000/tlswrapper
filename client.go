@@ -80,6 +80,7 @@ func (c *clientSession) serveForward(listener net.Listener, config *ForwardConfi
 			_ = dialed.Close()
 			_ = accepted.Close()
 			slog.Errorf("forward failed: %s", err)
+			continue
 		}
 		c.s.pipe(accepted, conn)
 	}
