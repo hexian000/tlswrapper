@@ -2,9 +2,7 @@ package proxy
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -90,19 +88,21 @@ func (c *Conn) serverHandshake() error {
 		return err
 	}
 	if req.Method != http.MethodConnect {
+		resp := &http.Response{
+			StatusCode: http.StatusMethodNotAllowed,
+			ProtoMajor: 1,
+			ProtoMinor: 1,
+			Header:     make(http.Header),
+		}
+		_ = resp.Write(c.Conn)
 		return http.ErrNotSupported
 	}
 	c.host = req.Host
 	resp := &http.Response{
-		Status:        "200 OK",
-		StatusCode:    http.StatusOK,
-		Proto:         "HTTP/1.1",
-		ProtoMajor:    1,
-		ProtoMinor:    1,
-		Body:          io.NopCloser(bytes.NewReader([]byte{})),
-		ContentLength: 0,
-		Request:       req,
-		Header:        make(http.Header),
+		StatusCode: http.StatusOK,
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     make(http.Header),
 	}
 	err = resp.Write(c.Conn)
 	if err != nil {
