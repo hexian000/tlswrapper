@@ -10,9 +10,9 @@ import (
 	"reflect"
 	"sync"
 	"time"
-	"tlswrapper/slog"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/tlswrapper/slog"
 )
 
 const network = "tcp"

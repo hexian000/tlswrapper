@@ -8,8 +8,8 @@ import (
 	"net"
 	"strings"
 	"time"
-	"tlswrapper/slog"
 
+	"github.com/hexian000/tlswrapper/slog"
 	"github.com/hashicorp/yamux"
 )
 

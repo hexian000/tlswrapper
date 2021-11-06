@@ -5,10 +5,10 @@ import (
 	"errors"
 	"net"
 	"time"
-	"tlswrapper/proxy"
-	"tlswrapper/slog"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/tlswrapper/proxy"
+	"github.com/hexian000/tlswrapper/slog"
 )
 
 var errShutdown = errors.New("server is shutting down")

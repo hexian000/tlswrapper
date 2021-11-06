@@ -8,8 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"tlswrapper/daemon"
-	"tlswrapper/slog"
+
+	"github.com/hexian000/tlswrapper/daemon"
+	"github.com/hexian000/tlswrapper/slog"
 )
 
 var version = "dev-build"
