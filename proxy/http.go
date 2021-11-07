@@ -110,19 +110,6 @@ func (c *ClientConn) HandshakeContext(ctx context.Context) (ret error) {
 	return c.clientHandshake(handshakeCtx)
 }
 
-type Handler struct {
-	Connect http.Handler
-	Default http.Handler
-}
-
-func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req.Method == http.MethodConnect {
-		h.Connect.ServeHTTP(w, req)
-		return
-	}
-	h.Default.ServeHTTP(w, req)
-}
-
 type HijackedConn struct {
 	net.Conn
 	rd io.Reader

@@ -19,52 +19,40 @@ func (s *Server) serveHTTP(l net.Listener, config *ServerConfig) {
 		_ = l.Close()
 	}()
 	server := &http.Server{
-		Handler: s.newHandler(config),
+		Handler: newHandler(s, config),
 	}
 	_ = server.Serve(l)
 }
 
 const configHost = "config.tlswrapper.lan"
 
-func (s *Server) newBanner() string {
+type mainHandler struct {
+	*Server
+	mux *http.ServeMux
+}
+
+func (mainHandler) newBanner() string {
 	return fmt.Sprintf("%s\nserver time: %v\n\n", banner, time.Now())
 }
 
-type proxyHandler struct {
-	s *Server
+func (h *mainHandler) httpError(w http.ResponseWriter, err error, code int) {
+	http.Error(w, h.newBanner()+err.Error(), code)
 }
 
-func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	dialed, err := dialer.DialContext(req.Context(), network, req.Host)
-	if err != nil {
-		slog.Verbose("http:", err)
-		if err, ok := err.(net.Error); ok && err.Timeout() {
-			w.WriteHeader(http.StatusGatewayTimeout)
+func (h *mainHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method == http.MethodConnect {
+		h.ServeConnect(w, req)
+		return
+	}
+	if req.Host == configHost {
+		if h.mux != nil {
+			h.mux.ServeHTTP(w, req)
 		} else {
-			w.WriteHeader(http.StatusBadGateway)
+			w.WriteHeader(http.StatusNotFound)
 		}
-		_, _ = w.Write([]byte(h.s.newBanner() + err.Error() + "\n"))
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	accepted, err := proxy.Hijack(w)
-	if err != nil {
-		slog.Warning("http:", err)
-		return
-	}
-	h.s.forward(accepted, dialed)
-}
-
-type serverHandlers struct {
-	*Server
-}
-
-func (s *serverHandlers) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	host := req.URL.Hostname()
-	if host == configHost {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
 	if req.URL.Port() == "" {
 		host += ":80"
 	}
@@ -72,11 +60,10 @@ func (s *serverHandlers) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		slog.Verbose("http:", err)
 		if err, ok := err.(net.Error); ok && err.Timeout() {
-			w.WriteHeader(http.StatusGatewayTimeout)
+			h.httpError(w, err, http.StatusGatewayTimeout)
 		} else {
-			w.WriteHeader(http.StatusBadGateway)
+			h.httpError(w, err, http.StatusBadGateway)
 		}
-		_, _ = w.Write([]byte(s.newBanner() + err.Error() + "\n"))
 		return
 	}
 	accepted, err := proxy.Hijack(w)
@@ -92,10 +79,31 @@ func (s *serverHandlers) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		slog.Verbose("http:", err)
 		return
 	}
-	s.forward(accepted, dialed)
+	h.forward(accepted, dialed)
 }
 
-func (s *serverHandlers) handleStatus(respWriter http.ResponseWriter, req *http.Request) {
+func (h *mainHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
+	dialed, err := dialer.DialContext(req.Context(), network, req.Host)
+	if err != nil {
+		slog.Verbose("http:", err)
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			w.WriteHeader(http.StatusGatewayTimeout)
+		} else {
+			w.WriteHeader(http.StatusBadGateway)
+		}
+		_, _ = w.Write([]byte(h.newBanner() + err.Error() + "\n"))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	accepted, err := proxy.Hijack(w)
+	if err != nil {
+		slog.Warning("http:", err)
+		return
+	}
+	h.forward(accepted, dialed)
+}
+
+func (h *mainHandler) handleStatus(respWriter http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		respWriter.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -106,11 +114,11 @@ func (s *serverHandlers) handleStatus(respWriter http.ResponseWriter, req *http.
 	defer func() {
 		_ = w.Flush()
 	}()
-	_, _ = w.WriteString(s.newBanner())
+	_, _ = w.WriteString(h.newBanner())
 	runtime.GC()
 	var memstats runtime.MemStats
 	runtime.ReadMemStats(&memstats)
-	_, _ = w.WriteString(fmt.Sprintf("Uptime: %v (since %v)\n", time.Since(s.startTime), s.startTime))
+	_, _ = w.WriteString(fmt.Sprintf("Uptime: %v (since %v)\n", time.Since(h.startTime), h.startTime))
 	_, _ = w.WriteString(fmt.Sprintln("Num CPU:", runtime.NumCPU()))
 	_, _ = w.WriteString(fmt.Sprintln("Num Goroutines:", runtime.NumGoroutine()))
 	_, _ = w.WriteString(fmt.Sprintln("Heap Used:", memstats.Alloc))
@@ -121,9 +129,9 @@ func (s *serverHandlers) handleStatus(respWriter http.ResponseWriter, req *http.
 	var numSessions, numStreams int
 	_, _ = w.Write(func() []byte {
 		buf := &bytes.Buffer{}
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		for name, info := range s.sessions {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		for name, info := range h.sessions {
 			r, w := info.count()
 			n := info.session.NumStreams()
 			idleSince := "now"
@@ -151,19 +159,11 @@ func (s *serverHandlers) handleStatus(respWriter http.ResponseWriter, req *http.
 	_, _ = w.WriteString(fmt.Sprintln("Generated in", time.Since(start)))
 }
 
-func (h *serverHandlers) register(mux *http.ServeMux) {
-	mux.HandleFunc(configHost+"/status", h.handleStatus)
-}
-
-func (s *Server) newHandler(config *ServerConfig) http.Handler {
-	h := &serverHandlers{s}
-	mux := http.NewServeMux()
-	mux.Handle("/", h)
+func newHandler(s *Server, config *ServerConfig) *mainHandler {
+	h := &mainHandler{Server: s}
 	if !config.DisableWebConfig {
-		h.register(mux)
+		h.mux = http.NewServeMux()
+		h.mux.HandleFunc(configHost+"/status", h.handleStatus)
 	}
-	return &proxy.Handler{
-		Connect: &proxyHandler{s},
-		Default: mux,
-	}
+	return h
 }
