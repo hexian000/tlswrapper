@@ -148,7 +148,7 @@ func (h *serverHandlers) register(mux *http.ServeMux) {
 }
 
 func (s *Server) newHandler(config *ServerConfig) http.Handler {
-	h := &serverHandlers{}
+	h := &serverHandlers{s}
 	mux := http.NewServeMux()
 	mux.Handle("/", h)
 	if !config.DisableWebConfig {
