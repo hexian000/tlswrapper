@@ -25,8 +25,9 @@ func (s *Server) serveHTTP(l net.Listener, config *ServerConfig) {
 
 const configHost = "config.tlswrapper.lan"
 
-func newBanner() string {
-	return fmt.Sprintf("%s\nServer Time: %v\n\n", banner, time.Now())
+func (s *Server) newBanner() string {
+	return fmt.Sprintf("%s\nUptime: %v (since %v)\n\n",
+		banner, time.Since(s.startTime), s.startTime)
 }
 
 type proxyHandler struct {
@@ -38,7 +39,7 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		slog.Verbose("http:", err)
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(newBanner() + err.Error() + "\n"))
+		_, _ = w.Write([]byte(h.s.newBanner() + err.Error() + "\n"))
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -58,7 +59,7 @@ func (s *Server) appendConfigHandler(mux *http.ServeMux) {
 		defer func() {
 			_ = buf.Flush()
 		}()
-		_, _ = buf.WriteString(newBanner())
+		_, _ = buf.WriteString(s.newBanner())
 		runtime.GC()
 		var memstats runtime.MemStats
 		runtime.ReadMemStats(&memstats)
@@ -69,31 +70,28 @@ func (s *Server) appendConfigHandler(mux *http.ServeMux) {
 		_, _ = buf.WriteString(fmt.Sprintln("Stack Used:", memstats.StackInuse))
 		_, _ = buf.WriteString(fmt.Sprintln("Stack Allocated:", memstats.StackSys))
 		_, _ = buf.WriteString("\n=== Sessions ===\n\n")
-		var readTotal, writeTotal uint64
 		var numSessions, numStreams int
 		func() {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			for name, info := range s.sessions {
 				r, w := info.count()
-				readTotal += r
-				writeTotal += w
 				n := info.session.NumStreams()
 				idleSince := "now"
 				if n == 0 {
 					idleSince = time.Since(info.lastSeen).String()
 				}
 				_, _ = buf.WriteString(fmt.Sprintf(
-					"%s\n  Num Streams: %d\n  Age: %v\n  Idle since: %v\n  Traffic I/O(bytes): %d / %d\n\n",
-					name, n, time.Since(info.created), idleSince, r, w,
+					"%s\n  Num Streams: %d\n  Age: %v (since %v)\n  Idle since: %v\n  Traffic I/O(bytes): %d / %d\n\n",
+					name, n, time.Since(info.created), info.created, idleSince, r, w,
 				))
 				numStreams += n
 				numSessions++
 			}
 		}()
 		_, _ = buf.WriteString(fmt.Sprintf(
-			"Total\n  Num Sessions: %d\n  Num Streams: %d\n  Traffic I/O(bytes): %d / %d\n\n",
-			numSessions, numStreams, readTotal, writeTotal,
+			"Total\n  Num Sessions: %d\n  Num Streams: %d\n\n",
+			numSessions, numStreams,
 		))
 		var stack [262144]byte
 		n := runtime.Stack(stack[:], true)
@@ -120,7 +118,7 @@ func (s *Server) newHandler(config *ServerConfig) http.Handler {
 		if err != nil {
 			slog.Verbose("http:", err)
 			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(newBanner() + err.Error() + "\n"))
+			_, _ = w.Write([]byte(s.newBanner() + err.Error() + "\n"))
 			return
 		}
 		accepted, err := proxy.Hijack(w)

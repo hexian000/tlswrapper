@@ -45,6 +45,8 @@ type Server struct {
 	contexts  map[context.Context]func()
 
 	shutdownCh chan struct{}
+
+	startTime time.Time
 }
 
 // NewServer creates a server object
@@ -301,6 +303,7 @@ func (s *Server) Start() error {
 	}
 	s.wg.Add(1)
 	go s.watchdog()
+	s.startTime = time.Now()
 	return nil
 }
 
