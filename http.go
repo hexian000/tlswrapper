@@ -38,7 +38,7 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	dialed, err := dialer.DialContext(req.Context(), network, req.Host)
 	if err != nil {
 		slog.Verbose("http:", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte(h.s.newBanner() + err.Error() + "\n"))
 		return
 	}
@@ -67,7 +67,7 @@ func (s *serverHandlers) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	dialed, err := dialer.DialContext(req.Context(), network, host)
 	if err != nil {
 		slog.Verbose("http:", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte(s.newBanner() + err.Error() + "\n"))
 		return
 	}
