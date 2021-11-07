@@ -45,9 +45,11 @@ func (s *Server) dialTLS(addr string, tlscfg *tls.Config) (*yamux.Session, error
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		now := time.Now()
 		s.sessions[sessionName] = sessionInfo{
 			session:  session,
-			lastSeen: time.Now(),
+			created:  now,
+			lastSeen: now,
 			count:    meteredConn.Count,
 		}
 	}()

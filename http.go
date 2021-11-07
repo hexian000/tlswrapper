@@ -84,10 +84,8 @@ func (s *Server) appendConfigHandler(mux *http.ServeMux) {
 					idleSince = time.Since(info.lastSeen).String()
 				}
 				_, _ = buf.WriteString(fmt.Sprintf(
-					"%s\n  Num Streams: %d\n  Idle since: %v\n  Traffic I/O(bytes): %d / %d\n\n",
-					name, n,
-					idleSince,
-					r, w,
+					"%s\n  Num Streams: %d\n  Age: %v\n  Idle since: %v\n  Traffic I/O(bytes): %d / %d\n\n",
+					name, n, time.Since(info.created), idleSince, r, w,
 				))
 				numStreams += n
 				numSessions++
@@ -95,8 +93,7 @@ func (s *Server) appendConfigHandler(mux *http.ServeMux) {
 		}()
 		_, _ = buf.WriteString(fmt.Sprintf(
 			"Total\n  Num Sessions: %d\n  Num Streams: %d\n  Traffic I/O(bytes): %d / %d\n\n",
-			numSessions, numStreams,
-			readTotal, writeTotal,
+			numSessions, numStreams, readTotal, writeTotal,
 		))
 		var stack [262144]byte
 		n := runtime.Stack(stack[:], true)

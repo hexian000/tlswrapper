@@ -26,6 +26,7 @@ const (
 
 type sessionInfo struct {
 	session  *yamux.Session
+	created  time.Time
 	lastSeen time.Time
 	count    func() (r uint64, w uint64)
 }
@@ -128,9 +129,11 @@ func (s *Server) serveTLS(listener net.Listener, config *ServerConfig) {
 		func() {
 			s.mu.Lock()
 			defer s.mu.Unlock()
+			now := time.Now()
 			s.sessions[sessionName] = sessionInfo{
 				session:  session,
-				lastSeen: time.Now(),
+				created:  now,
+				lastSeen: now,
 				count:    meteredConn.Count,
 			}
 		}()
