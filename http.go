@@ -35,7 +35,7 @@ func (mainHandler) newBanner() string {
 	return fmt.Sprintf("%s\nserver time: %v\n\n", banner, time.Now())
 }
 
-func (h *mainHandler) httpError(w http.ResponseWriter, err error, code int) {
+func (h *mainHandler) Error(w http.ResponseWriter, err error, code int) {
 	http.Error(w, h.newBanner()+err.Error(), code)
 }
 
@@ -60,9 +60,9 @@ func (h *mainHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		slog.Verbose("http:", err)
 		if err, ok := err.(net.Error); ok && err.Timeout() {
-			h.httpError(w, err, http.StatusGatewayTimeout)
+			h.Error(w, err, http.StatusGatewayTimeout)
 		} else {
-			h.httpError(w, err, http.StatusBadGateway)
+			h.Error(w, err, http.StatusBadGateway)
 		}
 		return
 	}
@@ -87,11 +87,10 @@ func (h *mainHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		slog.Verbose("http:", err)
 		if err, ok := err.(net.Error); ok && err.Timeout() {
-			w.WriteHeader(http.StatusGatewayTimeout)
+			h.Error(w, err, http.StatusGatewayTimeout)
 		} else {
-			w.WriteHeader(http.StatusBadGateway)
+			h.Error(w, err, http.StatusBadGateway)
 		}
-		_, _ = w.Write([]byte(h.newBanner() + err.Error() + "\n"))
 		return
 	}
 	w.WriteHeader(http.StatusOK)

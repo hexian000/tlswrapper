@@ -98,6 +98,11 @@ func (s *Server) forward(accepted net.Conn, dialed net.Conn) {
 			_ = src.Close()
 			_ = dst.Close()
 		}()
+		defer func() {
+			if err := recover(); err != nil {
+				slog.Error("panic:", err)
+			}
+		}()
 		_, err := io.Copy(dst, src)
 		if err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, yamux.ErrStreamClosed) {
 			slog.Verbose("stream error:", err)
