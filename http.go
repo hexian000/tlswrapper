@@ -62,7 +62,10 @@ func (s *Server) newHandler() http.Handler {
 			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
-		resp.Write(w)
+		err = resp.Write(w)
+		if err != nil {
+			slog.Verbose("http:", err)
+		}
 	})
 	mux.HandleFunc(configHost+"/stack", func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
