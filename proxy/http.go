@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -112,11 +111,20 @@ func (c *ClientConn) HandshakeContext(ctx context.Context) (ret error) {
 
 type HijackedConn struct {
 	net.Conn
-	rd io.Reader
+	rw *bufio.ReadWriter
 }
 
 func (c *HijackedConn) Read(p []byte) (n int, err error) {
-	return c.rd.Read(p)
+	return c.rw.Read(p)
+}
+
+func (c *HijackedConn) Write(p []byte) (n int, err error) {
+	defer func() {
+		if err == nil {
+			err = c.rw.Flush()
+		}
+	}()
+	return c.rw.Write(p)
 }
 
 func Hijack(w http.ResponseWriter) (net.Conn, error) {

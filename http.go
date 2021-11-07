@@ -108,7 +108,8 @@ func (h *mainHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 		return
 	}
 	start := time.Now()
-	respWriter.WriteHeader(http.StatusOK)
+	respWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	respWriter.Header().Set("X-Content-Type-Options", "nosniff")
 	w := bufio.NewWriter(respWriter)
 	defer func() {
 		_ = w.Flush()
