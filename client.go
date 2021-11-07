@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -28,7 +29,8 @@ func (s *Server) dialTLS(addr string, tlscfg *tls.Config) (*yamux.Session, error
 		return nil, err
 	}
 	s.SetConnParams(conn)
-	tlsConn := tls.Client(conn, tlscfg)
+	meteredConn := Meter(conn)
+	tlsConn := tls.Client(meteredConn, tlscfg)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		_ = tlsConn.Close()
 		return nil, err
@@ -39,8 +41,18 @@ func (s *Server) dialTLS(addr string, tlscfg *tls.Config) (*yamux.Session, error
 		return nil, err
 	}
 	slog.Info("dial session:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
+	sessionName := fmt.Sprintf("dialed: %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.sessions[sessionName] = sessionInfo{
+			session:  session,
+			lastSeen: time.Now(),
+			count:    meteredConn.Count,
+		}
+	}()
 	s.wg.Add(1)
-	go s.watchSession(addr, session)
+	go s.watchSession(sessionName, session)
 	return session, nil
 }
 

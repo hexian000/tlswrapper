@@ -9,14 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hexian000/tlswrapper/slog"
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/tlswrapper/slog"
 )
 
 // ServerConfig contains configs for a TLS server
 type ServerConfig struct {
-	Listen  string `json:"listen"`
-	Forward string `json:"forward"`
+	Listen           string `json:"listen"`
+	Forward          string `json:"forward"`
+	DisableWebConfig bool   `json:"noconfig"`
 }
 
 // ForwardConfig contains configs for a HTTP proxy forward over

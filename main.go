@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -13,12 +14,16 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-var version = "dev-build"
+var (
+	version  = "dev-build"
+	homepage = "https://github.com/hexian000/tlswrapper"
+
+	banner string
+)
 
 func init() {
-	println("tlswrapper", version)
-	println("  https://github.com/hexian000/tlswrapper")
-	println()
+	banner = fmt.Sprintf("tlswrapper %s\n  %s\n", version, homepage)
+	print(banner)
 }
 
 func parseFlags() string {

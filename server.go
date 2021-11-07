@@ -27,6 +27,7 @@ const (
 type sessionInfo struct {
 	session  *yamux.Session
 	lastSeen time.Time
+	count    func() (r uint64, w uint64)
 }
 
 // Server object
@@ -115,13 +116,24 @@ func (s *Server) serveTLS(listener net.Listener, config *ServerConfig) {
 			return
 		}
 		s.SetConnParams(conn)
-		tlsConn := tls.Server(conn, s.tlscfg)
+		meteredConn := Meter(conn)
+		tlsConn := tls.Server(meteredConn, s.tlscfg)
 		session, err := yamux.Server(tlsConn, s.muxcfg)
 		if err != nil {
 			slog.Error(err)
 			continue
 		}
 		slog.Info("accept session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
+		sessionName := fmt.Sprintf("accepted: %s -> %s", conn.RemoteAddr(), conn.LocalAddr())
+		func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			s.sessions[sessionName] = sessionInfo{
+				session:  session,
+				lastSeen: time.Now(),
+				count:    meteredConn.Count,
+			}
+		}()
 		if config.Forward == "" {
 			s.wg.Add(1)
 			go s.serveHTTP(session, config)
@@ -130,7 +142,7 @@ func (s *Server) serveTLS(listener net.Listener, config *ServerConfig) {
 			go s.serveMux(session, config)
 		}
 		s.wg.Add(1)
-		go s.watchSession(fmt.Sprintf("%p", session), session)
+		go s.watchSession(sessionName, session)
 	}
 }
 
@@ -224,11 +236,6 @@ func (s *Server) watchdog() {
 func (s *Server) watchSession(name string, session *yamux.Session) {
 	defer s.wg.Done()
 	defer slog.Info("session close:", session.LocalAddr(), "<x>", session.RemoteAddr())
-	func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.sessions[name] = sessionInfo{session, time.Now()}
-	}()
 	defer func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
