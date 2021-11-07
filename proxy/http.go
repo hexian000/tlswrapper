@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -50,10 +51,15 @@ func (c *ClientConn) clientHandshake(ctx context.Context) error {
 		}()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodConnect, c.host, nil)
-	if err != nil {
-		return err
+	req := &http.Request{
+		Method:     http.MethodConnect,
+		URL:        &url.URL{Host: c.host},
+		Host:       c.host,
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     make(http.Header),
 	}
+	req.Header.Set("Proxy-Connection", "keep-alive")
 	if err := req.WriteProxy(c.Conn); err != nil {
 		return err
 	}
