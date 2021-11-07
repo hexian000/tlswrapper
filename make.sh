@@ -11,7 +11,7 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     fi
 fi
 
-GOFLAGS="-trimpath"
+GOFLAGS="-trimpath -mod vendor"
 LDFLAGS=""
 if [ -n "${VERSION}" ]; then
     LDFLAGS="${LDFLAGS} -X main.version=${VERSION}"
