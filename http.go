@@ -26,8 +26,7 @@ func (s *Server) serveHTTP(l net.Listener, config *ServerConfig) {
 const configHost = "config.tlswrapper.lan"
 
 func (s *Server) newBanner() string {
-	return fmt.Sprintf("%s\nUptime: %v (since %v)\n\n",
-		banner, time.Since(s.startTime), s.startTime)
+	return fmt.Sprintf("%s\nserver time: %v\n\n", banner, time.Now())
 }
 
 type proxyHandler struct {
@@ -63,6 +62,7 @@ func (s *Server) appendConfigHandler(mux *http.ServeMux) {
 		runtime.GC()
 		var memstats runtime.MemStats
 		runtime.ReadMemStats(&memstats)
+		_, _ = buf.WriteString(fmt.Sprintf("Uptime: %v (since %v)\n", time.Since(s.startTime), s.startTime))
 		_, _ = buf.WriteString(fmt.Sprintln("Num CPU:", runtime.NumCPU()))
 		_, _ = buf.WriteString(fmt.Sprintln("Num Goroutines:", runtime.NumGoroutine()))
 		_, _ = buf.WriteString(fmt.Sprintln("Heap Used:", memstats.Alloc))
