@@ -70,6 +70,7 @@ func (s *Server) appendConfigHandler(mux *http.ServeMux) {
 		_, _ = buf.WriteString(fmt.Sprintln("Stack Allocated:", memstats.StackSys))
 		_, _ = buf.WriteString("\n=== Sessions ===\n\n")
 		var readTotal, writeTotal uint64
+		var numSessions, numStreams int
 		func() {
 			s.mu.Lock()
 			defer s.mu.Unlock()
@@ -77,16 +78,24 @@ func (s *Server) appendConfigHandler(mux *http.ServeMux) {
 				r, w := info.count()
 				readTotal += r
 				writeTotal += w
+				n := info.session.NumStreams()
+				idleSince := "now"
+				if n == 0 {
+					idleSince = time.Since(info.lastSeen).String()
+				}
 				_, _ = buf.WriteString(fmt.Sprintf(
-					"%s\n  Last Seen: %v\n  Traffic I/O(bytes): %d / %d\n\n",
-					name,
-					info.lastSeen,
+					"%s\n  Num Streams: %d\n  Idle since: %v\n  Traffic I/O(bytes): %d / %d\n\n",
+					name, n,
+					idleSince,
 					r, w,
 				))
+				numStreams += n
+				numSessions++
 			}
 		}()
 		_, _ = buf.WriteString(fmt.Sprintf(
-			"Total\n  Traffic I/O(bytes): %d / %d\n\n",
+			"Total\n  Num Sessions: %d\n  Num Streams: %d\n  Traffic I/O(bytes): %d / %d\n\n",
+			numSessions, numStreams,
 			readTotal, writeTotal,
 		))
 		var stack [262144]byte

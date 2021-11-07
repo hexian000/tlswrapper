@@ -41,7 +41,7 @@ func (s *Server) dialTLS(addr string, tlscfg *tls.Config) (*yamux.Session, error
 		return nil, err
 	}
 	slog.Info("dial session:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
-	sessionName := fmt.Sprintf("dialed: %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
+	sessionName := fmt.Sprintf("%s -> %s", conn.LocalAddr(), conn.RemoteAddr())
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()

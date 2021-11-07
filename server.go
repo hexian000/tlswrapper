@@ -124,7 +124,7 @@ func (s *Server) serveTLS(listener net.Listener, config *ServerConfig) {
 			continue
 		}
 		slog.Info("accept session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
-		sessionName := fmt.Sprintf("accepted: %s -> %s", conn.RemoteAddr(), conn.LocalAddr())
+		sessionName := fmt.Sprintf("%s <- %s", conn.RemoteAddr(), conn.LocalAddr())
 		func() {
 			s.mu.Lock()
 			defer s.mu.Unlock()
