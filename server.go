@@ -12,11 +12,12 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/hexian000/tlswrapper/proxy"
 	"github.com/hexian000/tlswrapper/slog"
 )
 
 const network = "tcp"
+
+var dialer net.Dialer
 
 const (
 	redialDelay       = 5 * time.Second
@@ -85,7 +86,7 @@ func (s *Server) deleteContext(ctx context.Context) {
 	}
 }
 
-func (s *Server) pipe(accepted net.Conn, dialed net.Conn) {
+func (s *Server) forward(accepted net.Conn, dialed net.Conn) {
 	slog.Verbose("stream open:", accepted.LocalAddr(), "->", dialed.RemoteAddr())
 	connCopy := func(dst net.Conn, src net.Conn) {
 		defer s.wg.Done()
@@ -121,8 +122,13 @@ func (s *Server) serveTLS(listener net.Listener, config *ServerConfig) {
 			continue
 		}
 		slog.Info("accept session:", conn.RemoteAddr(), "<->", conn.LocalAddr())
-		s.wg.Add(1)
-		go s.serveMux(session, config)
+		if config.Forward == "" {
+			s.wg.Add(1)
+			go s.serveHTTP(session, config)
+		} else {
+			s.wg.Add(1)
+			go s.serveMux(session, config)
+		}
 		s.wg.Add(1)
 		go s.watchSession(fmt.Sprintf("%p", session), session)
 	}
@@ -137,28 +143,19 @@ func (s *Server) serveMux(session *yamux.Session, config *ServerConfig) {
 			return
 		}
 		s.wg.Add(1)
-		go s.forward(accepted, config.Forward)
+		go s.forwardTCP(accepted, config.Forward)
 	}
 }
 
-func (s *Server) forward(accepted net.Conn, address string) {
+func (s *Server) forwardTCP(accepted net.Conn, address string) {
 	defer s.wg.Done()
-	if address == "" {
-		conn := proxy.Server(accepted)
-		if err := conn.Handshake(); err != nil {
-			_ = accepted.Close()
-			slog.Error("proxy:", err)
-			return
-		}
-		address = conn.Host()
-	}
 	dialed, err := s.dialTCP(address)
 	if err != nil {
 		_ = accepted.Close()
 		slog.Error("dial TCP:", err)
 		return
 	}
-	s.pipe(accepted, dialed)
+	s.forward(accepted, dialed)
 }
 
 func (s *Server) dialTCP(addr string) (net.Conn, error) {
@@ -168,8 +165,7 @@ func (s *Server) dialTCP(addr string) (net.Conn, error) {
 		return nil, errors.New("server is shutting down")
 	}
 	defer s.deleteContext(ctx)
-	var dailer net.Dialer
-	dialed, err := dailer.DialContext(ctx, network, addr)
+	dialed, err := dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}

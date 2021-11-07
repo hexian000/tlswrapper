@@ -76,7 +76,7 @@ func (c *clientSession) serveForward(listener net.Listener, config *ForwardConfi
 			continue
 		}
 		dialed = proxy.Client(dialed, config.Forward)
-		c.s.pipe(accepted, dialed)
+		c.s.forward(accepted, dialed)
 	}
 }
 
@@ -92,7 +92,7 @@ func (c *clientSession) serveTCP(listener net.Listener) {
 			_ = accepted.Close()
 			continue
 		}
-		c.s.pipe(accepted, dialed)
+		c.s.forward(accepted, dialed)
 	}
 }
 
