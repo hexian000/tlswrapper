@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/hexian000/tlswrapper/proxy"
@@ -39,9 +41,46 @@ func (h *mainHandler) Error(w http.ResponseWriter, err error, code int) {
 	http.Error(w, h.newBanner()+err.Error(), code)
 }
 
+func (h *mainHandler) proxyError(w http.ResponseWriter, err error) {
+	slog.Verbose("http:", err)
+	if err, ok := err.(net.Error); ok && err.Timeout() {
+		h.Error(w, err, http.StatusGatewayTimeout)
+	} else {
+		h.Error(w, err, http.StatusBadGateway)
+	}
+}
+
+var hopHeaders = [...]string{
+	"Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Te",
+	"Trailers",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+func delHopHeaders(header http.Header) {
+	for _, h := range hopHeaders {
+		header.Del(h)
+	}
+}
+
+func appendHostToXForwardHeader(header http.Header, host string) {
+	if prior, ok := header["X-Forwarded-For"]; ok {
+		host = strings.Join(prior, ", ") + ", " + host
+	}
+	header.Set("X-Forwarded-For", host)
+}
+
 func (h *mainHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodConnect {
 		h.ServeConnect(w, req)
+		return
+	}
+	if req.URL.Scheme != "http" {
+		http.Error(w, "Unsupported protocol scheme "+req.URL.Scheme, http.StatusBadRequest)
 		return
 	}
 	if req.Host == configHost {
@@ -52,45 +91,40 @@ func (h *mainHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		return
 	}
-	host := req.URL.Hostname()
-	if req.URL.Port() == "" {
-		host += ":80"
+
+	client := &http.Client{
+		Timeout: time.Duration(h.ConnectTimeout) * time.Second,
 	}
-	dialed, err := dialer.DialContext(req.Context(), network, host)
+	req.RequestURI = ""
+	delHopHeaders(req.Header)
+
+	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		appendHostToXForwardHeader(req.Header, clientIP)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
-		slog.Verbose("http:", err)
-		if err, ok := err.(net.Error); ok && err.Timeout() {
-			h.Error(w, err, http.StatusGatewayTimeout)
-		} else {
-			h.Error(w, err, http.StatusBadGateway)
+		h.proxyError(w, err)
+		return
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	delHopHeaders(resp.Header)
+	for k, v := range resp.Header {
+		for _, i := range v {
+			w.Header().Add(k, i)
 		}
-		return
 	}
-	accepted, err := proxy.Hijack(w)
-	if err != nil {
-		_ = dialed.Close()
-		slog.Warning("http:", err)
-		return
-	}
-	err = req.Write(dialed)
-	if err != nil {
-		_ = accepted.Close()
-		_ = dialed.Close()
-		slog.Verbose("http:", err)
-		return
-	}
-	h.forward(accepted, dialed)
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 func (h *mainHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	dialed, err := dialer.DialContext(req.Context(), network, req.Host)
 	if err != nil {
-		slog.Verbose("http:", err)
-		if err, ok := err.(net.Error); ok && err.Timeout() {
-			h.Error(w, err, http.StatusGatewayTimeout)
-		} else {
-			h.Error(w, err, http.StatusBadGateway)
-		}
+		h.proxyError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
