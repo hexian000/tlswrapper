@@ -6,6 +6,19 @@
 
 Connect multiple sites across the Internet with a multiplexing mTLS tunnel, safely. 
 
+```
+       Trusted      |     Untrusted      |     Trusted
+                                  +------------+    +-------+
+                             +-1->| tlswrapper |-n->| Peer2 |
+                             |    +------------+    +-------+
++-------+    +------------+  |    +------------+    +-------+
+| Peer1 |-n->| tlswrapper |--+-1->| tlswrapper |-n->| Peer3 |
++-------+    +------------+  |    +------------+    +-------+
+                             |    +------------+    +-------+
+                             +-1->| tlswrapper |-n->| Peer4 |
+                                  +------------+    +-------+
+```
+
 ## Protocol Stack
 
 ```
