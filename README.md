@@ -4,7 +4,7 @@
 
 ## What for
 
-Connect multiple sites across the Internet with a multiplexing mTLS tunnel, safely. 
+Connect multiple sites across the Internet with multiplexing mTLS tunnels, safely. 
 
 ```
        Trusted      |     Untrusted      |     Trusted
@@ -36,7 +36,7 @@ Connect multiple sites across the Internet with a multiplexing mTLS tunnel, safe
 
 ## Authentication Model
 
-Like SSH, each peer needs to generate a key pair(certificate + private key). Only certificate in a peer's authorized certificates list can communicate with this peer.
+Like SSH, each peer needs to generate a key pair(certificate + private key). Only certificates in a peer's authorized certificates list can communicate with this peer.
 
 This behavior is based on golang's mutual TLS 1.3 implementation.
 
@@ -126,17 +126,18 @@ By default, all certificates are self-signed. This will not reduce security.
 ./tlswrapper -c config.json
 ```
 
-You may found the systemd user unit [tlswrapper.service](tlswrapper.service) is useful.
+You may also found the systemd user unit [tlswrapper.service](tlswrapper.service) is useful.
 
 ## Build/Install
 
 ```sh
+# get source code
 git clone https://github.com/hexian000/tlswrapper.git
 cd tlswrapper
+# build for native system
 ./make.sh
 ```
 or
-
 ```sh
 go install github.com/hexian000/tlswrapper
 ```

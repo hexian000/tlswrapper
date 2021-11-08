@@ -21,12 +21,13 @@ export CGO_ENABLED=0
 
 case "$1" in
 "x")
-    # cross build for all targets
+    # cross build for all supported targets
+    # not supported targets are likely to work
     set -x
-    GOOS="linux" GOARCH="arm64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper_arm64
-    GOOS="linux" GOARCH="arm" GOARM=7 nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper_armv7
-    GOOS="linux" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper_amd64
-    GOOS="windows" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper_amd64.exe
+    GOOS="linux" GOARCH="arm64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper_linux_arm64
+    GOOS="linux" GOARCH="arm" GOARM=7 nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper_linux_armv7
+    GOOS="linux" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper_linux_amd64
+    GOOS="windows" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper_windows_amd64.exe
     ;;
 *)
     # build for native system only
