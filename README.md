@@ -2,6 +2,10 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/hexian000/tlswrapper)](https://goreportcard.com/report/github.com/hexian000/tlswrapper)
 
+## What for
+
+Connect multiple sites across the Internet with a multiplexing mTLS tunnel, safely. 
+
 ## Protocol Stack
 
 ```
