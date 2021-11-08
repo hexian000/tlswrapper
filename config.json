@@ -1,18 +1,17 @@
 {
   "server": [
     {
-      "listen": "0.0.0.0:52010",
-      "forward": "127.0.0.1:8118"
+      "listen": "0.0.0.0:12345"
     }
   ],
   "client": [
     {
       "listen": "127.0.0.1:8119",
-      "dial": "example.com:52010",
+      "dial": "peer2.example.com:12345",
       "proxy": [
         {
-          "listen": ":12345",
-          "forward": "127.0.0.1:12345"
+          "listen": ":5201",
+          "forward": "gateway.peer2.lan:5201"
         }
       ]
     }
