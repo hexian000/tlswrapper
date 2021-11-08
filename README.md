@@ -117,7 +117,7 @@ By default, all certificates are self-signed. This will not reduce security.
 - "client[\*].proxy[\*].forward": forwarder destination address
 - "cert": peer certificate
 - "key": peer private key
-- "authcerts": server authorized certificates list, bundles are supported
+- "authcerts": peer authorized certificates list, bundles are supported
 
 
 ### 3. Start
