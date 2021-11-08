@@ -2,9 +2,20 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/hexian000/tlswrapper)](https://goreportcard.com/report/github.com/hexian000/tlswrapper)
 
-## What for
+## Protocol Stack
 
-This proxy transmits any TCP services through multiplexed mTLS 1.3 tunnels.
+```
++-------------------------------+
+| HTTP CONNECT Proxy (optional) |
++-------------------------------+
+|   yamux stream multiplexing   |
++-------------------------------+
+|        mutual TLS 1.3         |
++-------------------------------+
+|  TCP/IP (untrusted network)   |
++-------------------------------+
+```
+
 
 ## Authentication Model
 
@@ -30,13 +41,13 @@ By default, all certificates are self-signed. This will not reduce security.
 {
   "server": [
     {
-      "listen": "0.0.0.0:52010"
+      "listen": "0.0.0.0:12345"
     }
   ],
   "client": [
     {
       "listen": "127.0.0.1:8080",
-      "dial": "peer2.example.com:52010"
+      "dial": "peer2.example.com:12345"
     }
   ],
   "cert": "peer1-cert.pem",
@@ -53,13 +64,19 @@ By default, all certificates are self-signed. This will not reduce security.
 {
   "server": [
     {
-      "listen": "0.0.0.0:52010"
+      "listen": "0.0.0.0:12345"
     }
   ],
   "client": [
     {
       "listen": "127.0.0.1:8080",
-      "dial": "peer1.example.com:52010"
+      "dial": "peer1.example.com:12345",
+      "proxy": [
+        {
+          "listen": ":5201",
+          "forward": "gateway.peer1.lan:5201"
+        }
+      ]
     }
   ],
   "cert": "peer2-cert.pem",
@@ -72,11 +89,18 @@ By default, all certificates are self-signed. This will not reduce security.
 
 #### Options
 
-- "server": Listen for tunnel clients and forward to any TCP service
-- "client": Listen for TCP and forward through tunnel
-- "cert": Local certificate.
-- "key": Local private key.
-- "authcerts": Local authorized certificates list.
+- "server": TLS listener configs
+- "server[\*].listen": server bind address
+- "server[\*].forward": (optional) upstream TCP service address, leave empty or unconfigured to use builtin HTTP proxy
+- "client": TLS client configs
+- "client[\*].listen": proxy listen address
+- "client[\*].dial": server address
+- "client[\*].proxy": (optional) proxy forwarder configs
+- "client[\*].proxy[\*].listen": forwarder listen address
+- "client[\*].proxy[\*].forward": forwarder destination address
+- "cert": peer certificate
+- "key": peer private key
+- "authcerts": server authorized certificates list, bundles are supported
 
 
 ### 3. Start
@@ -85,13 +109,19 @@ By default, all certificates are self-signed. This will not reduce security.
 ./tlswrapper -c config.json
 ```
 
-## Build
+You may found the systemd user unit [tlswrapper.service](tlswrapper.service) is useful.
+
+## Build/Install
 
 ```sh
 git clone https://github.com/hexian000/tlswrapper.git
 cd tlswrapper
-go mod vendor
 ./make.sh
+```
+or
+
+```sh
+go install github.com/hexian000/tlswrapper
 ```
 
 ## Credits
