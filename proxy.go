@@ -121,6 +121,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		},
 		Timeout: h.cfg.Timeout(),
 	}
+	req.RequestURI = ""
 	resp, err := client.Do(req)
 	if err != nil {
 		slog.Verbose("http:", err)
