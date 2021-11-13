@@ -6,30 +6,35 @@
   ],
   "client": [
     {
-      "hostname": "peer2.lan",
+      "hostname": "peer2",
       "listen": "127.0.0.1:8119",
       "dial": "peer2.example.com:12345",
       "proxy": [
         {
           "listen": ":5201",
-          "forward": "gateway.peer2.lan:5201"
+          "forward": "localhost:5201"
         }
       ]
+    },
+    {
+      "hostname": "gateway",
+      "dial": "gateway.example.com:12345"
     }
   ],
-  "proxy":{
-    "hostname":"peer1.lan",
-    "listen":"0.0.0.0:8080",
-    "hostroutes":{
-      "a.peer2.lan":"peer2.lan",
-      "b.peer2.lan":"peer2.lan",
-      "c.peer2.lan":"peer2.lan"
+  "proxy": {
+    "apihostname": "peer1.tlswrapper",
+    "listen": "0.0.0.0:8080",
+    "hostroutes": {
+      "a.peer2.lan": "peer2",
+      "b.peer2.lan": "peer2",
+      "c.peer2.lan": "peer2"
     },
-    "default":"peer2.example.com:12345"
+    "default": "gateway"
   },
   "cert": "peer1-cert.pem",
   "key": "peer1-key.pem",
   "authcerts": [
-    "peer2-cert.pem"
+    "peer2-cert.pem",
+    "gateway-cert.pem"
   ]
 }
