@@ -101,7 +101,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer h.deleteContext(ctx)
 	addr := host
 	if req.URL.Port() == "" {
-		host += ":80"
+		addr += ":80"
 	}
 	dialed, err := h.routedDial(ctx, host, addr)
 	if err != nil {
