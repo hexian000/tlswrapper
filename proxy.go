@@ -112,25 +112,26 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.URL.Port() == "" {
 		addr += ":80"
 	}
-	dialed, err := h.routedDial(ctx, addr)
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return h.routedDial(ctx, addr)
+			},
+			DisableKeepAlives: true,
+		},
+		Timeout: h.cfg.Timeout(),
+	}
+	resp, err := client.Do(req)
 	if err != nil {
-		slog.Verbose("route:", err)
+		slog.Verbose("http:", err)
 		h.proxyError(w, err)
 		return
 	}
-	if err = req.WriteProxy(dialed); err != nil {
-		_ = dialed.Close()
-		slog.Verbose("route:", err)
-		h.proxyError(w, err)
-		return
-	}
-	accepted, err := proxy.Hijack(w)
+	w.WriteHeader(resp.StatusCode)
+	err = resp.Write(w)
 	if err != nil {
-		_ = dialed.Close()
-		slog.Error("hijack:", err)
-		return
+		slog.Verbose("http:", err)
 	}
-	h.forward(accepted, dialed)
 }
 
 func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
