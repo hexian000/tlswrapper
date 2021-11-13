@@ -29,6 +29,10 @@ func (s *Server) serveHTTP(l net.Listener) {
 }
 
 func (s *Server) routedDial(ctx context.Context, host string, addr string) (net.Conn, error) {
+	_, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
 	route := s.cfg.Proxy.findRoute(host)
 	if route == "" {
 		return s.dialDirect(ctx, addr)
@@ -41,6 +45,10 @@ func (s *Server) routedDial(ctx context.Context, host string, addr string) (net.
 }
 
 func (s *Server) routedProxyDial(ctx context.Context, host string, addr string) (net.Conn, error) {
+	_, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
 	route := s.cfg.Proxy.findRoute(host)
 	if route == "" {
 		return s.dialDirect(ctx, addr)
@@ -101,7 +109,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
-	addr := host
+	addr := req.URL.Host
 	if req.URL.Port() == "" {
 		addr += ":80"
 	}
@@ -127,6 +135,12 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
+	_, _, err := net.SplitHostPort(req.Host)
+	if err != nil {
+		slog.Warning("proxy connect:", err)
+		h.Error(w, err, http.StatusBadRequest)
+		return
+	}
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
 	dialed, err := h.routedProxyDial(ctx, req.URL.Hostname(), req.Host)
