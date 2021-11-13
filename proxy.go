@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"runtime"
@@ -88,6 +89,23 @@ func (h *HTTPHandler) proxyError(w http.ResponseWriter, err error) {
 	}
 }
 
+var hopHeaders = [...]string{
+	"Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Te",
+	"Trailers",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+func delHopHeaders(header http.Header) {
+	for _, h := range hopHeaders {
+		header.Del(h)
+	}
+}
+
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodConnect {
 		h.ServeConnect(w, req)
@@ -121,18 +139,33 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		},
 		Timeout: h.cfg.Timeout(),
 	}
+
 	req.RequestURI = ""
+	delHopHeaders(req.Header)
+	if host, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		if prior, ok := req.Header["X-Forwarded-For"]; ok {
+			host = strings.Join(prior, ", ") + ", " + host
+		}
+		req.Header.Set("X-Forwarded-For", host)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		slog.Verbose("http:", err)
 		h.proxyError(w, err)
 		return
 	}
-	w.WriteHeader(resp.StatusCode)
-	err = resp.Write(w)
-	if err != nil {
-		slog.Verbose("http:", err)
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	delHopHeaders(resp.Header)
+	for k, v := range resp.Header {
+		for _, i := range v {
+			w.Header().Add(k, i)
+		}
 	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
