@@ -22,14 +22,14 @@ const (
 	idleCheckInterval = 10 * time.Second
 )
 
-type sessionInfo struct {
+type Session struct {
 	mux      *yamux.Session
+	meter    *MeteredConn
 	created  time.Time
 	lastSeen time.Time
-	count    func() (r uint64, w uint64)
 }
 
-func (i *sessionInfo) seen() {
+func (i *Session) seen() {
 	i.lastSeen = time.Now()
 }
 
@@ -44,7 +44,7 @@ type Server struct {
 
 	dials     map[string]*clientSession
 	listeners map[string]net.Listener
-	sessions  map[string]sessionInfo
+	sessions  map[string]*Session
 	contexts  map[context.Context]context.CancelFunc
 
 	dialer     net.Dialer
@@ -58,7 +58,7 @@ func NewServer() *Server {
 	return &Server{
 		dials:      make(map[string]*clientSession),
 		listeners:  make(map[string]net.Listener),
-		sessions:   make(map[string]sessionInfo),
+		sessions:   make(map[string]*Session),
 		contexts:   make(map[context.Context]context.CancelFunc),
 		shutdownCh: make(chan struct{}),
 	}
@@ -79,6 +79,20 @@ func (s *Server) deleteContext(ctx context.Context) {
 		cancel()
 		delete(s.contexts, ctx)
 	}
+}
+
+func (s *Server) newSession(name string, mux *yamux.Session, meter *MeteredConn) *Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	info := &Session{
+		mux:      mux,
+		meter:    meter,
+		created:  now,
+		lastSeen: now,
+	}
+	s.sessions[name] = info
+	return info
 }
 
 func (s *Server) forward(accepted net.Conn, dialed net.Conn) {
@@ -126,15 +140,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	}
 	slog.Info("accept session:", conn.RemoteAddr(), "<->", conn.LocalAddr(), "setup:", time.Since(start))
 	sessionName := fmt.Sprintf("%s <- %s", conn.LocalAddr(), conn.RemoteAddr())
-	func() {
-		h.server.mu.Lock()
-		defer h.server.mu.Unlock()
-		h.server.sessions[sessionName] = sessionInfo{
-			mux:     session,
-			created: time.Now(),
-			count:   meteredConn.Count,
-		}
-	}()
+	_ = h.server.newSession(sessionName, session, meteredConn)
 	if h.config.Forward == "" {
 		go h.server.serveHTTP(session)
 		return

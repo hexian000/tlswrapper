@@ -172,16 +172,16 @@ func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 		buf := &bytes.Buffer{}
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		for name, info := range h.sessions {
-			r, w := info.count()
-			n := info.mux.NumStreams()
+		for name, session := range h.sessions {
+			r, w := session.meter.Count()
+			n := session.mux.NumStreams()
 			idleSince := "now"
 			if n == 0 {
-				idleSince = time.Since(info.lastSeen).String()
+				idleSince = time.Since(session.lastSeen).String()
 			}
 			_, _ = buf.WriteString(fmt.Sprintf(
 				"%s\n  Num Streams: %d\n  Age: %v (since %v)\n  Idle since: %v\n  Traffic I/O(bytes): %d / %d\n\n",
-				name, n, time.Since(info.created), info.created, idleSince, r, w,
+				name, n, time.Since(session.created), session.created, idleSince, r, w,
 			))
 			numStreams += n
 			numSessions++

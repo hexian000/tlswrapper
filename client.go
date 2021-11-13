@@ -16,7 +16,7 @@ import (
 
 var errShutdown = errors.New("server is shutting down")
 
-func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (*yamux.Session, error) {
+func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (*Session, error) {
 	slog.Verbose("dial TLS:", addr)
 	startTime := time.Now()
 	conn, err := s.dialer.DialContext(ctx, network, addr)
@@ -37,18 +37,8 @@ func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (
 	}
 	slog.Info("dial session:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
 	sessionName := fmt.Sprintf("%s -> %s", conn.LocalAddr(), conn.RemoteAddr())
-	func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		now := time.Now()
-		s.sessions[sessionName] = sessionInfo{
-			mux:      session,
-			created:  now,
-			lastSeen: now,
-			count:    meteredConn.Count,
-		}
-	}()
-	return session, nil
+	info := s.newSession(sessionName, session, meteredConn)
+	return info, nil
 }
 
 type clientSession struct {
@@ -58,7 +48,7 @@ type clientSession struct {
 	config  *ClientConfig
 	tlscfg  *tls.Config
 	muxcfg  *yamux.Config
-	session *sessionInfo
+	session *Session
 }
 
 func newClientSession(server *Server, tlscfg *tls.Config, config *ClientConfig) *clientSession {
@@ -90,8 +80,8 @@ func (c *clientSession) dialTLS(ctx context.Context) (err error) {
 		return errShutdown
 	default:
 	}
-	if c.session.mux == nil || c.session.mux.IsClosed() {
-		c.session.mux, err = c.s.dialTLS(ctx, c.config.Dial, c.s.tlscfg)
+	if c.session == nil || c.session.mux.IsClosed() {
+		c.session, err = c.s.dialTLS(ctx, c.config.Dial, c.s.tlscfg)
 	}
 	return
 }
@@ -108,7 +98,6 @@ func (c *clientSession) dialMux(ctx context.Context) (net.Conn, error) {
 		_ = c.session.mux.Close()
 		return nil, err
 	}
-	c.session.seen()
 	return dialed, nil
 }
 
