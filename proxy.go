@@ -15,22 +15,34 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-func (s *Server) serveHTTP(l net.Listener, config *ServerConfig) {
-	defer s.wg.Done()
+func (s *Server) serveHTTP(l net.Listener) {
 	defer func() {
 		_ = l.Close()
 	}()
 	server := &http.Server{
-		Handler: newHandler(s, config),
+		Handler: newHandler(s, s.Proxy.DisableApi),
 	}
 	_ = server.Serve(l)
 }
 
-const configHost = "config.tlswrapper.lan"
+func (s *Server) routedDial(host string) (c *clientSession, ok bool) {
+	if c, ok := s.dials[host]; ok {
+		return c, true
+	}
+	host = s.Proxy.DefaultRoute
+	if host == "" {
+		return nil, true
+	}
+	if c, ok := s.dials[host]; ok {
+		return c, true
+	}
+	return nil, false
+}
 
 type mainHandler struct {
 	*Server
-	mux *http.ServeMux
+	localhost string
+	mux       *http.ServeMux
 }
 
 func (mainHandler) newBanner() string {
@@ -83,7 +95,7 @@ func (h *mainHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Unsupported protocol scheme "+req.URL.Scheme, http.StatusBadRequest)
 		return
 	}
-	if req.Host == configHost {
+	if req.Host == h.localhost {
 		if h.mux != nil {
 			h.mux.ServeHTTP(w, req)
 		} else {
@@ -149,7 +161,6 @@ func (h *mainHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 		_ = w.Flush()
 	}()
 	_, _ = w.WriteString(h.newBanner())
-	runtime.GC()
 	var memstats runtime.MemStats
 	runtime.ReadMemStats(&memstats)
 	_, _ = w.WriteString(fmt.Sprintf("Uptime: %v (since %v)\n", time.Since(h.startTime), h.startTime))
@@ -193,11 +204,14 @@ func (h *mainHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 	_, _ = w.WriteString(fmt.Sprintln("Generated in", time.Since(start)))
 }
 
-func newHandler(s *Server, config *ServerConfig) *mainHandler {
-	h := &mainHandler{Server: s}
-	if !config.DisableWebConfig {
+func newHandler(s *Server, disableApi bool) *mainHandler {
+	h := &mainHandler{
+		Server:    s,
+		localhost: s.Config.Proxy.HostName,
+	}
+	if !disableApi {
 		h.mux = http.NewServeMux()
-		h.mux.HandleFunc(configHost+"/status", h.handleStatus)
+		h.mux.HandleFunc(h.localhost+"/status", h.handleStatus)
 	}
 	return h
 }

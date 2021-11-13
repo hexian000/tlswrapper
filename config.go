@@ -15,9 +15,8 @@ import (
 
 // ServerConfig contains configs for a TLS server
 type ServerConfig struct {
-	Listen           string `json:"listen"`
-	Forward          string `json:"forward"`
-	DisableWebConfig bool   `json:"noconfig"`
+	Listen  string `json:"listen"`
+	Forward string `json:"forward"`
 }
 
 // ForwardConfig contains configs for a HTTP proxy forward over
@@ -29,10 +28,25 @@ type ForwardConfig struct {
 
 // ClientConfig contains configs for a TLS client
 type ClientConfig struct {
+	HostName      string          `json:"hostname"`
 	ServerName    string          `json:"sni"`
 	Listen        string          `json:"listen"`
 	Dial          string          `json:"dial"`
 	ProxyForwards []ForwardConfig `json:"proxy"`
+}
+
+type RouteRule struct {
+	HostName string `json:"hostname"`
+	To       string `json:"to"`
+}
+
+// ProxyConfig contains configs for local proxy server
+type ProxyConfig struct {
+	HostName     string      `json:"hostname"`
+	Listen       string      `json:"listen"`
+	Routes       []RouteRule `json:"routes"`
+	DefaultRoute string      `json:"default"`
+	DisableApi   bool        `json:"noapi"`
 }
 
 // Config file
@@ -40,6 +54,7 @@ type Config struct {
 	ServerName         string         `json:"sni"`
 	Server             []ServerConfig `json:"server"`
 	Client             []ClientConfig `json:"client"`
+	Proxy              ProxyConfig    `json:"proxy"`
 	Certificate        string         `json:"cert"`
 	PrivateKey         string         `json:"key"`
 	AuthorizedCerts    []string       `json:"authcerts"`
