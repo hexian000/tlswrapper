@@ -37,10 +37,11 @@ type ClientConfig struct {
 
 // ProxyConfig contains configs for local proxy server
 type ProxyConfig struct {
-	ApiHostName  string            `json:"apihostname"`
+	LocalHost    string            `json:"localhost"`
 	Listen       string            `json:"listen"`
 	HostRoutes   map[string]string `json:"hostroutes"`
 	DefaultRoute string            `json:"default"`
+	DisableAPI   bool              `json:"noapi"`
 }
 
 // Config file
@@ -161,7 +162,10 @@ func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
 }
 
 func (c *ProxyConfig) findRoute(host string) string {
-	if host == c.ApiHostName {
+	if strings.EqualFold(host, c.LocalHost) {
+		return ""
+	}
+	if strings.EqualFold(host, c.LocalHost+apiDomain) {
 		return ""
 	}
 	if route, ok := c.HostRoutes[host]; ok {

@@ -22,7 +22,7 @@
     }
   ],
   "proxy": {
-    "apihostname": "peer1.tlswrapper",
+    "localhost": "peer1",
     "listen": "0.0.0.0:8080",
     "hostroutes": {
       "a.peer2.lan": "peer2",

@@ -15,6 +15,8 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
+const apiDomain = ".tlswrapper.api"
+
 func (s *Server) serveHTTP(l net.Listener) {
 	defer func() {
 		_ = l.Close()
@@ -59,7 +61,7 @@ type HTTPHandler struct {
 func (h *HTTPHandler) newBanner() string {
 	return fmt.Sprintf(
 		"tlswrapper@%s %s\n  %s\n\nserver time: %v\n\n",
-		h.config.ApiHostName,
+		h.config.LocalHost,
 		version, homepage,
 		time.Now().Format(time.RFC3339),
 	)
@@ -88,7 +90,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	host := req.URL.Hostname()
-	if strings.EqualFold(host, h.config.ApiHostName) {
+	if strings.EqualFold(host, h.config.LocalHost+apiDomain) {
 		if h.mux != nil {
 			h.mux.ServeHTTP(w, req)
 		} else {
@@ -203,9 +205,10 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 		Server: s,
 		config: config,
 	}
-	if config.ApiHostName != "" {
+	if !config.DisableAPI {
+		host := h.config.LocalHost + apiDomain
 		h.mux = http.NewServeMux()
-		h.mux.HandleFunc(h.config.ApiHostName+"/status", h.handleStatus)
+		h.mux.HandleFunc(host+"/status", h.handleStatus)
 	}
 	return h
 }
