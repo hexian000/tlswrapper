@@ -57,11 +57,11 @@ type HTTPHandler struct {
 }
 
 func (HTTPHandler) newBanner() string {
-	return fmt.Sprintf("%s\nserver time: %v\n\n", banner, time.Now())
+	return fmt.Sprintf("%s\nserver time: %v\n\n", banner, time.Now().Format(time.RFC3339))
 }
 
 func (h *HTTPHandler) Error(w http.ResponseWriter, err error, code int) {
-	http.Error(w, h.newBanner()+err.Error(), code)
+	http.Error(w, h.newBanner()+fmt.Sprintf("%v\n", err), code)
 }
 
 func (h *HTTPHandler) proxyError(w http.ResponseWriter, err error) {
@@ -94,7 +94,11 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
-	dialed, err := h.routedDial(ctx, host, req.Host)
+	addr := host
+	if req.URL.Port() == "" {
+		host += ":80"
+	}
+	dialed, err := h.routedDial(ctx, host, addr)
 	if err != nil {
 		slog.Verbose("route:", err)
 		h.proxyError(w, err)
@@ -120,6 +124,7 @@ func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	defer h.deleteContext(ctx)
 	dialed, err := h.routedProxyDial(ctx, req.URL.Hostname(), req.Host)
 	if err != nil {
+		slog.Error("proxy dial:", err)
 		h.proxyError(w, err)
 		return
 	}

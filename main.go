@@ -18,11 +18,10 @@ var (
 	version  = "dev-build"
 	homepage = "https://github.com/hexian000/tlswrapper"
 
-	banner string
+	banner = fmt.Sprintf("tlswrapper %s\n  %s\n", version, homepage)
 )
 
 func init() {
-	banner = fmt.Sprintf("tlswrapper %s\n  %s\n", version, homepage)
 	print(banner)
 }
 
