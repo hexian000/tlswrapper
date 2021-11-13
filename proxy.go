@@ -56,8 +56,13 @@ type HTTPHandler struct {
 	mux    *http.ServeMux
 }
 
-func (HTTPHandler) newBanner() string {
-	return fmt.Sprintf("%s\nserver time: %v\n\n", banner, time.Now().Format(time.RFC3339))
+func (h *HTTPHandler) newBanner() string {
+	return fmt.Sprintf(
+		"%s@%s\nserver time: %v\n\n",
+		h.config.ApiHostName,
+		banner,
+		time.Now().Format(time.RFC3339),
+	)
 }
 
 func (h *HTTPHandler) Error(w http.ResponseWriter, err error, code int) {
