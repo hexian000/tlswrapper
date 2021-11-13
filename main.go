@@ -17,12 +17,10 @@ import (
 var (
 	version  = "dev-build"
 	homepage = "https://github.com/hexian000/tlswrapper"
-
-	banner = fmt.Sprintf("tlswrapper %s\n  %s\n", version, homepage)
 )
 
 func init() {
-	print(banner)
+	fmt.Printf("tlswrapper %s\n  %s\n", version, homepage)
 }
 
 func parseFlags() string {

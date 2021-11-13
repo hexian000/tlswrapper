@@ -58,9 +58,9 @@ type HTTPHandler struct {
 
 func (h *HTTPHandler) newBanner() string {
 	return fmt.Sprintf(
-		"%s@%s\nserver time: %v\n\n",
+		"tlswrapper@%s %s\n  %s\n\nserver time: %v\n\n",
 		h.config.ApiHostName,
-		banner,
+		version, homepage,
 		time.Now().Format(time.RFC3339),
 	)
 }
