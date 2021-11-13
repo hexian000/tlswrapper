@@ -193,6 +193,7 @@ func (s *Server) checkIdle() {
 	for name, item := range s.sessions {
 		mux := item.mux
 		if mux.IsClosed() {
+			slog.Info("session closed:", mux.LocalAddr(), "<x>", mux.RemoteAddr())
 			delete(s.sessions, name)
 			continue
 		}
@@ -204,6 +205,7 @@ func (s *Server) checkIdle() {
 		if time.Since(item.lastSeen) > timeout {
 			slog.Info("idle timeout expired:", mux.LocalAddr(), "<x>", mux.RemoteAddr())
 			_ = mux.Close()
+			delete(s.sessions, name)
 		}
 	}
 }
