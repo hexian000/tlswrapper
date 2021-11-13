@@ -174,7 +174,7 @@ func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 		defer h.mu.Unlock()
 		for name, info := range h.sessions {
 			r, w := info.count()
-			n := info.session.NumStreams()
+			n := info.mux.NumStreams()
 			idleSince := "now"
 			if n == 0 {
 				idleSince = time.Since(info.lastSeen).String()

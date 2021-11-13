@@ -42,7 +42,7 @@ func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (
 		defer s.mu.Unlock()
 		now := time.Now()
 		s.sessions[sessionName] = sessionInfo{
-			session:  session,
+			mux:      session,
 			created:  now,
 			lastSeen: now,
 			count:    meteredConn.Count,
@@ -55,10 +55,10 @@ type clientSession struct {
 	s  *Server
 	mu sync.Mutex
 
-	config *ClientConfig
-	tlscfg *tls.Config
-	muxcfg *yamux.Config
-	mux    *yamux.Session
+	config  *ClientConfig
+	tlscfg  *tls.Config
+	muxcfg  *yamux.Config
+	session *sessionInfo
 }
 
 func newClientSession(server *Server, tlscfg *tls.Config, config *ClientConfig) *clientSession {
@@ -90,8 +90,8 @@ func (c *clientSession) dialTLS(ctx context.Context) (err error) {
 		return errShutdown
 	default:
 	}
-	if c.mux == nil || c.mux.IsClosed() {
-		c.mux, err = c.s.dialTLS(ctx, c.config.Dial, c.s.tlscfg)
+	if c.session.mux == nil || c.session.mux.IsClosed() {
+		c.session.mux, err = c.s.dialTLS(ctx, c.config.Dial, c.s.tlscfg)
 	}
 	return
 }
@@ -102,12 +102,13 @@ func (c *clientSession) dialMux(ctx context.Context) (net.Conn, error) {
 		slog.Error("dial TLS:", err)
 		return nil, err
 	}
-	dialed, err := c.mux.Open()
+	dialed, err := c.session.mux.Open()
 	if err != nil {
 		slog.Error("dial mux:", err)
-		_ = c.mux.Close()
+		_ = c.session.mux.Close()
 		return nil, err
 	}
+	c.session.seen()
 	return dialed, nil
 }
 

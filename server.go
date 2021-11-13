@@ -23,10 +23,14 @@ const (
 )
 
 type sessionInfo struct {
-	session  *yamux.Session
+	mux      *yamux.Session
 	created  time.Time
 	lastSeen time.Time
 	count    func() (r uint64, w uint64)
+}
+
+func (i *sessionInfo) seen() {
+	i.lastSeen = time.Now()
 }
 
 // Server object
@@ -125,12 +129,10 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	func() {
 		h.server.mu.Lock()
 		defer h.server.mu.Unlock()
-		now := time.Now()
 		h.server.sessions[sessionName] = sessionInfo{
-			session:  session,
-			created:  now,
-			lastSeen: now,
-			count:    meteredConn.Count,
+			mux:     session,
+			created: time.Now(),
+			count:   meteredConn.Count,
 		}
 	}()
 	if h.config.Forward == "" {
@@ -154,30 +156,26 @@ func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) 
 	return dialed, nil
 }
 
-func (s *Server) forwardDirect(ctx context.Context, accepted net.Conn, address string) {
-	dialed, err := s.dialDirect(ctx, address)
+type DirectForwardHandler struct {
+	server  *Server
+	forward string
+}
+
+func (h *DirectForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
+	dialed, err := h.server.dialDirect(ctx, h.forward)
 	if err != nil {
 		_ = accepted.Close()
 		slog.Error("dial TCP:", err)
 		return
 	}
-	s.forward(accepted, dialed)
-}
-
-type DirectForwardHandler struct {
-	*Server
-	forward string
-}
-
-func (h *DirectForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
-	h.forwardDirect(ctx, accepted, h.forward)
+	h.server.forward(accepted, dialed)
 }
 
 func (s *Server) closeAllSessions() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for name, item := range s.sessions {
-		_ = item.session.Close()
+		_ = item.mux.Close()
 		delete(s.sessions, name)
 	}
 }
@@ -187,19 +185,19 @@ func (s *Server) checkIdle() {
 	defer s.mu.Unlock()
 	timeout := time.Duration(s.cfg.IdleTimeout) * time.Second
 	for name, item := range s.sessions {
-		session := item.session
-		if session.IsClosed() {
+		mux := item.mux
+		if mux.IsClosed() {
 			delete(s.sessions, name)
 			continue
 		}
-		numStreams := session.NumStreams()
+		numStreams := mux.NumStreams()
 		if numStreams > 0 {
-			item.lastSeen = time.Now()
+			item.seen()
 			continue
 		}
 		if time.Since(item.lastSeen) > timeout {
-			slog.Info("idle timeout expired:", session.LocalAddr(), "<x>", session.RemoteAddr())
-			_ = session.Close()
+			slog.Info("idle timeout expired:", mux.LocalAddr(), "<x>", mux.RemoteAddr())
+			_ = mux.Close()
 		}
 	}
 }
@@ -275,9 +273,7 @@ func (s *Server) Start() error {
 	defer s.mu.Unlock()
 	for i, server := range s.cfg.Server {
 		addr := server.Listen
-		s.wg.Add(1)
 		go func(config *ServerConfig) {
-			defer s.wg.Done()
 			_ = s.ListenAndServe(addr, &TLSHandler{s, config})
 		}(&s.cfg.Server[i])
 	}
@@ -291,17 +287,13 @@ func (s *Server) Start() error {
 			s.dials[client.HostName] = c
 		}
 		if addr := client.Listen; addr != "" && s.listeners[addr] == nil {
-			s.wg.Add(1)
 			go func(config *ClientConfig) {
-				defer s.wg.Done()
 				_ = s.ListenAndServe(addr, &ClientForwardHandler{c})
 			}(&s.cfg.Client[i])
 		}
 		for j, forward := range client.ProxyForwards {
 			addr := forward.Listen
-			s.wg.Add(1)
 			go func(config *ForwardConfig) {
-				defer s.wg.Done()
 				_ = s.ListenAndServe(addr, &ClientProxyHandler{c, config})
 			}(&s.cfg.Client[i].ProxyForwards[j])
 		}
