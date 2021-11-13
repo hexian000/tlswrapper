@@ -35,54 +35,45 @@ type ClientConfig struct {
 	ProxyForwards []ForwardConfig `json:"proxy"`
 }
 
-type RouteRule struct {
-	HostName string `json:"hostname"`
-	To       string `json:"to"`
-}
-
 // ProxyConfig contains configs for local proxy server
 type ProxyConfig struct {
-	HostName     string      `json:"hostname"`
-	Listen       string      `json:"listen"`
-	Routes       []RouteRule `json:"routes"`
-	DefaultRoute string      `json:"default"`
-	DisableApi   bool        `json:"noapi"`
+	ApiHostName  string            `json:"apihostname"`
+	Listen       string            `json:"listen"`
+	HostRoutes   map[string]string `json:"hostroutes"`
+	DefaultRoute string            `json:"default"`
 }
 
 // Config file
 type Config struct {
-	ServerName         string         `json:"sni"`
-	Server             []ServerConfig `json:"server"`
-	Client             []ClientConfig `json:"client"`
-	Proxy              ProxyConfig    `json:"proxy"`
-	Certificate        string         `json:"cert"`
-	PrivateKey         string         `json:"key"`
-	AuthorizedCerts    []string       `json:"authcerts"`
-	NoDelay            bool           `json:"nodelay"`
-	Linger             int            `json:"linger"`
-	KeepAlive          int            `json:"keepalive"`
-	IdleTimeout        int            `json:"idletimeout"`
-	AcceptBacklog      int            `json:"backlog"`
-	SessionWindow      uint32         `json:"window"`
-	ConnectTimeout     int            `json:"connecttimeout"`
-	WriteTimeout       int            `json:"writetimeout"`
-	StreamOpenTimeout  int            `json:"streamopentimeout"`
-	StreamCloseTimeout int            `json:"streamclosetimeout"`
-	UDPLog             string         `json:"udplog"`
+	ServerName      string         `json:"sni"`
+	Server          []ServerConfig `json:"server"`
+	Client          []ClientConfig `json:"client"`
+	Proxy           ProxyConfig    `json:"proxy"`
+	Certificate     string         `json:"cert"`
+	PrivateKey      string         `json:"key"`
+	AuthorizedCerts []string       `json:"authcerts"`
+	NoDelay         bool           `json:"nodelay"`
+	Linger          int            `json:"linger"`
+	KeepAlive       int            `json:"keepalive"`
+	ServerKeepAlive int            `json:"serverkeepalive"`
+	IdleTimeout     int            `json:"idletimeout"`
+	AcceptBacklog   int            `json:"backlog"`
+	SessionWindow   uint32         `json:"window"`
+	RequestTimeout  int            `json:"timeout"`
+	WriteTimeout    int            `json:"writetimeout"`
+	UDPLog          string         `json:"udplog"`
 }
 
 var defaultConfig = Config{
-	ServerName:         "example.com",
-	NoDelay:            false,
-	Linger:             30,
-	KeepAlive:          15,  // every 15s
-	IdleTimeout:        900, // 15min
-	AcceptBacklog:      16,
-	SessionWindow:      256 * 1024, // 256 KiB
-	ConnectTimeout:     15,
-	WriteTimeout:       30,
-	StreamOpenTimeout:  15,
-	StreamCloseTimeout: 15,
+	ServerName:     "example.com",
+	NoDelay:        false,
+	Linger:         30,
+	KeepAlive:      15,  // every 15s
+	IdleTimeout:    900, // 15min
+	AcceptBacklog:  8,
+	SessionWindow:  256 * 1024, // 256 KiB
+	RequestTimeout: 15,
+	WriteTimeout:   30,
 }
 
 // SetConnParams sets TCP params
@@ -125,6 +116,11 @@ func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
 	}, nil
 }
 
+// Timeout gets the generic request timeout
+func (c *Config) Timeout() time.Duration {
+	return time.Duration(c.RequestTimeout) * time.Second
+}
+
 type logWrapper struct {
 	*slog.Logger
 }
@@ -143,19 +139,33 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 }
 
 // NewMuxConfig creates yamux.Config
-func (c *Config) NewMuxConfig() *yamux.Config {
+func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
 	keepAliveInterval := time.Duration(c.KeepAlive) * time.Second
-	if c.KeepAlive <= 0 {
+	if isServer {
+		keepAliveInterval = time.Duration(c.ServerKeepAlive) * time.Second
+	}
+	enableKeepAlive := keepAliveInterval >= time.Second
+	if !enableKeepAlive {
 		keepAliveInterval = 15 * time.Second
 	}
 	return &yamux.Config{
 		AcceptBacklog:          c.AcceptBacklog,
-		EnableKeepAlive:        c.KeepAlive > 0,
+		EnableKeepAlive:        enableKeepAlive,
 		KeepAliveInterval:      keepAliveInterval,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
 		MaxStreamWindowSize:    c.SessionWindow,
-		StreamOpenTimeout:      time.Duration(c.StreamOpenTimeout) * time.Second,
-		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
+		StreamOpenTimeout:      c.Timeout(),
+		StreamCloseTimeout:     c.Timeout(),
 		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
 	}
+}
+
+func (c *ProxyConfig) findRoute(host string) string {
+	if host == c.ApiHostName {
+		return ""
+	}
+	if route, ok := c.HostRoutes[host]; ok {
+		return route
+	}
+	return c.DefaultRoute
 }

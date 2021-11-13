@@ -18,8 +18,6 @@ import (
 
 const network = "tcp"
 
-var dialer net.Dialer
-
 const (
 	idleCheckInterval = 10 * time.Second
 )
@@ -35,8 +33,8 @@ type sessionInfo struct {
 type Server struct {
 	mu sync.Mutex
 	wg sync.WaitGroup
-	*Config
 
+	cfg    *Config
 	tlscfg *tls.Config
 	muxcfg *yamux.Config
 
@@ -45,16 +43,16 @@ type Server struct {
 	sessions  map[string]sessionInfo
 	contexts  map[context.Context]context.CancelFunc
 
+	dialer     net.Dialer
 	shutdownCh chan struct{}
 
 	startTime time.Time
 }
 
-type handlerFunc func(context.Context, net.Conn)
-
 // NewServer creates a server object
 func NewServer() *Server {
 	return &Server{
+		dials:      make(map[string]*clientSession),
 		listeners:  make(map[string]net.Listener),
 		sessions:   make(map[string]sessionInfo),
 		contexts:   make(map[context.Context]context.CancelFunc),
@@ -63,7 +61,7 @@ func NewServer() *Server {
 }
 
 func (s *Server) newContext() context.Context {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.ConnectTimeout)*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout())
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.contexts[ctx] = cancel
@@ -80,7 +78,6 @@ func (s *Server) deleteContext(ctx context.Context) {
 }
 
 func (s *Server) forward(accepted net.Conn, dialed net.Conn) {
-	slog.Verbose("stream open:", accepted.LocalAddr(), "->", dialed.RemoteAddr())
 	connCopy := func(dst net.Conn, src net.Conn) {
 		defer s.wg.Done()
 		defer func() {
@@ -97,11 +94,9 @@ func (s *Server) forward(accepted net.Conn, dialed net.Conn) {
 			slog.Verbose("stream error:", err)
 			return
 		}
-		slog.Verbose("stream close:", accepted.LocalAddr(), "-x>", dialed.RemoteAddr())
 	}
-	s.wg.Add(1)
+	s.wg.Add(2)
 	go connCopy(accepted, dialed)
-	s.wg.Add(1)
 	go connCopy(dialed, accepted)
 }
 
@@ -112,7 +107,7 @@ type TLSHandler struct {
 
 func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	start := time.Now()
-	h.server.SetConnParams(conn)
+	h.server.cfg.SetConnParams(conn)
 	meteredConn := Meter(conn)
 	tlsConn := tls.Server(meteredConn, h.server.tlscfg)
 	err := tlsConn.HandshakeContext(ctx)
@@ -152,7 +147,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 
 func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) {
 	slog.Verbose("dial TCP:", addr)
-	dialed, err := dialer.DialContext(ctx, network, addr)
+	dialed, err := s.dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +155,6 @@ func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) 
 }
 
 func (s *Server) forwardDirect(ctx context.Context, accepted net.Conn, address string) {
-	defer s.wg.Done()
 	dialed, err := s.dialDirect(ctx, address)
 	if err != nil {
 		_ = accepted.Close()
@@ -191,7 +185,7 @@ func (s *Server) closeAllSessions() {
 func (s *Server) checkIdle() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	timeout := time.Duration(s.IdleTimeout) * time.Second
+	timeout := time.Duration(s.cfg.IdleTimeout) * time.Second
 	for name, item := range s.sessions {
 		session := item.session
 		if session.IsClosed() {
@@ -224,7 +218,7 @@ func (s *Server) watchdog() {
 				return
 			}
 			lastTick = now
-			if s.IdleTimeout > 0 {
+			if s.cfg.IdleTimeout > 0 {
 				s.checkIdle()
 			}
 		case <-s.shutdownCh:
@@ -279,20 +273,20 @@ func (s *Server) ListenAndServe(addr string, handler Handler) error {
 func (s *Server) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i, server := range s.Server {
+	for i, server := range s.cfg.Server {
 		addr := server.Listen
 		s.wg.Add(1)
 		go func(config *ServerConfig) {
 			defer s.wg.Done()
 			_ = s.ListenAndServe(addr, &TLSHandler{s, config})
-		}(&s.Server[i])
+		}(&s.cfg.Server[i])
 	}
-	for i, client := range s.Client {
-		tlscfg, err := s.NewTLSConfig(client.ServerName)
+	for i, client := range s.cfg.Client {
+		tlscfg, err := s.cfg.NewTLSConfig(client.ServerName)
 		if err != nil {
 			return err
 		}
-		c := newClientSession(s, tlscfg, &s.Client[i])
+		c := newClientSession(s, tlscfg, &s.cfg.Client[i])
 		if client.HostName != "" {
 			s.dials[client.HostName] = c
 		}
@@ -301,7 +295,7 @@ func (s *Server) Start() error {
 			go func(config *ClientConfig) {
 				defer s.wg.Done()
 				_ = s.ListenAndServe(addr, &ClientForwardHandler{c})
-			}(&s.Client[i])
+			}(&s.cfg.Client[i])
 		}
 		for j, forward := range client.ProxyForwards {
 			addr := forward.Listen
@@ -309,16 +303,16 @@ func (s *Server) Start() error {
 			go func(config *ForwardConfig) {
 				defer s.wg.Done()
 				_ = s.ListenAndServe(addr, &ClientProxyHandler{c, config})
-			}(&s.Client[i].ProxyForwards[j])
+			}(&s.cfg.Client[i].ProxyForwards[j])
 		}
 	}
-	if addr := s.Proxy.Listen; addr != "" && s.listeners[addr] == nil {
+	if addr := s.cfg.Proxy.Listen; addr != "" && s.listeners[addr] == nil {
 		listener, err := net.Listen(network, addr)
 		if err != nil {
 			return err
 		}
 		s.listeners[addr] = listener
-		slog.Info("Proxy listen:", listener.Addr())
+		slog.Info("proxy listen:", listener.Addr())
 		go s.serveHTTP(listener)
 	}
 	go s.watchdog()
@@ -337,12 +331,12 @@ func (s *Server) Shutdown() error {
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if len(s.contexts) > 0 {
-			for _, cancel := range s.contexts {
-				cancel()
-			}
+		for ctx, cancel := range s.contexts {
+			cancel()
+			delete(s.contexts, ctx)
 		}
 	}()
+	s.closeAllSessions()
 	slog.Info("waiting for unfinished connections")
 	s.wg.Wait()
 	return nil
@@ -350,9 +344,9 @@ func (s *Server) Shutdown() error {
 
 // Load or reload configuration
 func (s *Server) LoadConfig(cfg *Config) error {
-	if s.Config != nil {
-		if !reflect.DeepEqual(s.Config.Server, cfg.Server) ||
-			!reflect.DeepEqual(s.Config.Client, cfg.Client) {
+	if s.cfg != nil {
+		if !reflect.DeepEqual(s.cfg.Server, cfg.Server) ||
+			!reflect.DeepEqual(s.cfg.Client, cfg.Client) {
 			slog.Warning("listener config changes are ignored")
 		}
 	}
@@ -360,8 +354,8 @@ func (s *Server) LoadConfig(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	s.Config = cfg
+	s.cfg = cfg
 	s.tlscfg = tlscfg
-	s.muxcfg = cfg.NewMuxConfig()
+	s.muxcfg = cfg.NewMuxConfig(true)
 	return nil
 }

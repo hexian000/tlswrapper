@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"runtime"
@@ -20,40 +20,51 @@ func (s *Server) serveHTTP(l net.Listener) {
 		_ = l.Close()
 	}()
 	server := &http.Server{
-		Handler: newHandler(s, s.Proxy.DisableApi),
+		Handler:           newHandler(s, &s.cfg.Proxy),
+		ReadHeaderTimeout: s.cfg.Timeout(),
 	}
 	_ = server.Serve(l)
 }
 
-func (s *Server) routedDial(host string) (c *clientSession, ok bool) {
-	if c, ok := s.dials[host]; ok {
-		return c, true
+func (s *Server) routedDial(ctx context.Context, host string, addr string) (net.Conn, error) {
+	route := s.cfg.Proxy.findRoute(host)
+	if route == "" {
+		return s.dialDirect(ctx, addr)
 	}
-	host = s.Proxy.DefaultRoute
-	if host == "" {
-		return nil, true
+	if c, ok := s.dials[route]; ok {
+		slog.Verbose("route host", host, "to", route)
+		return c.dialMux(ctx)
 	}
-	if c, ok := s.dials[host]; ok {
-		return c, true
-	}
-	return nil, false
+	return nil, fmt.Errorf("no route to host: %v", host)
 }
 
-type mainHandler struct {
+func (s *Server) routedProxyDial(ctx context.Context, host string, addr string) (net.Conn, error) {
+	route := s.cfg.Proxy.findRoute(host)
+	if route == "" {
+		return s.dialDirect(ctx, addr)
+	}
+	if c, ok := s.dials[route]; ok {
+		slog.Verbose("route connection to", host, "via", route)
+		return c.proxyDial(ctx, addr)
+	}
+	return nil, fmt.Errorf("no route to host: %v", host)
+}
+
+type HTTPHandler struct {
 	*Server
-	localhost string
-	mux       *http.ServeMux
+	config *ProxyConfig
+	mux    *http.ServeMux
 }
 
-func (mainHandler) newBanner() string {
+func (HTTPHandler) newBanner() string {
 	return fmt.Sprintf("%s\nserver time: %v\n\n", banner, time.Now())
 }
 
-func (h *mainHandler) Error(w http.ResponseWriter, err error, code int) {
+func (h *HTTPHandler) Error(w http.ResponseWriter, err error, code int) {
 	http.Error(w, h.newBanner()+err.Error(), code)
 }
 
-func (h *mainHandler) proxyError(w http.ResponseWriter, err error) {
+func (h *HTTPHandler) proxyError(w http.ResponseWriter, err error) {
 	slog.Verbose("http:", err)
 	if err, ok := err.(net.Error); ok && err.Timeout() {
 		h.Error(w, err, http.StatusGatewayTimeout)
@@ -62,40 +73,17 @@ func (h *mainHandler) proxyError(w http.ResponseWriter, err error) {
 	}
 }
 
-var hopHeaders = [...]string{
-	"Connection",
-	"Keep-Alive",
-	"Proxy-Authenticate",
-	"Proxy-Authorization",
-	"Te",
-	"Trailers",
-	"Transfer-Encoding",
-	"Upgrade",
-}
-
-func delHopHeaders(header http.Header) {
-	for _, h := range hopHeaders {
-		header.Del(h)
-	}
-}
-
-func appendHostToXForwardHeader(header http.Header, host string) {
-	if prior, ok := header["X-Forwarded-For"]; ok {
-		host = strings.Join(prior, ", ") + ", " + host
-	}
-	header.Set("X-Forwarded-For", host)
-}
-
-func (h *mainHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodConnect {
 		h.ServeConnect(w, req)
 		return
 	}
 	if req.URL.Scheme != "http" {
-		http.Error(w, "Unsupported protocol scheme "+req.URL.Scheme, http.StatusBadRequest)
+		http.Error(w, "Unsupported protocol scheme: "+req.URL.String(), http.StatusBadRequest)
 		return
 	}
-	if req.Host == h.localhost {
+	host := req.URL.Hostname()
+	if strings.EqualFold(host, h.config.ApiHostName) {
 		if h.mux != nil {
 			h.mux.ServeHTTP(w, req)
 		} else {
@@ -104,37 +92,33 @@ func (h *mainHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	client := &http.Client{
-		Timeout: time.Duration(h.ConnectTimeout) * time.Second,
-	}
-	req.RequestURI = ""
-	delHopHeaders(req.Header)
-
-	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
-		appendHostToXForwardHeader(req.Header, clientIP)
-	}
-
-	resp, err := client.Do(req)
+	ctx := h.newContext()
+	defer h.deleteContext(ctx)
+	dialed, err := h.routedDial(ctx, host, req.Host)
 	if err != nil {
+		slog.Verbose("route:", err)
 		h.proxyError(w, err)
 		return
 	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	delHopHeaders(resp.Header)
-	for k, v := range resp.Header {
-		for _, i := range v {
-			w.Header().Add(k, i)
-		}
+	if err = req.WriteProxy(dialed); err != nil {
+		_ = dialed.Close()
+		slog.Verbose("route:", err)
+		h.proxyError(w, err)
+		return
 	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	accepted, err := proxy.Hijack(w)
+	if err != nil {
+		_ = dialed.Close()
+		slog.Error("hijack:", err)
+		return
+	}
+	h.forward(accepted, dialed)
 }
 
-func (h *mainHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
-	dialed, err := dialer.DialContext(req.Context(), network, req.Host)
+func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
+	ctx := h.newContext()
+	defer h.deleteContext(ctx)
+	dialed, err := h.routedProxyDial(ctx, req.URL.Hostname(), req.Host)
 	if err != nil {
 		h.proxyError(w, err)
 		return
@@ -142,13 +126,13 @@ func (h *mainHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	accepted, err := proxy.Hijack(w)
 	if err != nil {
-		slog.Warning("http:", err)
+		slog.Error("hijack:", err)
 		return
 	}
 	h.forward(accepted, dialed)
 }
 
-func (h *mainHandler) handleStatus(respWriter http.ResponseWriter, req *http.Request) {
+func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		respWriter.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -204,14 +188,14 @@ func (h *mainHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 	_, _ = w.WriteString(fmt.Sprintln("Generated in", time.Since(start)))
 }
 
-func newHandler(s *Server, disableApi bool) *mainHandler {
-	h := &mainHandler{
-		Server:    s,
-		localhost: s.Config.Proxy.HostName,
+func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
+	h := &HTTPHandler{
+		Server: s,
+		config: config,
 	}
-	if !disableApi {
+	if config.ApiHostName != "" {
 		h.mux = http.NewServeMux()
-		h.mux.HandleFunc(h.localhost+"/status", h.handleStatus)
+		h.mux.HandleFunc(h.config.ApiHostName+"/status", h.handleStatus)
 	}
 	return h
 }

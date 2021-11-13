@@ -6,6 +6,7 @@
   ],
   "client": [
     {
+      "hostname": "peer2.lan",
       "listen": "127.0.0.1:8119",
       "dial": "peer2.example.com:12345",
       "proxy": [
@@ -16,6 +17,16 @@
       ]
     }
   ],
+  "proxy":{
+    "hostname":"peer1.lan",
+    "listen":"0.0.0.0:8080",
+    "hostroutes":{
+      "a.peer2.lan":"peer2.lan",
+      "b.peer2.lan":"peer2.lan",
+      "c.peer2.lan":"peer2.lan"
+    },
+    "default":"peer2.example.com:12345"
+  },
   "cert": "peer1-cert.pem",
   "key": "peer1-key.pem",
   "authcerts": [
