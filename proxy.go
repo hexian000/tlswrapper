@@ -93,11 +93,11 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		h.ServeConnect(w, req)
 		return
 	}
+	if req.URL.Scheme != "http" {
+		http.Error(w, "Unsupported protocol scheme: "+req.URL.String(), http.StatusBadRequest)
+		return
+	}
 	if strings.EqualFold(req.URL.Hostname(), h.config.LocalHost+apiDomain) {
-		if req.URL.Scheme != "http" {
-			http.Error(w, "Unsupported protocol scheme: "+req.URL.String(), http.StatusBadRequest)
-			return
-		}
 		if h.mux != nil {
 			h.mux.ServeHTTP(w, req)
 		} else {
@@ -118,16 +118,16 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		h.proxyError(w, err)
 		return
 	}
+	if err = req.WriteProxy(dialed); err != nil {
+		_ = dialed.Close()
+		slog.Verbose("route:", err)
+		h.proxyError(w, err)
+		return
+	}
 	accepted, err := proxy.Hijack(w)
 	if err != nil {
 		_ = dialed.Close()
 		slog.Error("hijack:", err)
-		return
-	}
-	if err = req.Header.Write(dialed); err != nil {
-		_ = accepted.Close()
-		_ = dialed.Close()
-		slog.Warning("http:", err)
 		return
 	}
 	h.forward(accepted, dialed)
