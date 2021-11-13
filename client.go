@@ -61,10 +61,14 @@ func newClientSession(server *Server, tlscfg *tls.Config, config *ClientConfig) 
 }
 
 func (c *clientSession) proxyDial(ctx context.Context, addr string) (net.Conn, error) {
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		return nil, err
+	}
 	dialed, err := c.dialMux(ctx)
 	if err != nil {
 		return nil, err
 	}
+	slog.Verbose("proxy dial:", addr)
 	conn := proxy.Client(dialed, addr)
 	if err := conn.HandshakeContext(ctx); err != nil {
 		return nil, err

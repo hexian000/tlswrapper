@@ -28,8 +28,8 @@ func (s *Server) serveHTTP(l net.Listener) {
 	_ = server.Serve(l)
 }
 
-func (s *Server) routedDial(ctx context.Context, host string, addr string) (net.Conn, error) {
-	_, _, err := net.SplitHostPort(addr)
+func (s *Server) routedDial(ctx context.Context, addr string) (net.Conn, error) {
+	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -38,14 +38,14 @@ func (s *Server) routedDial(ctx context.Context, host string, addr string) (net.
 		return s.dialDirect(ctx, addr)
 	}
 	if c, ok := s.dials[route]; ok {
-		slog.Verbose("route host", host, "to", route)
+		slog.Verbose("route: forward", addr, "via", route)
 		return c.dialMux(ctx)
 	}
 	return nil, fmt.Errorf("no route to host: %v", host)
 }
 
-func (s *Server) routedProxyDial(ctx context.Context, host string, addr string) (net.Conn, error) {
-	_, _, err := net.SplitHostPort(addr)
+func (s *Server) routedProxyDial(ctx context.Context, addr string) (net.Conn, error) {
+	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (s *Server) routedProxyDial(ctx context.Context, host string, addr string) 
 		return s.dialDirect(ctx, addr)
 	}
 	if c, ok := s.dials[route]; ok {
-		slog.Verbose("route connection to", host, "via", route)
+		slog.Verbose("route: proxy", addr, "via", route)
 		return c.proxyDial(ctx, addr)
 	}
 	return nil, fmt.Errorf("no route to host: %v", host)
@@ -97,8 +97,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Unsupported protocol scheme: "+req.URL.String(), http.StatusBadRequest)
 		return
 	}
-	host := req.URL.Hostname()
-	if strings.EqualFold(host, h.config.LocalHost+apiDomain) {
+	if strings.EqualFold(req.URL.Hostname(), h.config.LocalHost+apiDomain) {
 		if h.mux != nil {
 			h.mux.ServeHTTP(w, req)
 		} else {
@@ -113,7 +112,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.URL.Port() == "" {
 		addr += ":80"
 	}
-	dialed, err := h.routedDial(ctx, host, addr)
+	dialed, err := h.routedDial(ctx, addr)
 	if err != nil {
 		slog.Verbose("route:", err)
 		h.proxyError(w, err)
@@ -143,7 +142,7 @@ func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	}
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
-	dialed, err := h.routedProxyDial(ctx, req.URL.Hostname(), req.Host)
+	dialed, err := h.routedProxyDial(ctx, req.Host)
 	if err != nil {
 		slog.Error("proxy dial:", err)
 		h.proxyError(w, err)
