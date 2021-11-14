@@ -76,16 +76,17 @@ func (h *HTTPHandler) newBanner() string {
 	)
 }
 
-func (h *HTTPHandler) Error(w http.ResponseWriter, err error, code int) {
-	http.Error(w, h.newBanner()+fmt.Sprintf("%v\n", err), code)
+func (h *HTTPHandler) Error(w http.ResponseWriter, msg string, code int) {
+	http.Error(w, h.newBanner()+msg, code)
 }
 
 func (h *HTTPHandler) proxyError(w http.ResponseWriter, err error) {
 	slog.Verbose("http:", err)
+	msg := fmt.Sprintf("%v", err)
 	if err, ok := err.(net.Error); ok && err.Timeout() {
-		h.Error(w, err, http.StatusGatewayTimeout)
+		h.Error(w, msg, http.StatusGatewayTimeout)
 	} else {
-		h.Error(w, err, http.StatusBadGateway)
+		h.Error(w, msg, http.StatusBadGateway)
 	}
 }
 
@@ -112,7 +113,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if req.URL.Scheme != "http" {
-		http.Error(w, "Unsupported protocol scheme: "+req.URL.String(), http.StatusBadRequest)
+		h.Error(w, "Unsupported protocol scheme: "+req.URL.String(), http.StatusBadRequest)
 		return
 	}
 	if strings.EqualFold(req.URL.Hostname(), h.config.LocalHost+apiDomain) {
@@ -171,8 +172,9 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	_, _, err := net.SplitHostPort(req.Host)
 	if err != nil {
-		slog.Warning("proxy connect:", err)
-		h.Error(w, err, http.StatusBadRequest)
+		msg := fmt.Sprintf("proxy connect: %v", err)
+		slog.Warning(msg)
+		h.Error(w, msg, http.StatusBadRequest)
 		return
 	}
 	ctx := h.newContext()
