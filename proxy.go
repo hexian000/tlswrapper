@@ -202,7 +202,7 @@ func (h *HTTPHandler) handleCluster(respWriter http.ResponseWriter, req *http.Re
 }
 
 var (
-	statusPattern = regexp.MustCompile(`^/([\w\.]+)/status$`)
+	statusPattern = regexp.MustCompile(`^/status/([\w\.]+)$`)
 )
 
 func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Request) {
@@ -288,7 +288,7 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 	if !config.DisableAPI {
 		h.mux = http.NewServeMux()
 		h.mux.HandleFunc("/cluster", h.handleCluster)
-		h.mux.HandleFunc("/status", h.handleStatus)
+		h.mux.HandleFunc("/status/", h.handleStatus)
 	}
 	return h
 }
