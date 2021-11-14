@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"time"
@@ -124,6 +125,9 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer h.deleteContext(ctx)
 	client := &http.Client{
 		Transport: &http.Transport{
+			Proxy: func(r *http.Request) (*url.URL, error) {
+				return r.URL, nil
+			},
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return h.routedDial(ctx, addr)
 			},
