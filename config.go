@@ -48,7 +48,7 @@ type ClientConfig struct {
 type ProxyConfig struct {
 	// local host name
 	LocalHost string `json:"localhost"`
-	// local address, default to "127.0.0.1", you may not want to change this
+	// (optional) local address, default to "127.0.0.1", you may not want to change this
 	LocalAddr string `json:"localaddr"`
 	// virtual domain name
 	VirtualDomain string `json:"vdomain"`
@@ -227,21 +227,17 @@ func (c *ProxyConfig) StripVirtualDomain(hostname string) (host string, ok bool)
 	return hostname[:n], true
 }
 
-func (c *ProxyConfig) FindRoute(addr string) (route string, dialAddr string) {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	}
-	host, _ = c.StripVirtualDomain(host)
-	if strings.EqualFold(host, c.LocalHost) {
+func (c *ProxyConfig) FindRoute(host string) (route string, dialHost string) {
+	name, _ := c.StripVirtualDomain(host)
+	if strings.EqualFold(name, c.LocalHost) {
 		return "", ""
 	}
-	rule, ok := c.HostRoutes[host]
+	rule, ok := c.HostRoutes[name]
 	if !ok {
-		return c.DefaultRoute, addr
+		rule = c.DefaultRoute
 	}
 	if rule == "" {
-		return "", addr
+		return "", host
 	}
 	s := strings.Split(rule, "/")
 	if len(s) < 2 {

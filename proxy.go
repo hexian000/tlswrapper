@@ -30,7 +30,12 @@ func (s *Server) serveHTTP(l net.Listener) {
 
 func (s *Server) routedDial(ctx context.Context, addr string) (net.Conn, error) {
 	const defaultLocalAddr = "127.0.0.1"
-	route, dialAddr := s.cfg.Proxy.FindRoute(addr)
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	route, dialHost := s.cfg.Proxy.FindRoute(host)
+	dialAddr := net.JoinHostPort(dialHost, port)
 	if route == "" {
 		if dialAddr == "" {
 			dialAddr = defaultLocalAddr
