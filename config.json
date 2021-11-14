@@ -23,12 +23,20 @@
   ],
   "proxy": {
     "localhost": "peer1",
+    "vdomain": "lan",
     "listen": "0.0.0.0:8080",
     "hostroutes": {
-      "some.local.service.lan": "",
-      "peer2.lan": "peer2",
-      "some.remote.service.lan": "peer2/some.remote.service.lan",
-      "gateway.lan": "gateway/192.168.0.1"
+      "some.local.service": {},
+      "peer2": {
+        "jump": "peer2"
+      },
+      "some.remote.service": {
+        "jump": "peer2"
+      },
+      "gateway": {
+        "jump": "gateway",
+        "rewrite": "192.168.0.1"
+      }
     },
     "default": "gateway"
   },

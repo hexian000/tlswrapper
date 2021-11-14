@@ -191,8 +191,8 @@ func (h *HTTPHandler) handleCluster(respWriter http.ResponseWriter, req *http.Re
 	}()
 	_, _ = w.WriteString(h.newBanner())
 	_, _ = w.WriteString(fmt.Sprintf("localhost: %s\n", h.config.LocalHost))
-	for name, c := range h.Server.dials {
-		_, _ = w.WriteString(fmt.Sprintf("%s: %v\n", name, c.session.mux.RemoteAddr()))
+	for name := range h.Server.dials {
+		_, _ = w.WriteString(fmt.Sprintf("remote: %s\n", name))
 	}
 	_, _ = w.WriteString("\n==========\n")
 	_, _ = w.WriteString(fmt.Sprintln("Generated in", time.Since(start)))
