@@ -109,7 +109,7 @@ func (h *HTTPHandler) proxy(w http.ResponseWriter, req *http.Request) {
 	}
 	resp, err := h.client.Do(req)
 	if err != nil {
-		slog.Verbose("http:", err)
+		slog.Debug("http:", err)
 		h.proxyError(w, err)
 		return
 	}
@@ -164,7 +164,7 @@ func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	defer h.deleteContext(ctx)
 	dialed, err := h.routedDial(ctx, req.Host)
 	if err != nil {
-		slog.Error("proxy dial:", err)
+		slog.Verbose("proxy dial:", err)
 		h.proxyError(w, err)
 		return
 	}

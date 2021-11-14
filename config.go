@@ -231,7 +231,7 @@ func (c *ProxyConfig) FindRoute(host string) (route string, newHost string) {
 	if strings.EqualFold(name, c.LocalHost) {
 		return "", host
 	}
-	rule, ok := c.HostRoutes[name]
+	rule, ok := c.HostRoutes[host]
 	if !ok {
 		return c.DefaultRoute, host
 	}
