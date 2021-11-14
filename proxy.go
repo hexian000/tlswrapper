@@ -213,7 +213,7 @@ func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 				idleSince = time.Since(session.lastSeen).String()
 			}
 			_, _ = buf.WriteString(fmt.Sprintf(
-				"%s\n  Num Streams: %d\n  Age: %v (since %v)\n  Idle since: %v\n  Traffic I/O(bytes): %d / %d\n\n",
+				"%s\n  Num Streams: %d\n  Age: %v (since %v)\n  Idle: %v\n  Traffic I/O(bytes): %d / %d\n\n",
 				name, n, time.Since(session.created), session.created, idleSince, r, w,
 			))
 			numStreams += n
