@@ -29,35 +29,22 @@ func (s *Server) serveHTTP(l net.Listener) {
 }
 
 func (s *Server) routedDial(ctx context.Context, addr string) (net.Conn, error) {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return nil, err
-	}
-	route := s.cfg.Proxy.findRoute(host)
+	const defaultLocalAddr = "127.0.0.1"
+	route, dialAddr := s.cfg.Proxy.FindRoute(addr)
 	if route == "" {
-		return s.dialDirect(ctx, addr)
+		if dialAddr == "" {
+			dialAddr = defaultLocalAddr
+		}
+		return s.dialDirect(ctx, dialAddr)
 	}
 	if c, ok := s.dials[route]; ok {
-		slog.Verbose("route: forward", addr, "via", route)
-		return c.dialMux(ctx)
+		slog.Verbose("route: forward", addr, "to", route, dialAddr)
+		if dialAddr == "" {
+			return c.dialMux(ctx)
+		}
+		return c.proxyDial(ctx, dialAddr)
 	}
-	return nil, fmt.Errorf("no route to host: %v", host)
-}
-
-func (s *Server) routedProxyDial(ctx context.Context, addr string) (net.Conn, error) {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return nil, err
-	}
-	route := s.cfg.Proxy.findRoute(host)
-	if route == "" {
-		return s.dialDirect(ctx, addr)
-	}
-	if c, ok := s.dials[route]; ok {
-		slog.Verbose("route: proxy", addr, "via", route)
-		return c.proxyDial(ctx, addr)
-	}
-	return nil, fmt.Errorf("no route to host: %v", host)
+	return nil, fmt.Errorf("no route to address: %v", addr)
 }
 
 type HTTPHandler struct {
@@ -107,21 +94,7 @@ func delHopHeaders(header http.Header) {
 	}
 }
 
-func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req.Method == http.MethodConnect {
-		h.ServeConnect(w, req)
-		return
-	}
-	if apiHost, ok := getAPIHost(req.URL.Hostname()); ok &&
-		strings.EqualFold(apiHost, h.config.LocalHost) {
-		if h.mux != nil {
-			h.mux.ServeHTTP(w, req)
-		} else {
-			w.WriteHeader(http.StatusNotFound)
-		}
-		return
-	}
-
+func (h *HTTPHandler) proxy(w http.ResponseWriter, req *http.Request) {
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
 	req.RequestURI = ""
@@ -152,6 +125,22 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
+func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method == http.MethodConnect {
+		h.ServeConnect(w, req)
+		return
+	}
+	if h.config.IsAPIHost(req.URL.Hostname()) {
+		if h.mux != nil {
+			h.mux.ServeHTTP(w, req)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+		return
+	}
+	h.proxy(w, req)
+}
+
 func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	_, _, err := net.SplitHostPort(req.Host)
 	if err != nil {
@@ -162,7 +151,7 @@ func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	}
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
-	dialed, err := h.routedProxyDial(ctx, req.Host)
+	dialed, err := h.routedDial(ctx, req.Host)
 	if err != nil {
 		slog.Error("proxy dial:", err)
 		h.proxyError(w, err)
@@ -179,7 +168,7 @@ func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 
 func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
-		respWriter.WriteHeader(http.StatusMethodNotAllowed)
+		h.Error(respWriter, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
 	start := time.Now()

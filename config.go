@@ -46,9 +46,13 @@ type ClientConfig struct {
 
 // ProxyConfig contains configs for local proxy server
 type ProxyConfig struct {
-	// (optional) HTTP proxy forwarder configs
+	// local host name
 	LocalHost string `json:"localhost"`
-	// HTTP proxy forwarder configs
+	// local address, default to "127.0.0.1", you may not want to change this
+	LocalAddr string `json:"localaddr"`
+	// virtual domain name
+	VirtualDomain string `json:"vdomain"`
+	// HTTP proxy bind address
 	Listen string `json:"listen"`
 	// (optional) route rules by host names, maps host name to client[*].hostname, empty for direct
 	HostRoutes map[string]string `json:"hostroutes"`
@@ -192,32 +196,56 @@ func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
 	}
 }
 
-const (
-	apiDomain = "tlswrapper.api"
-)
-
-func getAPIHost(hostname string) (host string, ok bool) {
-	const apiSuffix = "." + apiDomain
-	ok = len(hostname) > len(apiSuffix) &&
-		strings.EqualFold(
-			hostname[len(hostname)-len(apiSuffix):],
-			apiSuffix,
-		)
-	if ok {
-		host = hostname[:len(hostname)-len(apiSuffix)]
+func (c *ProxyConfig) MakeFQDN(hostname string) (fqdn string, ok bool) {
+	if hostname == "" || c.VirtualDomain == "" {
+		return "", false
 	}
-	return
+	return hostname + "." + c.VirtualDomain, true
 }
 
-func (c *ProxyConfig) findRoute(hostname string) string {
-	if apiHost, ok := getAPIHost(hostname); ok {
-		if strings.EqualFold(apiHost, c.LocalHost) {
-			return ""
-		}
-		return apiHost
+func (c *ProxyConfig) IsAPIHost(hostname string) bool {
+	const apiHost = "api.tlswrapper"
+	apiHostName, ok := c.MakeFQDN(apiHost)
+	if !ok {
+		return false
 	}
-	if route, ok := c.HostRoutes[hostname]; ok {
-		return route
+	return strings.EqualFold(hostname, apiHostName)
+}
+
+func (c *ProxyConfig) StripVirtualDomain(hostname string) (host string, ok bool) {
+	if c.VirtualDomain == "" {
+		return hostname, false
 	}
-	return c.DefaultRoute
+	suffix := "." + c.VirtualDomain
+	n := len(hostname) - len(suffix)
+	if n <= 0 {
+		return hostname, false
+	}
+	if !strings.EqualFold(hostname[n:], suffix) {
+		return hostname, false
+	}
+	return hostname[:n], true
+}
+
+func (c *ProxyConfig) FindRoute(addr string) (route string, dialAddr string) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	host, _ = c.StripVirtualDomain(host)
+	if strings.EqualFold(host, c.LocalHost) {
+		return "", ""
+	}
+	rule, ok := c.HostRoutes[host]
+	if !ok {
+		return c.DefaultRoute, addr
+	}
+	if rule == "" {
+		return "", addr
+	}
+	s := strings.Split(rule, "/")
+	if len(s) < 2 {
+		return rule, ""
+	}
+	return s[0], s[1]
 }

@@ -25,9 +25,10 @@
     "localhost": "peer1",
     "listen": "0.0.0.0:8080",
     "hostroutes": {
-      "a.peer2.lan": "peer2",
-      "b.peer2.lan": "peer2",
-      "c.peer2.lan": "peer2"
+      "some.local.service.lan": "",
+      "peer2.lan": "peer2",
+      "some.remote.service.lan": "peer2/some.remote.service.lan",
+      "gateway.lan": "gateway/192.168.0.1"
     },
     "default": "gateway"
   },
