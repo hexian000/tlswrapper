@@ -16,8 +16,6 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-const apiDomain = ".tlswrapper.api"
-
 func (s *Server) serveHTTP(l net.Listener) {
 	defer func() {
 		_ = l.Close()
@@ -112,11 +110,8 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		h.ServeConnect(w, req)
 		return
 	}
-	if req.URL.Scheme != "http" {
-		h.Error(w, "Unsupported protocol scheme: "+req.URL.String(), http.StatusBadRequest)
-		return
-	}
-	if strings.EqualFold(req.URL.Hostname(), h.config.LocalHost+apiDomain) {
+	if apiHost, ok := getAPIHost(req.URL.Hostname()); ok &&
+		strings.EqualFold(apiHost, h.config.LocalHost) {
 		if h.mux != nil {
 			h.mux.ServeHTTP(w, req)
 		} else {
@@ -127,10 +122,6 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
-	addr := req.URL.Host
-	if req.URL.Port() == "" {
-		addr += ":80"
-	}
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -256,9 +247,8 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 		config: config,
 	}
 	if !config.DisableAPI {
-		host := h.config.LocalHost + apiDomain
 		h.mux = http.NewServeMux()
-		h.mux.HandleFunc(host+"/status", h.handleStatus)
+		h.mux.HandleFunc("/status", h.handleStatus)
 	}
 	return h
 }

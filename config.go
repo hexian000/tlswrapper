@@ -161,14 +161,31 @@ func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
 	}
 }
 
-func (c *ProxyConfig) findRoute(host string) string {
-	if strings.EqualFold(host, c.LocalHost) {
-		return ""
+const (
+	apiDomain = "tlswrapper.api"
+)
+
+func getAPIHost(hostname string) (host string, ok bool) {
+	const apiSuffix = "." + apiDomain
+	ok = len(hostname) > len(apiSuffix) &&
+		strings.EqualFold(
+			hostname[len(hostname)-len(apiSuffix):],
+			apiSuffix,
+		)
+	if ok {
+		host = hostname[:len(hostname)-len(apiSuffix)]
 	}
-	if strings.EqualFold(host, c.LocalHost+apiDomain) {
-		return ""
+	return
+}
+
+func (c *ProxyConfig) findRoute(hostname string) string {
+	if apiHost, ok := getAPIHost(hostname); ok {
+		if strings.EqualFold(apiHost, c.LocalHost) {
+			return ""
+		}
+		return apiHost
 	}
-	if route, ok := c.HostRoutes[host]; ok {
+	if route, ok := c.HostRoutes[hostname]; ok {
 		return route
 	}
 	return c.DefaultRoute
