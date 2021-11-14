@@ -144,7 +144,9 @@ func (h *HTTPHandler) apiProxy(peer string, w http.ResponseWriter, req *http.Req
 			},
 			DisableKeepAlives: true,
 		},
+		Timeout: h.cfg.Timeout(),
 	}
+	req.RequestURI = ""
 	resp, err := client.Do(req)
 	if err != nil {
 		h.Error(w, err.Error(), http.StatusBadGateway)
