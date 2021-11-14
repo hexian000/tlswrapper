@@ -15,54 +15,85 @@ import (
 
 // ServerConfig contains configs for a TLS server
 type ServerConfig struct {
-	Listen  string `json:"listen"`
+	// TLS server bind address
+	Listen string `json:"listen"`
+	// (optional) upstream TCP service address, leave empty or unconfigured to use builtin HTTP proxy
 	Forward string `json:"forward"`
 }
 
 // ForwardConfig contains configs for a HTTP proxy forward over
 // the client mux streams
 type ForwardConfig struct {
-	Listen  string `json:"listen"`
+	// port forward listen address
+	Listen string `json:"listen"`
+	// port forward to
 	Forward string `json:"forward"`
 }
 
 // ClientConfig contains configs for a TLS client
 type ClientConfig struct {
-	HostName      string          `json:"hostname"`
-	ServerName    string          `json:"sni"`
-	Listen        string          `json:"listen"`
-	Dial          string          `json:"dial"`
+	// (optional) server hostname, used in local proxy
+	HostName string `json:"hostname"`
+	// (optional) SNI field in TLS handshake
+	ServerName string `json:"sni"`
+	// (optional) bind address
+	Listen string `json:"listen"`
+	// server address
+	Dial string `json:"dial"`
+	// (optional) HTTP proxy forwarder configs
 	ProxyForwards []ForwardConfig `json:"proxy"`
 }
 
 // ProxyConfig contains configs for local proxy server
 type ProxyConfig struct {
-	LocalHost    string            `json:"localhost"`
-	Listen       string            `json:"listen"`
-	HostRoutes   map[string]string `json:"hostroutes"`
-	DefaultRoute string            `json:"default"`
-	DisableAPI   bool              `json:"noapi"`
+	// (optional) HTTP proxy forwarder configs
+	LocalHost string `json:"localhost"`
+	// HTTP proxy forwarder configs
+	Listen string `json:"listen"`
+	// (optional) route rules by host names, maps host name to client[*].hostname, empty for direct
+	HostRoutes map[string]string `json:"hostroutes"`
+	// (optional) default forward destination, empty for direct
+	DefaultRoute string `json:"default"`
+	// (optional) disable tlswrapper REST API
+	DisableAPI bool `json:"noapi"`
 }
 
 // Config file
 type Config struct {
-	ServerName      string         `json:"sni"`
-	Server          []ServerConfig `json:"server"`
-	Client          []ClientConfig `json:"client"`
-	Proxy           ProxyConfig    `json:"proxy"`
-	Certificate     string         `json:"cert"`
-	PrivateKey      string         `json:"key"`
-	AuthorizedCerts []string       `json:"authcerts"`
-	NoDelay         bool           `json:"nodelay"`
-	Linger          int            `json:"linger"`
-	KeepAlive       int            `json:"keepalive"`
-	ServerKeepAlive int            `json:"serverkeepalive"`
-	IdleTimeout     int            `json:"idletimeout"`
-	AcceptBacklog   int            `json:"backlog"`
-	SessionWindow   uint32         `json:"window"`
-	RequestTimeout  int            `json:"timeout"`
-	WriteTimeout    int            `json:"writetimeout"`
-	UDPLog          string         `json:"udplog"`
+	// (optional) SNI field in TLS handshake, default to "example.com"
+	ServerName string `json:"sni"`
+	// (optional) TLS servers we run
+	Server []ServerConfig `json:"server"`
+	// (optional) TLS servers we may connect to
+	Client []ClientConfig `json:"client"`
+	// (optional) Local HTTP proxy server, for automatically route hostnames to proper TLS server
+	Proxy ProxyConfig `json:"proxy"`
+	// Local TLS certificate
+	Certificate string `json:"cert"`
+	// Local TLS pricate key
+	PrivateKey string `json:"key"`
+	// Local TLS authorized certificates, bundle supported
+	AuthorizedCerts []string `json:"authcerts"`
+	// (optional) TCP no delay, default to false
+	NoDelay bool `json:"nodelay"`
+	// (optional) TCP linger, default to 30
+	Linger int `json:"linger"`
+	// (optional) client-side keep alive interval in seconds, default to false since we have an encrypted one
+	KeepAlive int `json:"keepalive"`
+	// (optional) server-side keep alive interval in seconds, default to 0 (disabled)
+	ServerKeepAlive int `json:"serverkeepalive"`
+	// (optional) session idle timeout in seconds, default to 900 (15min)
+	IdleTimeout int `json:"idletimeout"`
+	// (optional) mux accept backlog, default to 8, you may not want to change this
+	AcceptBacklog int `json:"backlog"`
+	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
+	StreamWindow uint32 `json:"window"`
+	// (optional) generic request timeout in seconds, default to 262144 (256KiB), increase on long fat networks
+	RequestTimeout int `json:"timeout"`
+	// (optional) data write request timeout in seconds, default to 30, used to detect network failes early, increase on slow networks
+	WriteTimeout int `json:"writetimeout"`
+	// (optional) UDP log sink address, if set, log will be send to this address rather than stdout
+	UDPLog string `json:"udplog"`
 }
 
 var defaultConfig = Config{
@@ -72,8 +103,8 @@ var defaultConfig = Config{
 	KeepAlive:      15,  // every 15s
 	IdleTimeout:    900, // 15min
 	AcceptBacklog:  8,
-	SessionWindow:  256 * 1024, // 256 KiB
-	RequestTimeout: 15,
+	StreamWindow:   256 * 1024, // 256 KiB
+	RequestTimeout: 30,
 	WriteTimeout:   30,
 }
 
@@ -154,7 +185,7 @@ func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
 		EnableKeepAlive:        enableKeepAlive,
 		KeepAliveInterval:      keepAliveInterval,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
-		MaxStreamWindowSize:    c.SessionWindow,
+		MaxStreamWindowSize:    c.StreamWindow,
 		StreamOpenTimeout:      c.Timeout(),
 		StreamCloseTimeout:     c.Timeout(),
 		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),

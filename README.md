@@ -119,6 +119,9 @@ By default, all certificates are self-signed. This will not reduce security.
 - "key": peer private key
 - "authcerts": peer authorized certificates list, bundles are supported
 
+see [source code](config.go) for complete document
+
+see [config.json](config.json) for example config file
 
 ### 3. Start
 
