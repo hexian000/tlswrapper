@@ -203,15 +203,6 @@ func (c *ProxyConfig) MakeFQDN(hostname string) (fqdn string, ok bool) {
 	return hostname + "." + c.VirtualDomain, true
 }
 
-func (c *ProxyConfig) IsAPIHost(hostname string) bool {
-	const apiHost = "api.tlswrapper"
-	apiHostName, ok := c.MakeFQDN(apiHost)
-	if !ok {
-		return false
-	}
-	return strings.EqualFold(hostname, apiHostName)
-}
-
 func (c *ProxyConfig) StripVirtualDomain(hostname string) (host string, ok bool) {
 	if c.VirtualDomain == "" {
 		return hostname, false

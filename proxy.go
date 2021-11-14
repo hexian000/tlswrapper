@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -130,12 +131,19 @@ func (h *HTTPHandler) proxy(w http.ResponseWriter, req *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
+const apiHost = "api.tlswrapper"
+
+func (h *HTTPHandler) getAPIHost() (apiHostName string, ok bool) {
+	return h.config.MakeFQDN(apiHost)
+}
+
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodConnect {
 		h.ServeConnect(w, req)
 		return
 	}
-	if h.config.IsAPIHost(req.URL.Hostname()) {
+	if apiHostName, ok := h.getAPIHost(); ok &&
+		strings.EqualFold(req.URL.Hostname(), apiHostName) {
 		if h.mux != nil {
 			h.mux.ServeHTTP(w, req)
 		} else {
@@ -171,11 +179,42 @@ func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	h.forward(accepted, dialed)
 }
 
+func (h *HTTPHandler) handleCluster(respWriter http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
+		h.Error(respWriter, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+	start := time.Now()
+	respWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	respWriter.Header().Set("X-Content-Type-Options", "nosniff")
+	w := bufio.NewWriter(respWriter)
+	defer func() {
+		_ = w.Flush()
+	}()
+	_, _ = w.WriteString(h.newBanner())
+	for name := range h.Server.dials {
+		w.WriteString(fmt.Sprintf("%s\n", name))
+	}
+	_, _ = w.WriteString("\n==========\n")
+	_, _ = w.WriteString(fmt.Sprintln("Generated in", time.Since(start)))
+}
+
+var (
+	statusPattern = regexp.MustCompile(`^/([\w\.]+)/status$`)
+)
+
 func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		h.Error(respWriter, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
+	matches := statusPattern.FindStringSubmatch(req.URL.Path)
+	if matches != nil {
+		// TODO
+		return
+	}
+
+	// self status
 	start := time.Now()
 	respWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	respWriter.Header().Set("X-Content-Type-Options", "nosniff")
@@ -245,6 +284,7 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 	}
 	if !config.DisableAPI {
 		h.mux = http.NewServeMux()
+		h.mux.HandleFunc("/cluster", h.handleCluster)
 		h.mux.HandleFunc("/status", h.handleStatus)
 	}
 	return h
