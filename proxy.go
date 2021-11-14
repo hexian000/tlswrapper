@@ -64,6 +64,7 @@ type HTTPHandler struct {
 	*Server
 	config *ProxyConfig
 	mux    *http.ServeMux
+	client *http.Client
 }
 
 func (h *HTTPHandler) newBanner() string {
@@ -123,19 +124,6 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
-	client := &http.Client{
-		Transport: &http.Transport{
-			Proxy: func(r *http.Request) (*url.URL, error) {
-				return r.URL, nil
-			},
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return h.routedDial(ctx, addr)
-			},
-			DisableKeepAlives: true,
-		},
-		Timeout: h.cfg.Timeout(),
-	}
-
 	req.RequestURI = ""
 	delHopHeaders(req.Header)
 	if host, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
@@ -144,7 +132,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		req.Header.Set("X-Forwarded-For", host)
 	}
-	resp, err := client.Do(req)
+	resp, err := h.client.Do(req)
 	if err != nil {
 		slog.Verbose("http:", err)
 		h.proxyError(w, err)
@@ -249,6 +237,17 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 	h := &HTTPHandler{
 		Server: s,
 		config: config,
+	}
+	h.client = &http.Client{
+		Transport: &http.Transport{
+			Proxy: func(r *http.Request) (*url.URL, error) {
+				return r.URL, nil
+			},
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return h.routedDial(ctx, addr)
+			},
+		},
+		Timeout: h.cfg.Timeout(),
 	}
 	if !config.DisableAPI {
 		h.mux = http.NewServeMux()
