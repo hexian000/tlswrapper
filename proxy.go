@@ -277,6 +277,13 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 	h.client = &http.Client{
 		Transport: &http.Transport{
 			Proxy: func(r *http.Request) (*url.URL, error) {
+				if h.isAPIHost(r.URL.Hostname()) {
+					return nil, nil
+				}
+				route, dialHost := s.cfg.Proxy.FindRoute(r.URL.Hostname())
+				if route == "" || dialHost == "" {
+					return nil, nil
+				}
 				return r.URL, nil
 			},
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
