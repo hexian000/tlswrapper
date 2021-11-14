@@ -133,8 +133,11 @@ func (h *HTTPHandler) proxy(w http.ResponseWriter, req *http.Request) {
 
 const apiHost = "api.tlswrapper"
 
-func (h *HTTPHandler) getAPIHost() (apiHostName string, ok bool) {
-	return h.config.MakeFQDN(apiHost)
+func (h *HTTPHandler) isAPIHost(hostname string) bool {
+	if apiHostName, ok := h.config.MakeFQDN(apiHost); ok {
+		return strings.EqualFold(hostname, apiHostName)
+	}
+	return false
 }
 
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -142,8 +145,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		h.ServeConnect(w, req)
 		return
 	}
-	if apiHostName, ok := h.getAPIHost(); ok &&
-		strings.EqualFold(req.URL.Hostname(), apiHostName) {
+	if req.URL.Host == "" || h.isAPIHost(req.URL.Hostname()) {
 		if h.mux != nil {
 			h.mux.ServeHTTP(w, req)
 		} else {
@@ -211,6 +213,7 @@ func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 	matches := statusPattern.FindStringSubmatch(req.URL.Path)
 	if matches != nil {
 		// TODO
+		h.Error(respWriter, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
 
