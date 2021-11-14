@@ -18,12 +18,12 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-func (s *Server) serveHTTP(l net.Listener) {
+func (s *Server) serveHTTP(l net.Listener, internal bool) {
 	defer func() {
 		_ = l.Close()
 	}()
 	server := &http.Server{
-		Handler:           newHandler(s, &s.cfg.Proxy),
+		Handler:           newHandler(s, &s.cfg.Proxy, internal),
 		ReadHeaderTimeout: s.cfg.Timeout(),
 	}
 	_ = server.Serve(l)
@@ -266,7 +266,7 @@ func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 	_, _ = w.WriteString(fmt.Sprintln("Generated in", time.Since(start)))
 }
 
-func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
+func newHandler(s *Server, config *ProxyConfig, internal bool) *HTTPHandler {
 	h := &HTTPHandler{
 		Server: s,
 		config: config,
@@ -274,6 +274,10 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 	h.client = &http.Client{
 		Transport: &http.Transport{
 			Proxy: func(r *http.Request) (*url.URL, error) {
+				if internal {
+					// outbound requests
+					return nil, nil
+				}
 				return r.URL, nil
 			},
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {

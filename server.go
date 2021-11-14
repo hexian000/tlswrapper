@@ -142,7 +142,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	sessionName := fmt.Sprintf("%s <- %s", conn.LocalAddr(), conn.RemoteAddr())
 	_ = h.server.newSession(sessionName, session, meteredConn)
 	if h.config.Forward == "" {
-		go h.server.serveHTTP(session)
+		go h.server.serveHTTP(session, true)
 		return
 	}
 	go func() {
@@ -313,7 +313,7 @@ func (s *Server) Start() error {
 		}
 		s.listeners[addr] = listener
 		slog.Info("proxy listen:", listener.Addr())
-		go s.serveHTTP(listener)
+		go s.serveHTTP(listener, false)
 	}
 	go s.watchdog()
 	s.startTime = time.Now()
