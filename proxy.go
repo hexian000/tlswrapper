@@ -271,11 +271,10 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 		Server: s,
 		config: config,
 	}
-	dummyProxyURL, _ := url.Parse("http://proxy.tlswrapper.lan")
 	h.client = &http.Client{
 		Transport: &http.Transport{
 			Proxy: func(r *http.Request) (*url.URL, error) {
-				return dummyProxyURL, nil
+				return r.URL, nil
 			},
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return h.routedDial(ctx, addr, true)
