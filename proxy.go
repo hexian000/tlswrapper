@@ -274,7 +274,7 @@ func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 		for name, session := range h.sessions {
 			r, w := session.meter.Count()
 			n := session.mux.NumStreams()
-			idleSince := "now"
+			idleSince := "now active"
 			if n == 0 {
 				idleSince = time.Since(session.lastSeen).String()
 			}
