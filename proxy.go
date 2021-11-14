@@ -29,7 +29,7 @@ func (s *Server) serveHTTP(l net.Listener) {
 	_ = server.Serve(l)
 }
 
-func (s *Server) routedDial(ctx context.Context, addr string) (net.Conn, error) {
+func (s *Server) routedDial(ctx context.Context, addr string, http bool) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func (s *Server) routedDial(ctx context.Context, addr string) (net.Conn, error) 
 	}
 	if c, ok := s.dials[route]; ok {
 		slog.Verbose("route: forward", addr, "to", route, dialAddr)
-		if dialAddr == "" {
+		if dialAddr == "" || http {
 			return c.dialMux(ctx)
 		}
 		return c.proxyDial(ctx, dialAddr)
@@ -162,7 +162,7 @@ func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	}
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
-	dialed, err := h.routedDial(ctx, req.Host)
+	dialed, err := h.routedDial(ctx, req.Host, false)
 	if err != nil {
 		slog.Verbose("proxy dial:", err)
 		h.proxyError(w, err)
@@ -278,7 +278,7 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 				return dummyProxyURL, nil
 			},
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return h.routedDial(ctx, addr)
+				return h.routedDial(ctx, addr, true)
 			},
 		},
 		Timeout: h.cfg.Timeout(),
