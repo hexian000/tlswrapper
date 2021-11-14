@@ -44,6 +44,11 @@ type ClientConfig struct {
 	ProxyForwards []ForwardConfig `json:"proxy"`
 }
 
+type HostRoute struct {
+	Jump    string `json:"jump"`
+	Rewrite string `json:"rewrite"`
+}
+
 // ProxyConfig contains configs for local proxy server
 type ProxyConfig struct {
 	// local host name
@@ -55,7 +60,7 @@ type ProxyConfig struct {
 	// HTTP proxy bind address
 	Listen string `json:"listen"`
 	// (optional) route rules by host names, maps host name to client[*].hostname, empty for direct
-	HostRoutes map[string]string `json:"hostroutes"`
+	HostRoutes map[string]HostRoute `json:"hostroutes"`
 	// (optional) default forward destination, empty for direct
 	DefaultRoute string `json:"default"`
 	// (optional) disable tlswrapper REST API
@@ -218,21 +223,20 @@ func (c *ProxyConfig) StripVirtualDomain(hostname string) (host string, ok bool)
 	return hostname[:n], true
 }
 
-func (c *ProxyConfig) FindRoute(host string) (route string, dialHost string) {
-	name, _ := c.StripVirtualDomain(host)
+func (c *ProxyConfig) FindRoute(host string) (route string, newHost string) {
+	name, ok := c.StripVirtualDomain(host)
+	if !ok {
+		return c.DefaultRoute, host
+	}
 	if strings.EqualFold(name, c.LocalHost) {
-		return "", ""
+		return "", host
 	}
 	rule, ok := c.HostRoutes[name]
 	if !ok {
-		rule = c.DefaultRoute
+		return c.DefaultRoute, host
 	}
-	if rule == "" {
-		return "", host
+	if rule.Rewrite != "" {
+		host = rule.Rewrite
 	}
-	s := strings.Split(rule, "/")
-	if len(s) < 2 {
-		return rule, ""
-	}
-	return s[0], s[1]
+	return rule.Jump, host
 }

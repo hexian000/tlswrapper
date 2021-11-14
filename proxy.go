@@ -30,17 +30,13 @@ func (s *Server) serveHTTP(l net.Listener) {
 }
 
 func (s *Server) routedDial(ctx context.Context, addr string) (net.Conn, error) {
-	const defaultLocalAddr = "127.0.0.1"
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
 	}
-	route, dialHost := s.cfg.Proxy.FindRoute(host)
-	dialAddr := net.JoinHostPort(dialHost, port)
+	route, newHost := s.cfg.Proxy.FindRoute(host)
+	dialAddr := net.JoinHostPort(newHost, port)
 	if route == "" {
-		if dialAddr == "" {
-			dialAddr = defaultLocalAddr
-		}
 		return s.dialDirect(ctx, dialAddr)
 	}
 	if c, ok := s.dials[route]; ok {
@@ -194,8 +190,9 @@ func (h *HTTPHandler) handleCluster(respWriter http.ResponseWriter, req *http.Re
 		_ = w.Flush()
 	}()
 	_, _ = w.WriteString(h.newBanner())
-	for name := range h.Server.dials {
-		w.WriteString(fmt.Sprintf("%s\n", name))
+	_, _ = w.WriteString(fmt.Sprintf("localhost: %s\n", h.config.LocalHost))
+	for name, c := range h.Server.dials {
+		_, _ = w.WriteString(fmt.Sprintf("%s: %v\n", name, c.session.mux.RemoteAddr()))
 	}
 	_, _ = w.WriteString("\n==========\n")
 	_, _ = w.WriteString(fmt.Sprintln("Generated in", time.Since(start)))
@@ -277,13 +274,6 @@ func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 	h.client = &http.Client{
 		Transport: &http.Transport{
 			Proxy: func(r *http.Request) (*url.URL, error) {
-				if h.isAPIHost(r.URL.Hostname()) {
-					return nil, nil
-				}
-				route, dialHost := s.cfg.Proxy.FindRoute(r.URL.Hostname())
-				if route == "" || dialHost == "" {
-					return nil, nil
-				}
 				return r.URL, nil
 			},
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
