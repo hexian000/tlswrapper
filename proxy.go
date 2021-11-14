@@ -18,18 +18,25 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-func (s *Server) serveHTTP(l net.Listener, internal bool) {
+func (s *Server) serveHTTP(l net.Listener) {
 	defer func() {
 		_ = l.Close()
 	}()
-	server := &http.Server{
-		Handler:           newHandler(s, &s.cfg.Proxy, internal),
-		ReadHeaderTimeout: s.cfg.Timeout(),
-	}
+	server := func() *http.Server {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.http == nil {
+			s.http = &http.Server{
+				Handler:           newHandler(s, &s.cfg.Proxy),
+				ReadHeaderTimeout: s.cfg.Timeout(),
+			}
+		}
+		return s.http
+	}()
 	_ = server.Serve(l)
 }
 
-func (s *Server) routedDial(ctx context.Context, addr string, http bool) (net.Conn, error) {
+func (s *Server) routedDial(ctx context.Context, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -41,12 +48,9 @@ func (s *Server) routedDial(ctx context.Context, addr string, http bool) (net.Co
 	}
 	if c, ok := s.dials[route]; ok {
 		slog.Verbose("route: forward", addr, "to", route, dialAddr)
-		if dialAddr == "" || http {
-			return c.dialMux(ctx)
-		}
 		return c.proxyDial(ctx, dialAddr)
 	}
-	return nil, fmt.Errorf("no route to address: %v", addr)
+	return nil, fmt.Errorf("no route to address: %s", addr)
 }
 
 type HTTPHandler struct {
@@ -127,13 +131,36 @@ func (h *HTTPHandler) proxy(w http.ResponseWriter, req *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
-const apiHost = "api.tlswrapper"
+func (h *HTTPHandler) apiProxy(peer string, w http.ResponseWriter, req *http.Request) {
+	c, ok := h.dials[peer]
+	if !ok {
+		h.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return c.dialMux(ctx)
+			},
+			DisableKeepAlives: true,
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		h.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+const (
+	apiDomain   = "api.tlswrapper"
+	routeDomain = "route.tlswrapper"
+)
 
 func (h *HTTPHandler) isAPIHost(hostname string) bool {
-	if apiHostName, ok := h.config.MakeFQDN(apiHost); ok {
-		return strings.EqualFold(hostname, apiHostName)
-	}
-	return false
+	return strings.EqualFold(hostname, apiDomain+"."+h.config.Domain())
 }
 
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -162,7 +189,7 @@ func (h *HTTPHandler) ServeConnect(w http.ResponseWriter, req *http.Request) {
 	}
 	ctx := h.newContext()
 	defer h.deleteContext(ctx)
-	dialed, err := h.routedDial(ctx, req.Host, false)
+	dialed, err := h.routedDial(ctx, req.Host)
 	if err != nil {
 		slog.Verbose("proxy dial:", err)
 		h.proxyError(w, err)
@@ -199,7 +226,7 @@ func (h *HTTPHandler) handleCluster(respWriter http.ResponseWriter, req *http.Re
 }
 
 var (
-	statusPattern = regexp.MustCompile(`^/status/([\w\.]+)$`)
+	statusPattern = regexp.MustCompile(`^/status/(.+)$`)
 )
 
 func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Request) {
@@ -208,9 +235,13 @@ func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 		return
 	}
 	matches := statusPattern.FindStringSubmatch(req.URL.Path)
-	if matches != nil {
-		// TODO
-		h.Error(respWriter, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+	if matches == nil || len(matches) != 2 {
+		http.Redirect(respWriter, req, "/status/"+h.config.LocalHost, http.StatusFound)
+		return
+	}
+	peer := matches[1]
+	if peer != h.config.LocalHost {
+		h.apiProxy(peer, respWriter, req)
 		return
 	}
 
@@ -266,7 +297,7 @@ func (h *HTTPHandler) handleStatus(respWriter http.ResponseWriter, req *http.Req
 	_, _ = w.WriteString(fmt.Sprintln("Generated in", time.Since(start)))
 }
 
-func newHandler(s *Server, config *ProxyConfig, internal bool) *HTTPHandler {
+func newHandler(s *Server, config *ProxyConfig) *HTTPHandler {
 	h := &HTTPHandler{
 		Server: s,
 		config: config,
@@ -274,14 +305,27 @@ func newHandler(s *Server, config *ProxyConfig, internal bool) *HTTPHandler {
 	h.client = &http.Client{
 		Transport: &http.Transport{
 			Proxy: func(r *http.Request) (*url.URL, error) {
-				if internal {
+				route, _ := s.cfg.Proxy.FindRoute(r.URL.Hostname())
+				if route == "" {
 					// outbound requests
 					return nil, nil
 				}
-				return r.URL, nil
+				return url.Parse(fmt.Sprintf("http://%s.%s.%s", route, routeDomain, config.Domain()))
 			},
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return h.routedDial(ctx, addr, true)
+				host, _, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				suffix := fmt.Sprintf(".%s.%s", routeDomain, config.Domain())
+				if strings.HasSuffix(host, suffix) {
+					peer := host[:len(host)-len(suffix)]
+					if c, ok := s.dials[peer]; ok {
+						return c.dialMux(ctx)
+					}
+					return nil, fmt.Errorf("no route to address: %s", addr)
+				}
+				return s.dialer.DialContext(ctx, network, addr)
 			},
 		},
 		Timeout: h.cfg.Timeout(),

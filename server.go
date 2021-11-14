@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"reflect"
 	"runtime/debug"
 	"sync"
@@ -49,6 +50,8 @@ type Server struct {
 
 	dialer     net.Dialer
 	shutdownCh chan struct{}
+
+	http *http.Server
 
 	startTime time.Time
 }
@@ -142,7 +145,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	sessionName := fmt.Sprintf("%s <- %s", conn.LocalAddr(), conn.RemoteAddr())
 	_ = h.server.newSession(sessionName, session, meteredConn)
 	if h.config.Forward == "" {
-		go h.server.serveHTTP(session, true)
+		go h.server.serveHTTP(session)
 		return
 	}
 	go func() {
@@ -313,7 +316,7 @@ func (s *Server) Start() error {
 		}
 		s.listeners[addr] = listener
 		slog.Info("proxy listen:", listener.Addr())
-		go s.serveHTTP(listener, false)
+		go s.serveHTTP(listener)
 	}
 	go s.watchdog()
 	s.startTime = time.Now()

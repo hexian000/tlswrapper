@@ -201,11 +201,11 @@ func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
 	}
 }
 
-func (c *ProxyConfig) MakeFQDN(hostname string) (fqdn string, ok bool) {
-	if hostname == "" || c.VirtualDomain == "" {
-		return "", false
+func (c *ProxyConfig) Domain() string {
+	if c.VirtualDomain == "" {
+		return "lan"
 	}
-	return hostname + "." + c.VirtualDomain, true
+	return c.VirtualDomain
 }
 
 func (c *ProxyConfig) StripVirtualDomain(hostname string) (host string, ok bool) {
