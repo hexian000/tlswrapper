@@ -184,7 +184,9 @@ func (s *Server) closeAllSessions() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for name, item := range s.sessions {
-		_ = item.mux.Close()
+		if item.mux != nil {
+			_ = item.mux.Close()
+		}
 		delete(s.sessions, name)
 	}
 }
@@ -195,7 +197,7 @@ func (s *Server) checkIdle() {
 	timeout := time.Duration(s.cfg.IdleTimeout) * time.Second
 	for name, item := range s.sessions {
 		mux := item.mux
-		if mux.IsClosed() {
+		if mux == nil || mux.IsClosed() {
 			slog.Info("session closed:", mux.LocalAddr(), "<x>", mux.RemoteAddr())
 			delete(s.sessions, name)
 			continue
