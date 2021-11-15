@@ -208,6 +208,10 @@ func (c *ProxyConfig) Domain() string {
 	return c.VirtualDomain
 }
 
+func (c *ProxyConfig) APIHost() string {
+	return apiDomain + "." + c.Domain()
+}
+
 func (c *ProxyConfig) StripVirtualDomain(hostname string) (host string, ok bool) {
 	if c.VirtualDomain == "" {
 		return hostname, false

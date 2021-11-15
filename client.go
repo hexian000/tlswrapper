@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -49,15 +52,27 @@ type clientSession struct {
 	tlscfg  *tls.Config
 	muxcfg  *yamux.Config
 	session *Session
+
+	apiClient *http.Client
 }
 
 func newClientSession(server *Server, tlscfg *tls.Config, config *ClientConfig) *clientSession {
-	return &clientSession{
+	c := &clientSession{
 		s:      server,
 		tlscfg: tlscfg,
 		muxcfg: server.cfg.NewMuxConfig(false),
 		config: config,
 	}
+	c.apiClient = &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return c.dialMux(ctx)
+			},
+			DisableKeepAlives: true,
+		},
+		Timeout: server.cfg.Timeout(),
+	}
+	return c
 }
 
 func (c *clientSession) proxyDial(ctx context.Context, addr string) (net.Conn, error) {
@@ -103,6 +118,29 @@ func (c *clientSession) dialMux(ctx context.Context) (net.Conn, error) {
 		return nil, err
 	}
 	return dialed, nil
+}
+
+ // TODO
+func (c *clientSession) jsonCall(method string, path string, body []byte) ([]byte, error) {
+	req := &http.Request{
+		Method:     method,
+		Host:       "api.tlswrapper.lan",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewBuffer(body)),
+	}
+	resp, err := c.apiClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	ret := &bytes.Buffer{}
+	_, err = io.Copy(ret, resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return ret.Bytes(), nil
 }
 
 type ClientProxyHandler struct {

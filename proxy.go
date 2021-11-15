@@ -18,6 +18,11 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
+const (
+	apiDomain   = "api.tlswrapper"
+	routeDomain = "route.tlswrapper"
+)
+
 func (s *Server) serveHTTP(l net.Listener) {
 	defer func() {
 		_ = l.Close()
@@ -137,17 +142,8 @@ func (h *HTTPHandler) apiProxy(peer string, w http.ResponseWriter, req *http.Req
 		h.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
-	client := &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return c.dialMux(ctx)
-			},
-			DisableKeepAlives: true,
-		},
-		Timeout: h.cfg.Timeout(),
-	}
 	req.RequestURI = ""
-	resp, err := client.Do(req)
+	resp, err := c.apiClient.Do(req)
 	if err != nil {
 		h.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -156,13 +152,8 @@ func (h *HTTPHandler) apiProxy(peer string, w http.ResponseWriter, req *http.Req
 	_, _ = io.Copy(w, resp.Body)
 }
 
-const (
-	apiDomain   = "api.tlswrapper"
-	routeDomain = "route.tlswrapper"
-)
-
 func (h *HTTPHandler) isAPIHost(hostname string) bool {
-	return strings.EqualFold(hostname, apiDomain+"."+h.config.Domain())
+	return strings.EqualFold(hostname, h.config.APIHost())
 }
 
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
