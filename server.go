@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"reflect"
 	"runtime/debug"
 	"sync"
@@ -50,8 +49,6 @@ type Server struct {
 
 	dialer     net.Dialer
 	shutdownCh chan struct{}
-
-	http *http.Server
 
 	startTime time.Time
 }
@@ -144,10 +141,6 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	slog.Info("accept session:", conn.RemoteAddr(), "<->", conn.LocalAddr(), "setup:", time.Since(start))
 	sessionName := fmt.Sprintf("%s <- %s", conn.LocalAddr(), conn.RemoteAddr())
 	_ = h.server.newSession(sessionName, session, meteredConn)
-	if h.config.Forward == "" {
-		go h.server.serveHTTP(session)
-		return
-	}
 	go func() {
 		_ = h.server.Serve(session, &DirectForwardHandler{
 			h.server,
@@ -296,29 +289,7 @@ func (s *Server) Start() error {
 			return err
 		}
 		c := newClientSession(s, tlscfg, &s.cfg.Client[i])
-		if client.HostName != "" {
-			s.dials[client.HostName] = c
-		}
-		if addr := client.Listen; addr != "" && s.listeners[addr] == nil {
-			go func(config *ClientConfig) {
-				_ = s.ListenAndServe(addr, &ClientForwardHandler{c})
-			}(&s.cfg.Client[i])
-		}
-		for j, forward := range client.ProxyForwards {
-			addr := forward.Listen
-			go func(config *ForwardConfig) {
-				_ = s.ListenAndServe(addr, &ClientProxyHandler{c, config})
-			}(&s.cfg.Client[i].ProxyForwards[j])
-		}
-	}
-	if addr := s.cfg.Proxy.Listen; addr != "" && s.listeners[addr] == nil {
-		listener, err := net.Listen(network, addr)
-		if err != nil {
-			return err
-		}
-		s.listeners[addr] = listener
-		slog.Info("proxy listen:", listener.Addr())
-		go s.serveHTTP(listener)
+		s.dials[client.Dial] = c
 	}
 	go s.watchdog()
 	s.startTime = time.Now()

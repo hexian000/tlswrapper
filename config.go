@@ -17,54 +17,18 @@ import (
 type ServerConfig struct {
 	// TLS server bind address
 	Listen string `json:"listen"`
-	// (optional) upstream TCP service address, leave empty or unconfigured to use builtin HTTP proxy
-	Forward string `json:"forward"`
-}
-
-// ForwardConfig contains configs for a HTTP proxy forward over
-// the client mux streams
-type ForwardConfig struct {
-	// port forward listen address
-	Listen string `json:"listen"`
-	// port forward to
+	// upstream TCP service address
 	Forward string `json:"forward"`
 }
 
 // ClientConfig contains configs for a TLS client
 type ClientConfig struct {
-	// (optional) server hostname, used in local proxy
-	HostName string `json:"hostname"`
-	// (optional) SNI field in TLS handshake
+	// (optional) SNI field in TLS handshake, default to "example.com"
 	ServerName string `json:"sni"`
-	// (optional) bind address
+	// bind address
 	Listen string `json:"listen"`
 	// server address
 	Dial string `json:"dial"`
-	// (optional) HTTP proxy forwarder configs
-	ProxyForwards []ForwardConfig `json:"proxy"`
-}
-
-type HostRoute struct {
-	Jump    string `json:"jump"`
-	Rewrite string `json:"rewrite"`
-}
-
-// ProxyConfig contains configs for local proxy server
-type ProxyConfig struct {
-	// local host name
-	LocalHost string `json:"localhost"`
-	// (optional) local address, default to "127.0.0.1", you may not want to change this
-	LocalAddr string `json:"localaddr"`
-	// virtual domain name
-	VirtualDomain string `json:"vdomain"`
-	// HTTP proxy bind address
-	Listen string `json:"listen"`
-	// (optional) route rules by host names, maps host name to client[*].hostname, empty for direct
-	HostRoutes map[string]HostRoute `json:"hostroutes"`
-	// (optional) default forward destination, empty for direct
-	DefaultRoute string `json:"default"`
-	// (optional) disable tlswrapper REST API
-	DisableAPI bool `json:"noapi"`
 }
 
 // Config file
@@ -75,8 +39,6 @@ type Config struct {
 	Server []ServerConfig `json:"server"`
 	// (optional) TLS servers we may connect to
 	Client []ClientConfig `json:"client"`
-	// (optional) Local HTTP proxy server, for automatically route hostnames to proper TLS server
-	Proxy ProxyConfig `json:"proxy"`
 	// Local TLS certificate
 	Certificate string `json:"cert"`
 	// Local TLS pricate key
@@ -199,48 +161,4 @@ func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
 		StreamCloseTimeout:     c.Timeout(),
 		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
 	}
-}
-
-func (c *ProxyConfig) Domain() string {
-	if c.VirtualDomain == "" {
-		return "lan"
-	}
-	return c.VirtualDomain
-}
-
-func (c *ProxyConfig) APIHost() string {
-	return apiDomain + "." + c.Domain()
-}
-
-func (c *ProxyConfig) StripVirtualDomain(hostname string) (host string, ok bool) {
-	if c.VirtualDomain == "" {
-		return hostname, false
-	}
-	suffix := "." + c.VirtualDomain
-	n := len(hostname) - len(suffix)
-	if n <= 0 {
-		return hostname, false
-	}
-	if !strings.EqualFold(hostname[n:], suffix) {
-		return hostname, false
-	}
-	return hostname[:n], true
-}
-
-func (c *ProxyConfig) FindRoute(host string) (route string, newHost string) {
-	name, ok := c.StripVirtualDomain(host)
-	if !ok {
-		return c.DefaultRoute, host
-	}
-	if strings.EqualFold(name, c.LocalHost) {
-		return "", host
-	}
-	rule, ok := c.HostRoutes[host]
-	if !ok {
-		return c.DefaultRoute, host
-	}
-	if rule.Rewrite != "" {
-		host = rule.Rewrite
-	}
-	return rule.Jump, host
 }

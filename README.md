@@ -4,26 +4,20 @@
 
 ## What for
 
-Connect multiple sites across the Internet with multiplexing mTLS tunnels, safely. 
+Wrap your TCP-based service with multiplexing mTLS tunnels. 
 
 ```
-       Trusted      |     Untrusted      |     Trusted
-                                  +------------+    +-------+
-                             +-1->| tlswrapper |-n->| Peer2 |
-                             |    +------------+    +-------+
-+-------+    +------------+  |    +------------+    +-------+
-| Peer1 |-n->| tlswrapper |--+-1->| tlswrapper |-n->| Peer3 |
-+-------+    +------------+  |    +------------+    +-------+
-                             |    +------------+    +-------+
-                             +-1->| tlswrapper |-n->| Peer4 |
-                                  +------------+    +-------+
+       Trusted      |     Untrusted    |     Trusted
++--------+    +------------+    +------------+    +--------+
+| Client |-n->| tlswrapper |-1->| tlswrapper |-n->| Server |
++--------+    +------------+    +------------+    +--------+
 ```
 
 ## Protocol Stack
 
 ```
 +-------------------------------+
-| HTTP CONNECT Proxy (optional) |
+|          TCP traffic          |
 +-------------------------------+
 |   yamux stream multiplexing   |
 +-------------------------------+
@@ -47,12 +41,12 @@ By default, all certificates are self-signed. This will not reduce security.
 ### 1. Generate key pair (or use your own):
 
 ```sh
-./gencerts.sh peer1 peer2
+./gencerts.sh client server
 ```
 
-### 2. Create "config.json" per peer
+### 2. Create "config.json"
 
-#### Peer1
+#### Server
 
 ```json
 {
@@ -61,45 +55,28 @@ By default, all certificates are self-signed. This will not reduce security.
       "listen": "0.0.0.0:12345"
     }
   ],
-  "client": [
-    {
-      "listen": "127.0.0.1:8080",
-      "dial": "peer2.example.com:12345"
-    }
-  ],
-  "cert": "peer1-cert.pem",
-  "key": "peer1-key.pem",
+  "cert": "server-cert.pem",
+  "key": "server-key.pem",
   "authcerts": [
-    "peer2-cert.pem"
+    "client-cert.pem"
   ]
 }
 ```
 
-#### Peer2
+#### Client
 
 ```json
 {
-  "server": [
-    {
-      "listen": "0.0.0.0:12345"
-    }
-  ],
   "client": [
     {
       "listen": "127.0.0.1:8080",
-      "dial": "peer1.example.com:12345",
-      "proxy": [
-        {
-          "listen": ":5201",
-          "forward": "gateway.peer1.lan:5201"
-        }
-      ]
+      "dial": "server.example.com:12345"
     }
   ],
-  "cert": "peer2-cert.pem",
-  "key": "peer2-key.pem",
+  "cert": "client-cert.pem",
+  "key": "client-key.pem",
   "authcerts": [
-    "peer1-cert.pem"
+    "server-cert.pem"
   ]
 }
 ```
@@ -108,13 +85,10 @@ By default, all certificates are self-signed. This will not reduce security.
 
 - "server": TLS listener configs
 - "server[\*].listen": server bind address
-- "server[\*].forward": (optional) upstream TCP service address, leave empty or unconfigured to use builtin HTTP proxy
+- "server[\*].forward": upstream TCP service address, leave empty or unconfigured to use builtin HTTP proxy
 - "client": TLS client configs
 - "client[\*].listen": proxy listen address
 - "client[\*].dial": server address
-- "client[\*].proxy": (optional) proxy forwarder configs
-- "client[\*].proxy[\*].listen": forwarder listen address
-- "client[\*].proxy[\*].forward": forwarder destination address
 - "cert": peer certificate
 - "key": peer private key
 - "authcerts": peer authorized certificates list, bundles are supported

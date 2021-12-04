@@ -1,19 +1,16 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/hexian000/tlswrapper/proxy"
 	"github.com/hexian000/tlswrapper/slog"
 )
 
@@ -75,22 +72,6 @@ func newClientSession(server *Server, tlscfg *tls.Config, config *ClientConfig) 
 	return c
 }
 
-func (c *clientSession) proxyDial(ctx context.Context, addr string) (net.Conn, error) {
-	if _, _, err := net.SplitHostPort(addr); err != nil {
-		return nil, err
-	}
-	dialed, err := c.dialMux(ctx)
-	if err != nil {
-		return nil, err
-	}
-	slog.Verbose("proxy dial:", addr)
-	conn := proxy.Client(dialed, addr)
-	if err := conn.HandshakeContext(ctx); err != nil {
-		return nil, err
-	}
-	return conn, nil
-}
-
 func (c *clientSession) dialTLS(ctx context.Context) (err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -118,54 +99,4 @@ func (c *clientSession) dialMux(ctx context.Context) (net.Conn, error) {
 		return nil, err
 	}
 	return dialed, nil
-}
-
- // TODO
-func (c *clientSession) jsonCall(method string, path string, body []byte) ([]byte, error) {
-	req := &http.Request{
-		Method:     method,
-		Host:       "api.tlswrapper.lan",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(bytes.NewBuffer(body)),
-	}
-	resp, err := c.apiClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	ret := &bytes.Buffer{}
-	_, err = io.Copy(ret, resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	return ret.Bytes(), nil
-}
-
-type ClientProxyHandler struct {
-	*clientSession
-	config *ForwardConfig
-}
-
-func (c *ClientProxyHandler) Serve(ctx context.Context, accepted net.Conn) {
-	dialed, err := c.proxyDial(ctx, c.config.Forward)
-	if err != nil {
-		_ = accepted.Close()
-		return
-	}
-	c.s.forward(accepted, dialed)
-}
-
-type ClientForwardHandler struct {
-	*clientSession
-}
-
-func (h *ClientForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
-	dialed, err := h.dialMux(ctx)
-	if err != nil {
-		_ = accepted.Close()
-		return
-	}
-	h.s.forward(accepted, dialed)
 }
