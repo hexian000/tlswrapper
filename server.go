@@ -24,7 +24,6 @@ const (
 
 type Session struct {
 	mux      *yamux.Session
-	meter    *MeteredConn
 	created  time.Time
 	lastSeen time.Time
 }
@@ -81,13 +80,12 @@ func (s *Server) deleteContext(ctx context.Context) {
 	}
 }
 
-func (s *Server) newSession(name string, mux *yamux.Session, meter *MeteredConn) *Session {
+func (s *Server) newSession(name string, mux *yamux.Session) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
 	info := &Session{
 		mux:      mux,
-		meter:    meter,
 		created:  now,
 		lastSeen: now,
 	}
@@ -126,8 +124,7 @@ type TLSHandler struct {
 func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	start := time.Now()
 	h.server.cfg.SetConnParams(conn)
-	meteredConn := Meter(conn)
-	tlsConn := tls.Server(meteredConn, h.server.tlscfg)
+	tlsConn := tls.Server(conn, h.server.tlscfg)
 	err := tlsConn.HandshakeContext(ctx)
 	if err != nil {
 		slog.Error(err)
@@ -140,7 +137,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	}
 	slog.Info("accept session:", conn.RemoteAddr(), "<->", conn.LocalAddr(), "setup:", time.Since(start))
 	sessionName := fmt.Sprintf("%s <- %s", conn.LocalAddr(), conn.RemoteAddr())
-	_ = h.server.newSession(sessionName, session, meteredConn)
+	_ = h.server.newSession(sessionName, session)
 	go func() {
 		_ = h.server.Serve(session, &DirectForwardHandler{
 			h.server,
@@ -326,7 +323,7 @@ func (s *Server) LoadConfig(cfg *Config) error {
 			slog.Warning("listener config changes are ignored")
 		}
 	}
-	tlscfg, err := cfg.NewTLSConfig("")
+	tlscfg, err := cfg.NewTLSConfig(cfg.ServerName)
 	if err != nil {
 		return err
 	}

@@ -24,8 +24,7 @@ func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (
 		return nil, err
 	}
 	s.cfg.SetConnParams(conn)
-	meteredConn := Meter(conn)
-	tlsConn := tls.Client(meteredConn, tlscfg)
+	tlsConn := tls.Client(conn, tlscfg)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		_ = tlsConn.Close()
 		return nil, err
@@ -37,7 +36,7 @@ func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (
 	}
 	slog.Info("dial session:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
 	sessionName := fmt.Sprintf("%s -> %s", conn.LocalAddr(), conn.RemoteAddr())
-	info := s.newSession(sessionName, session, meteredConn)
+	info := s.newSession(sessionName, session)
 	return info, nil
 }
 

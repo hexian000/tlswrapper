@@ -1,49 +1,20 @@
 {
   "server": [
     {
-      "listen": "0.0.0.0:12345"
+      "listen": "0.0.0.0:12345",
+      "forward": "127.0.0.1:8080"
     }
   ],
   "client": [
     {
-      "hostname": "peer2",
-      "listen": "127.0.0.1:8119",
-      "dial": "peer2.example.com:12345",
-      "proxy": [
-        {
-          "listen": ":5201",
-          "forward": "localhost:5201"
-        }
-      ]
-    },
-    {
-      "hostname": "gateway",
-      "dial": "gateway.example.com:12345"
+      "listen": "127.0.0.1:8080",
+      "dial": "example.com:12345"
     }
   ],
-  "proxy": {
-    "localhost": "peer1",
-    "vdomain": "lan",
-    "listen": "0.0.0.0:8080",
-    "hostroutes": {
-      "some.local.service": {},
-      "peer2": {
-        "jump": "peer2"
-      },
-      "some.remote.service": {
-        "jump": "peer2"
-      },
-      "gateway": {
-        "jump": "gateway",
-        "rewrite": "192.168.0.1"
-      }
-    },
-    "default": "gateway"
-  },
-  "cert": "peer1-cert.pem",
-  "key": "peer1-key.pem",
+  "cert": "server-cert.pem",
+  "key": "server-key.pem",
   "authcerts": [
-    "peer2-cert.pem",
-    "gateway-cert.pem"
+    "peer1-cert.pem",
+    "peer2-cert.pem"
   ]
 }
