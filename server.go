@@ -24,7 +24,6 @@ const (
 
 type Session struct {
 	mux      *yamux.Session
-	created  time.Time
 	lastSeen time.Time
 }
 
@@ -63,15 +62,20 @@ func NewServer() *Server {
 	}
 }
 
-func (s *Server) newContext() context.Context {
+func (s *Server) withTimeout() context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout())
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	select {
+	case <-s.shutdownCh:
+		cancel()
+	default:
+	}
 	s.contexts[ctx] = cancel
 	return ctx
 }
 
-func (s *Server) deleteContext(ctx context.Context) {
+func (s *Server) cancel(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if cancel, ok := s.contexts[ctx]; ok {
@@ -86,7 +90,6 @@ func (s *Server) newSession(name string, mux *yamux.Session) *Session {
 	now := time.Now()
 	info := &Session{
 		mux:      mux,
-		created:  now,
 		lastSeen: now,
 	}
 	s.sessions[name] = info
@@ -239,8 +242,8 @@ func (s *Server) serveOne(accepted net.Conn, handler Handler) {
 			slog.Error("panic:", r, string(debug.Stack()))
 		}
 	}()
-	ctx := s.newContext()
-	defer s.deleteContext(ctx)
+	ctx := s.withTimeout()
+	defer s.cancel(ctx)
 	handler.Serve(ctx, accepted)
 }
 
@@ -287,6 +290,10 @@ func (s *Server) Start() error {
 		}
 		c := newClientSession(s, tlscfg, &s.cfg.Client[i])
 		s.dials[client.Dial] = c
+		addr := client.Listen
+		go func() {
+			_ = s.ListenAndServe(addr, &ClientForwardHandler{c})
+		}()
 	}
 	go s.watchdog()
 	s.startTime = time.Now()

@@ -33,23 +33,23 @@ type ClientConfig struct {
 
 // Config file
 type Config struct {
-	// (optional) SNI field in TLS handshake, default to "example.com"
-	ServerName string `json:"sni"`
 	// (optional) TLS servers we run
 	Server []ServerConfig `json:"server"`
 	// (optional) TLS servers we may connect to
 	Client []ClientConfig `json:"client"`
-	// Local TLS certificate
+	// TLS: (optional) SNI field in handshake, default to "example.com"
+	ServerName string `json:"sni"`
+	// TLS: local certificate
 	Certificate string `json:"cert"`
-	// Local TLS pricate key
+	// TLS: local private key
 	PrivateKey string `json:"key"`
-	// Local TLS authorized certificates, bundle supported
+	// TLS: authorized remote certificates, bundle supported
 	AuthorizedCerts []string `json:"authcerts"`
 	// (optional) TCP no delay, default to false
 	NoDelay bool `json:"nodelay"`
 	// (optional) TCP linger, default to 30
 	Linger int `json:"linger"`
-	// (optional) client-side keep alive interval in seconds, default to false since we have an encrypted one
+	// (optional) client-side keep alive interval in seconds, default to 0 (disabled)
 	KeepAlive int `json:"keepalive"`
 	// (optional) server-side keep alive interval in seconds, default to 0 (disabled)
 	ServerKeepAlive int `json:"serverkeepalive"`
@@ -59,7 +59,7 @@ type Config struct {
 	AcceptBacklog int `json:"backlog"`
 	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
 	StreamWindow uint32 `json:"window"`
-	// (optional) generic request timeout in seconds, default to 262144 (256KiB), increase on long fat networks
+	// (optional) generic request timeout in seconds, default to 30, increase on long fat networks
 	RequestTimeout int `json:"timeout"`
 	// (optional) data write request timeout in seconds, default to 30, used to detect network failes early, increase on slow networks
 	WriteTimeout int `json:"writetimeout"`

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"sync"
 	"time"
 
@@ -48,8 +47,6 @@ type clientSession struct {
 	tlscfg  *tls.Config
 	muxcfg  *yamux.Config
 	session *Session
-
-	apiClient *http.Client
 }
 
 func newClientSession(server *Server, tlscfg *tls.Config, config *ClientConfig) *clientSession {
@@ -58,15 +55,6 @@ func newClientSession(server *Server, tlscfg *tls.Config, config *ClientConfig) 
 		tlscfg: tlscfg,
 		muxcfg: server.cfg.NewMuxConfig(false),
 		config: config,
-	}
-	c.apiClient = &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return c.dialMux(ctx)
-			},
-			DisableKeepAlives: true,
-		},
-		Timeout: server.cfg.Timeout(),
 	}
 	return c
 }
@@ -98,4 +86,17 @@ func (c *clientSession) dialMux(ctx context.Context) (net.Conn, error) {
 		return nil, err
 	}
 	return dialed, nil
+}
+
+type ClientForwardHandler struct {
+	*clientSession
+}
+
+func (h *ClientForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
+	dialed, err := h.dialMux(ctx)
+	if err != nil {
+		_ = accepted.Close()
+		return
+	}
+	h.s.forward(accepted, dialed)
 }
