@@ -7,9 +7,13 @@ VERSION=""
 if git rev-parse --git-dir >/dev/null 2>&1; then
     VERSION="$(git tag --points-at HEAD)"
     if [ -z "${VERSION}" ]; then
-        VERSION="dev-$(git rev-parse --short HEAD)"
+        VERSION="git-$(git rev-parse --short HEAD)"
+    fi
+    if ! git diff-index --quiet HEAD --; then
+        VERSION="${VERSION}+"
     fi
 fi
+echo "+ version: ${VERSION}"
 
 GOFLAGS="-trimpath -mod vendor"
 LDFLAGS=""

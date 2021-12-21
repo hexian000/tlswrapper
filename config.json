@@ -14,7 +14,7 @@
   "cert": "server-cert.pem",
   "key": "server-key.pem",
   "authcerts": [
-    "peer1-cert.pem",
-    "peer2-cert.pem"
+    "client1-cert.pem",
+    "client2-cert.pem"
   ]
 }
