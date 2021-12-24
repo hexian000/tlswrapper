@@ -6,6 +6,8 @@
 
 Wrap your TCP-based service with multiplexing mTLS tunnels. 
 
+If you are also interested in building a reverse proxy cluster and accessing any service published by any peer, see [gated](https://github.com/hexian000/gated).
+
 ```
        Trusted      |     Untrusted    |     Trusted
 +--------+    +------------+    +------------+    +--------+
@@ -32,13 +34,13 @@ Wrap your TCP-based service with multiplexing mTLS tunnels.
 
 Like SSH, each peer needs to generate a key pair(certificate + private key). Only certificates in a peer's authorized certificates list can communicate with this peer.
 
-This behavior is based on golang's mutual TLS 1.3 implementation.
+This behavior is based on golang's TLS 1.3 implementation.
 
 By default, all certificates are self-signed. This will not reduce security. 
 
 ## Quick Start
 
-### 1. Generate key pair (or use your own):
+### 1. Generate key pair with OpenSSH:
 
 ```sh
 ./gencerts.sh client server
@@ -70,7 +72,7 @@ By default, all certificates are self-signed. This will not reduce security.
   "client": [
     {
       "listen": "127.0.0.1:8080",
-      "dial": "server.example.com:12345"
+      "dial": "example.com:12345"
     }
   ],
   "cert": "client-cert.pem",
