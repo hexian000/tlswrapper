@@ -10,7 +10,7 @@ if [ -z "$SSLNAME" ]; then
 fi
 
 if [ -z "$RSABITS" ]; then
-    RSABITS="2048"
+    RSABITS="4096"
 fi
 
 while [ -n "$1" ]; do
