@@ -28,8 +28,9 @@ case "$1" in
     # cross build for all supported targets
     # not supported targets are likely to work
     set -x
-    GOOS="linux" GOARCH="arm64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-arm64
+    GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-mipsle
     GOOS="linux" GOARCH="arm" GOARM=7 nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-armv7
+    GOOS="linux" GOARCH="arm64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-arm64
     GOOS="linux" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-amd64
     GOOS="windows" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.windows-amd64.exe
     ;;
