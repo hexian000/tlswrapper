@@ -6,7 +6,7 @@
 
 Wrap your TCP-based service with multiplexing mTLS tunnels. 
 
-If you are also interested in building a reverse proxy cluster and accessing any service published by any peer, see [gated](https://github.com/hexian000/gated).
+If you are also interested in building a reverse proxy cluster and/or accessing any service published by any peer, see also [gated](https://github.com/hexian000/gated).
 
 ```
        Trusted      |     Untrusted    |     Trusted
@@ -40,7 +40,7 @@ By default, all certificates are self-signed. This will not reduce security.
 
 ## Quick Start
 
-### 1. Generate key pair with OpenSSH:
+### 1. Generate key pair with OpenSSL:
 
 ```sh
 ./gencerts.sh client server
