@@ -3,7 +3,6 @@
 package slog
 
 import (
-	"fmt"
 	"log/syslog"
 	"net"
 	"net/url"
@@ -24,7 +23,7 @@ func (l *Logger) ParseOutput(output, tag string) error {
 		l.SetOutput(os.Stdout)
 		return nil
 	case strings.EqualFold(output, "syslog"):
-		w, err := syslog.New(syslog.LOG_NOTICE, fmt.Sprintf("%s [%v]", tag, os.Getpid()))
+		w, err := syslog.New(syslog.LOG_DAEMON|syslog.LOG_NOTICE, tag)
 		if err != nil {
 			return err
 		}
