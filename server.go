@@ -139,7 +139,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Error(err)
 		return
 	}
-	slog.Info("accept session:", conn.RemoteAddr(), "<->", conn.LocalAddr(), "setup:", time.Since(start))
+	slog.Info("session accept:", conn.RemoteAddr(), "<->", conn.LocalAddr(), "setup:", time.Since(start))
 	sessionName := fmt.Sprintf("%s <- %s", conn.LocalAddr(), conn.RemoteAddr())
 	_ = h.server.newSession(sessionName, session)
 	go func() {
@@ -168,7 +168,7 @@ func (h *ProxyHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.server.dialDirect(ctx, h.forward)
 	if err != nil {
 		_ = accepted.Close()
-		slog.Error("dial TCP:", err)
+		slog.Errorf("dial %q: %v", h.forward, err)
 		return
 	}
 	h.server.forward(accepted, dialed)

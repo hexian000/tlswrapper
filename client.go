@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -13,9 +12,7 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-var errShutdown = errors.New("server is shutting down")
-
-func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (*Session, error) {
+func (s *Server) sessionDial(ctx context.Context, addr string, tlscfg *tls.Config) (*Session, error) {
 	slog.Info("session dial:", addr)
 	startTime := time.Now()
 	conn, err := s.dialer.DialContext(ctx, network, addr)
@@ -59,33 +56,17 @@ func newClientSession(server *Server, tlscfg *tls.Config, config *ClientConfig) 
 	return c
 }
 
-func (c *clientSession) dialTLS(ctx context.Context) (err error) {
+func (c *clientSession) sessionDial(ctx context.Context) (*Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	select {
-	case <-c.s.shutdownCh:
-		return errShutdown
-	default:
-	}
 	if c.session == nil || c.session.mux.IsClosed() {
-		c.session, err = c.s.dialTLS(ctx, c.config.Dial, c.s.tlscfg)
+		session, err := c.s.sessionDial(ctx, c.config.Dial, c.s.tlscfg)
+		if err != nil {
+			c.session = session
+		}
+		return session, err
 	}
-	return
-}
-
-func (c *clientSession) dialMux(ctx context.Context) (net.Conn, error) {
-	err := c.dialTLS(ctx)
-	if err != nil {
-		slog.Error("dial TLS:", err)
-		return nil, err
-	}
-	dialed, err := c.session.mux.Open()
-	if err != nil {
-		slog.Error("dial mux:", err)
-		_ = c.session.mux.Close()
-		return nil, err
-	}
-	return dialed, nil
+	return c.session, nil
 }
 
 type ClientHandler struct {
@@ -93,8 +74,15 @@ type ClientHandler struct {
 }
 
 func (h *ClientHandler) Serve(ctx context.Context, accepted net.Conn) {
-	dialed, err := h.dialMux(ctx)
+	session, err := h.sessionDial(ctx)
 	if err != nil {
+		slog.Warning("session dial:", err)
+		_ = accepted.Close()
+		return
+	}
+	dialed, err := session.mux.Open()
+	if err != nil {
+		slog.Warning("stream open:", err)
 		_ = accepted.Close()
 		return
 	}
