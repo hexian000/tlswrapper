@@ -25,19 +25,12 @@ func init() {
 func parseFlags() string {
 	var flagHelp bool
 	var flagConfig string
-	var flagVerbose bool
 	flag.BoolVar(&flagHelp, "h", false, "help")
 	flag.StringVar(&flagConfig, "c", "", "config file")
-	flag.BoolVar(&flagVerbose, "v", false, "verbose mode")
 	flag.Parse()
 	if flagHelp || flagConfig == "" {
 		flag.Usage()
 		os.Exit(1)
-	}
-	if flagVerbose {
-		slog.Default().SetLevel(slog.LevelVerbose)
-	} else {
-		slog.Default().SetLevel(slog.LevelInfo)
 	}
 	return flagConfig
 }
@@ -62,6 +55,7 @@ func main() {
 		slog.Fatal("read config:", err)
 		os.Exit(1)
 	}
+	slog.Default().SetLevel(cfg.LogLevel)
 	if err := slog.Default().ParseOutput(cfg.Log, "tlswrapper"); err != nil {
 		slog.Fatal("logging:", err)
 		os.Exit(1)
@@ -89,16 +83,17 @@ func main() {
 		}
 		// reload
 		_, _ = daemon.Notify(daemon.Reloading)
-		newCfg, err := readConfig(path)
+		cfg, err := readConfig(path)
 		if err != nil {
 			slog.Error("read config:", err)
 			continue
 		}
-		if err := slog.Default().ParseOutput(newCfg.Log, "tlswrapper"); err != nil {
+		slog.Default().SetLevel(cfg.LogLevel)
+		if err := slog.Default().ParseOutput(cfg.Log, "tlswrapper"); err != nil {
 			slog.Error("logging:", err)
 			continue
 		}
-		if err := server.LoadConfig(newCfg); err != nil {
+		if err := server.LoadConfig(cfg); err != nil {
 			slog.Error("load config:", err)
 			continue
 		}

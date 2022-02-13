@@ -65,6 +65,8 @@ type Config struct {
 	WriteTimeout int `json:"writetimeout"`
 	// (optional) log output, default to stderr
 	Log string `json:"log"`
+	// (optional) log output, default to 2 (info)
+	LogLevel int `json:"loglevel"`
 }
 
 var defaultConfig = Config{
@@ -77,6 +79,8 @@ var defaultConfig = Config{
 	StreamWindow:   256 * 1024, // 256 KiB
 	RequestTimeout: 30,
 	WriteTimeout:   30,
+	Log:            "stderr",
+	LogLevel:       2,
 }
 
 // SetConnParams sets TCP params
