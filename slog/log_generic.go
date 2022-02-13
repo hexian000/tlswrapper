@@ -16,7 +16,10 @@ import (
 
 func (l *Logger) ParseOutput(output, tag string) error {
 	switch true {
-	case output == "" || strings.EqualFold(output, "stderr"):
+	case output == "" || strings.EqualFold(output, "discard"):
+		l.SetOutput(nil)
+		return nil
+	case strings.EqualFold(output, "stderr"):
 		l.SetOutput(os.Stderr)
 		return nil
 	case strings.EqualFold(output, "stdout"):
@@ -43,7 +46,7 @@ func (l *Logger) Output(calldepth int, level int, s string) {
 	if func() bool {
 		l.mu.Lock()
 		defer l.mu.Unlock()
-		return level < l.level
+		return l.out != nil && level < l.level
 	}() {
 		return
 	}
