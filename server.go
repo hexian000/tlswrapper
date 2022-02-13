@@ -88,13 +88,12 @@ func (s *Server) cancel(ctx context.Context) {
 func (s *Server) newSession(name string, mux *yamux.Session) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := time.Now()
-	info := &Session{
+	session := &Session{
 		mux:      mux,
-		lastSeen: now,
+		lastSeen: time.Now(),
 	}
-	s.sessions[name] = info
-	return info
+	s.sessions[name] = session
+	return session
 }
 
 func (s *Server) forward(accepted net.Conn, dialed net.Conn) {

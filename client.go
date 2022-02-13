@@ -25,15 +25,15 @@ func (s *Server) sessionDial(ctx context.Context, addr string, tlscfg *tls.Confi
 		_ = tlsConn.Close()
 		return nil, err
 	}
-	session, err := yamux.Client(tlsConn, s.muxcfg)
+	mux, err := yamux.Client(tlsConn, s.muxcfg)
 	if err != nil {
 		_ = tlsConn.Close()
 		return nil, err
 	}
 	slog.Info("session dial:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
-	sessionName := fmt.Sprintf("%s -> %s", conn.LocalAddr(), conn.RemoteAddr())
-	info := s.newSession(sessionName, session)
-	return info, nil
+	name := fmt.Sprintf("%s -> %s", conn.LocalAddr(), conn.RemoteAddr())
+	session := s.newSession(name, mux)
+	return session, nil
 }
 
 type clientSession struct {
@@ -61,7 +61,7 @@ func (c *clientSession) sessionDial(ctx context.Context) (*Session, error) {
 	defer c.mu.Unlock()
 	if c.session == nil || c.session.mux.IsClosed() {
 		session, err := c.s.sessionDial(ctx, c.config.Dial, c.s.tlscfg)
-		if err != nil {
+		if err == nil {
 			c.session = session
 		}
 		return session, err
