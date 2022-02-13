@@ -3,13 +3,8 @@ package slog
 import (
 	"fmt"
 	"io"
-	"log/syslog"
 	"os"
-	"path"
-	"runtime"
-	"strconv"
 	"sync"
-	"time"
 )
 
 const (
@@ -51,42 +46,6 @@ func (l *Logger) SetOutput(out io.Writer) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.out = out
-}
-
-func (l *Logger) Output(calldepth int, level int, s string) {
-	now := time.Now()
-	if func() bool {
-		l.mu.Lock()
-		defer l.mu.Unlock()
-		return level < l.level
-	}() {
-		return
-	}
-	_, file, line, ok := runtime.Caller(calldepth)
-	if !ok {
-		file, line = "???", 0
-	} else {
-		file = path.Base(file)
-	}
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	buf := l.buf[:0]
-	buf = append(buf, levelChar[level], ' ')
-	if _, ok := l.out.(*syslog.Writer); !ok {
-		buf = now.AppendFormat(buf, ISO8601Milli)
-		buf = append(buf, ' ')
-	}
-	buf = append(buf, file...)
-	buf = append(buf, ':')
-	buf = strconv.AppendInt(buf, int64(line), 10)
-	buf = append(buf, ' ')
-	buf = append(buf, s...)
-	if len(s) == 0 || s[len(s)-1] != '\n' {
-		buf = append(buf, '\n')
-	}
-	l.buf = buf
-	l.out.Write(buf)
 }
 
 func (l *Logger) Verbose(v ...interface{}) {

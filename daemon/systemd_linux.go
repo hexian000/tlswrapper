@@ -7,13 +7,6 @@ import (
 	"os"
 )
 
-const (
-	Ready     = "READY=1"
-	Stopping  = "STOPPING=1"
-	Reloading = "RELOADING=1"
-	Watchdog  = "WATCHDOG=1"
-)
-
 func Notify(state string) (bool, error) {
 	addr := os.Getenv("NOTIFY_SOCKET")
 	if addr == "" {

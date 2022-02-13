@@ -1,9 +1,8 @@
-//go:build !linux
-
 package daemon
 
-import "errors"
-
-func Notify(state string) (bool, error) {
-	return false, errors.New("systemd is not supported on current platform")
-}
+const (
+	Ready     = "READY=1"
+	Stopping  = "STOPPING=1"
+	Reloading = "RELOADING=1"
+	Watchdog  = "WATCHDOG=1"
+)
