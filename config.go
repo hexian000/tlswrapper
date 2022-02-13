@@ -63,8 +63,8 @@ type Config struct {
 	RequestTimeout int `json:"timeout"`
 	// (optional) data write request timeout in seconds, default to 30, used to detect network failes early, increase on slow networks
 	WriteTimeout int `json:"writetimeout"`
-	// (optional) UDP log sink address, if set, log will be send to this address rather than stdout
-	UDPLog string `json:"udplog"`
+	// (optional) log output, default to stderr
+	Log string `json:"log"`
 }
 
 var defaultConfig = Config{

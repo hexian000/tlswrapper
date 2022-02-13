@@ -88,11 +88,11 @@ func (c *clientSession) dialMux(ctx context.Context) (net.Conn, error) {
 	return dialed, nil
 }
 
-type ClientForwardHandler struct {
+type ClientHandler struct {
 	*clientSession
 }
 
-func (h *ClientForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
+func (h *ClientHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.dialMux(ctx)
 	if err != nil {
 		_ = accepted.Close()

@@ -142,7 +142,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	sessionName := fmt.Sprintf("%s <- %s", conn.LocalAddr(), conn.RemoteAddr())
 	_ = h.server.newSession(sessionName, session)
 	go func() {
-		_ = h.server.Serve(session, &DirectForwardHandler{
+		_ = h.server.Serve(session, &ProxyHandler{
 			h.server,
 			h.config.Forward,
 		})
@@ -158,12 +158,12 @@ func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) 
 	return dialed, nil
 }
 
-type DirectForwardHandler struct {
+type ProxyHandler struct {
 	server  *Server
 	forward string
 }
 
-func (h *DirectForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
+func (h *ProxyHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.server.dialDirect(ctx, h.forward)
 	if err != nil {
 		_ = accepted.Close()
@@ -200,7 +200,7 @@ func (s *Server) checkIdle() {
 			item.seen()
 			continue
 		}
-		if time.Since(item.lastSeen) > timeout {
+		if timeout > 0 && time.Since(item.lastSeen) > timeout {
 			slog.Info("idle timeout expired:", mux.LocalAddr(), "<x>", mux.RemoteAddr())
 			_ = mux.Close()
 			delete(s.sessions, name)
@@ -229,10 +229,6 @@ func (s *Server) watchdog() {
 			return
 		}
 	}
-}
-
-type Handler interface {
-	Serve(context.Context, net.Conn)
 }
 
 func (s *Server) serveOne(accepted net.Conn, handler Handler) {
@@ -292,7 +288,7 @@ func (s *Server) Start() error {
 		s.dials[client.Dial] = c
 		addr := client.Listen
 		go func() {
-			_ = s.ListenAndServe(addr, &ClientForwardHandler{c})
+			_ = s.ListenAndServe(addr, &ClientHandler{c})
 		}()
 	}
 	go s.watchdog()

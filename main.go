@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -56,20 +55,6 @@ func readConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func setUDPLog(addr string) error {
-	if addr == "" {
-		slog.Default().SetOutput(os.Stderr)
-		return nil
-	}
-	conn, err := net.Dial("udp", addr)
-	if err != nil {
-		return err
-	}
-	slog.Verbose("logging to", addr)
-	slog.Default().SetOutput(conn)
-	return nil
-}
-
 func main() {
 	path := parseFlags()
 	cfg, err := readConfig(path)
@@ -77,7 +62,7 @@ func main() {
 		slog.Fatal("read config:", err)
 		os.Exit(1)
 	}
-	if err := setUDPLog(cfg.UDPLog); err != nil {
+	if err := slog.Default().ParseOutput(cfg.Log, "tlswrapper"); err != nil {
 		slog.Fatal("logging:", err)
 		os.Exit(1)
 	}
@@ -109,7 +94,7 @@ func main() {
 			slog.Error("read config:", err)
 			continue
 		}
-		if err := setUDPLog(newCfg.UDPLog); err != nil {
+		if err := slog.Default().ParseOutput(newCfg.Log, "tlswrapper"); err != nil {
 			slog.Error("logging:", err)
 			continue
 		}
