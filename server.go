@@ -63,14 +63,12 @@ func NewServer() *Server {
 }
 
 func (s *Server) withTimeout() context.Context {
-	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout())
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	select {
-	case <-s.shutdownCh:
-		cancel()
-	default:
+	if s.contexts == nil {
+		return nil
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout())
 	s.contexts[ctx] = cancel
 	return ctx
 }
@@ -78,6 +76,9 @@ func (s *Server) withTimeout() context.Context {
 func (s *Server) cancel(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.contexts == nil {
+		return
+	}
 	if cancel, ok := s.contexts[ctx]; ok {
 		cancel()
 		delete(s.contexts, ctx)
@@ -209,6 +210,7 @@ func (s *Server) checkIdle() {
 }
 
 func (s *Server) watchdog() {
+	defer s.closeAllSessions()
 	ticker := time.NewTicker(idleCheckInterval)
 	defer ticker.Stop()
 	lastTick := time.Now()
@@ -219,7 +221,7 @@ func (s *Server) watchdog() {
 			if now.Sub(lastTick) > 2*idleCheckInterval {
 				slog.Warning("system hang detected, tick time:", now.Sub(lastTick))
 				s.closeAllSessions()
-				return
+				continue
 			}
 			lastTick = now
 			if s.cfg.IdleTimeout > 0 {
@@ -239,6 +241,9 @@ func (s *Server) serveOne(accepted net.Conn, handler Handler) {
 		}
 	}()
 	ctx := s.withTimeout()
+	if ctx == nil {
+		return
+	}
 	defer s.cancel(ctx)
 	handler.Serve(ctx, accepted)
 }
@@ -307,12 +312,11 @@ func (s *Server) Shutdown() error {
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		for ctx, cancel := range s.contexts {
+		for _, cancel := range s.contexts {
 			cancel()
-			delete(s.contexts, ctx)
 		}
+		s.contexts = nil
 	}()
-	s.closeAllSessions()
 	slog.Info("waiting for unfinished connections")
 	s.wg.Wait()
 	return nil

@@ -16,7 +16,7 @@ import (
 var errShutdown = errors.New("server is shutting down")
 
 func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (*Session, error) {
-	slog.Verbose("dial TLS:", addr)
+	slog.Info("session dial:", addr)
 	startTime := time.Now()
 	conn, err := s.dialer.DialContext(ctx, network, addr)
 	if err != nil {
@@ -33,7 +33,7 @@ func (s *Server) dialTLS(ctx context.Context, addr string, tlscfg *tls.Config) (
 		_ = tlsConn.Close()
 		return nil, err
 	}
-	slog.Info("dial session:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
+	slog.Info("session dial:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))
 	sessionName := fmt.Sprintf("%s -> %s", conn.LocalAddr(), conn.RemoteAddr())
 	info := s.newSession(sessionName, session)
 	return info, nil
