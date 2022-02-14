@@ -217,12 +217,13 @@ func (s *Server) watchdog() {
 		select {
 		case <-ticker.C:
 			now := time.Now()
-			if now.Sub(lastTick) > 2*idleCheckInterval {
+			tickInterval := now.Sub(lastTick)
+			lastTick = now
+			if tickInterval > 2*idleCheckInterval {
 				slog.Warning("system hang detected, tick time:", now.Sub(lastTick))
 				s.closeAllSessions()
 				continue
 			}
-			lastTick = now
 			if s.cfg.IdleTimeout > 0 {
 				s.checkIdle()
 			}
