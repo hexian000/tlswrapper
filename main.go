@@ -56,7 +56,7 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Default().SetLevel(cfg.LogLevel)
-	if err := slog.Default().ParseOutput(cfg.Log, "tlswrapper"); err != nil {
+	if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
 		slog.Fatal("logging:", err)
 		os.Exit(1)
 	}
@@ -89,7 +89,7 @@ func main() {
 			continue
 		}
 		slog.Default().SetLevel(cfg.LogLevel)
-		if err := slog.Default().ParseOutput(cfg.Log, "tlswrapper"); err != nil {
+		if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
 			slog.Error("logging:", err)
 			continue
 		}

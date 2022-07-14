@@ -2,7 +2,6 @@ package slog
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"sync"
 )
@@ -17,83 +16,20 @@ const (
 	LevelSilence
 )
 
-const ISO8601Milli = "2006-01-02T15:04:05.000Z07:00"
-
 var levelChar = [...]byte{
 	'V', 'D', 'I', 'W', 'E', 'F',
 }
 
 type Logger struct {
-	out   io.Writer
+	out   logOutput
 	mu    sync.RWMutex
 	level int
-	buf   []byte
 }
 
-var std = &Logger{out: os.Stderr}
+var std = &Logger{out: newLineOutput(os.Stdout)}
 
 func Default() *Logger {
 	return std
-}
-
-func (l *Logger) SetLevel(level int) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.level = level
-}
-
-func (l *Logger) SetOutput(out io.Writer) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.out = out
-}
-
-func (l *Logger) Verbose(v ...interface{}) {
-	l.Output(2, LevelVerbose, fmt.Sprintln(v...))
-}
-
-func (l *Logger) Verbosef(format string, v ...interface{}) {
-	l.Output(2, LevelVerbose, fmt.Sprintf(format, v...))
-}
-
-func (l *Logger) Debug(v ...interface{}) {
-	l.Output(2, LevelDebug, fmt.Sprintln(v...))
-}
-
-func (l *Logger) Debugf(format string, v ...interface{}) {
-	l.Output(2, LevelDebug, fmt.Sprintf(format, v...))
-}
-
-func (l *Logger) Info(v ...interface{}) {
-	l.Output(2, LevelInfo, fmt.Sprintln(v...))
-}
-
-func (l *Logger) Infof(format string, v ...interface{}) {
-	l.Output(2, LevelInfo, fmt.Sprintf(format, v...))
-}
-
-func (l *Logger) Warning(v ...interface{}) {
-	l.Output(2, LevelWarning, fmt.Sprintln(v...))
-}
-
-func (l *Logger) Warningf(format string, v ...interface{}) {
-	l.Output(2, LevelWarning, fmt.Sprintf(format, v...))
-}
-
-func (l *Logger) Error(v ...interface{}) {
-	l.Output(2, LevelError, fmt.Sprintln(v...))
-}
-
-func (l *Logger) Errorf(format string, v ...interface{}) {
-	l.Output(2, LevelError, fmt.Sprintf(format, v...))
-}
-
-func (l *Logger) Fatal(v ...interface{}) {
-	l.Output(2, LevelFatal, fmt.Sprintln(v...))
-}
-
-func (l *Logger) Fatalf(format string, v ...interface{}) {
-	l.Output(2, LevelFatal, fmt.Sprintf(format, v...))
 }
 
 func Verbose(v ...interface{}) {
