@@ -76,13 +76,13 @@ type ClientHandler struct {
 func (h *ClientHandler) Serve(ctx context.Context, accepted net.Conn) {
 	session, err := h.sessionDial(ctx)
 	if err != nil {
-		slog.Warning("session dial:", err)
+		slog.Warningf("dial failed: %s, closing: %v", err, accepted.RemoteAddr())
 		_ = accepted.Close()
 		return
 	}
 	dialed, err := session.mux.Open()
 	if err != nil {
-		slog.Warning("stream open:", err)
+		slog.Warningf("stream open: %s, closing: %v", err, accepted.RemoteAddr())
 		_ = accepted.Close()
 		return
 	}
