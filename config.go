@@ -45,7 +45,7 @@ type Config struct {
 	PrivateKey string `json:"key"`
 	// TLS: authorized remote certificates, bundle supported
 	AuthorizedCerts []string `json:"authcerts"`
-	// (optional) TCP no delay, default to false
+	// (optional) TCP no delay, default to true
 	NoDelay bool `json:"nodelay"`
 	// (optional) TCP linger, default to 30
 	Linger int `json:"linger"`
@@ -71,9 +71,9 @@ type Config struct {
 
 var defaultConfig = Config{
 	ServerName:     "example.com",
-	NoDelay:        false,
+	NoDelay:        true,
 	Linger:         30,
-	KeepAlive:      15,  // every 15s
+	KeepAlive:      25,  // every 25s
 	IdleTimeout:    900, // 15min
 	AcceptBacklog:  8,
 	StreamWindow:   256 * 1024, // 256 KiB
