@@ -16,7 +16,7 @@ fi
 echo "+ version: ${VERSION}"
 
 GOFLAGS="-trimpath -mod vendor"
-LDFLAGS=""
+LDFLAGS="-s -w"
 if [ -n "${VERSION}" ]; then
     LDFLAGS="${LDFLAGS} -X main.version=${VERSION}"
 fi
