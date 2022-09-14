@@ -311,7 +311,7 @@ func (s *Server) Start() error {
 		addr := client.Listen
 		go func() {
 			l, err := s.Listen(addr)
-			if err == nil {
+			if err != nil {
 				return
 			}
 			h := &ClientHandler{c}
