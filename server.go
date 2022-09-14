@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/hexian000/hlistener"
+	"github.com/hexian000/tlswrapper/hlistener"
 	"github.com/hexian000/tlswrapper/slog"
 )
 
