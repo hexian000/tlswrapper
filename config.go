@@ -3,9 +3,9 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"io/ioutil"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -103,7 +103,7 @@ func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
 	}
 	certPool := x509.NewCertPool()
 	for _, path := range c.AuthorizedCerts {
-		certBytes, err := ioutil.ReadFile(path)
+		certBytes, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
