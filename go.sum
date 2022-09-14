@@ -1,2 +1,4 @@
 github.com/hashicorp/yamux v0.1.1 h1:yrQxtgseBDrq9Y652vSRDvsKCJKOUD+GzTS4Y0Y8pvE=
 github.com/hashicorp/yamux v0.1.1/go.mod h1:CtWFDAQgb7dxtzFs4tWbplKIe2jSi3+5vKbgIO0SLnQ=
+github.com/hexian000/hlistener v0.0.0-20220914034402-08a4d7eee43a h1:lLY69tOoWbdla8G4mbVRY1rrC/IT2IGkwecLPXGjUpU=
+github.com/hexian000/hlistener v0.0.0-20220914034402-08a4d7eee43a/go.mod h1:SRE/LUtcI/k7KfpHszZ6NUYD7cIRrxMN8J7XMIYfq0g=

@@ -10,9 +10,11 @@ import (
 	"reflect"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/hlistener"
 	"github.com/hexian000/tlswrapper/slog"
 )
 
@@ -122,9 +124,17 @@ func (s *Server) forward(accepted net.Conn, dialed net.Conn) {
 type TLSHandler struct {
 	server *Server
 	config *ServerConfig
+
+	unauthorized uint32
+}
+
+func (h *TLSHandler) Unauthorized() uint32 {
+	return atomic.LoadUint32(&h.unauthorized)
 }
 
 func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
+	atomic.AddUint32(&h.unauthorized, 1)
+	defer atomic.AddUint32(&h.unauthorized, ^uint32(0))
 	start := time.Now()
 	h.server.cfg.SetConnParams(conn)
 	tlsConn := tls.Server(conn, h.server.tlscfg)
@@ -252,10 +262,6 @@ func (s *Server) Serve(listener net.Listener, handler Handler) error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			if err, ok := err.(net.Error); ok && err.Temporary() {
-				time.Sleep(500 * time.Millisecond)
-				continue
-			}
 			return err
 		}
 		s.wg.Add(1)
@@ -263,15 +269,15 @@ func (s *Server) Serve(listener net.Listener, handler Handler) error {
 	}
 }
 
-func (s *Server) ListenAndServe(addr string, handler Handler) error {
+func (s *Server) Listen(addr string) (net.Listener, error) {
 	listener, err := net.Listen(network, addr)
 	if err != nil {
 		slog.Error("listen", addr, ":", err)
-		return err
+		return listener, err
 	}
 	slog.Info("listen:", listener.Addr())
 	s.listeners[addr] = listener
-	return s.Serve(listener, handler)
+	return listener, err
 }
 
 // Start the service
@@ -281,7 +287,18 @@ func (s *Server) Start() error {
 	for i, server := range s.cfg.Server {
 		addr := server.Listen
 		go func(config *ServerConfig) {
-			_ = s.ListenAndServe(addr, &TLSHandler{s, config})
+			l, err := s.Listen(addr)
+			if err != nil {
+				return
+			}
+			h := &TLSHandler{server: s, config: config}
+			hlistener.Wrap(l, &hlistener.Config{
+				Start:        10,
+				Full:         60,
+				Rate:         0.3,
+				Unauthorized: func() uint { return uint(h.Unauthorized()) },
+			})
+			_ = s.Serve(l, h)
 		}(&s.cfg.Server[i])
 	}
 	for i, client := range s.cfg.Client {
@@ -293,7 +310,12 @@ func (s *Server) Start() error {
 		s.dials[client.Dial] = c
 		addr := client.Listen
 		go func() {
-			_ = s.ListenAndServe(addr, &ClientHandler{c})
+			l, err := s.Listen(addr)
+			if err == nil {
+				return
+			}
+			h := &ClientHandler{c}
+			_ = s.Serve(l, h)
 		}()
 	}
 	go s.watchdog()
