@@ -292,11 +292,11 @@ func (s *Server) Start() error {
 				return
 			}
 			h := &TLSHandler{server: s, config: config}
-			hlistener.Wrap(l, &hlistener.Config{
+			l = hlistener.Wrap(l, &hlistener.Config{
 				Start:        10,
 				Full:         60,
 				Rate:         0.3,
-				Unauthorized: func() uint { return uint(h.Unauthorized()) },
+				Unauthorized: h.Unauthorized,
 			})
 			_ = s.Serve(l, h)
 		}(&s.cfg.Server[i])
