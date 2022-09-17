@@ -1,0 +1,223 @@
+package main
+
+import (
+	"context"
+	"net"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/hexian000/tlswrapper/hlistener"
+	"github.com/hexian000/tlswrapper/forwarder"
+	"github.com/hexian000/tlswrapper/session"
+	"github.com/hexian000/tlswrapper/slog"
+)
+
+const network = "tcp"
+
+type Service struct {
+	mu        sync.RWMutex
+	cfg       *Config
+	serverCfg *session.Config
+	clientCfg *session.Config
+	f         *forwarder.Forwarder
+	sessions  map[*session.Session]struct{}
+	contexts  map[context.Context]context.CancelFunc
+
+	tlsListener  net.Listener
+	tcpListener  net.Listener
+	unauthorized uint32
+
+	closeSig chan struct{}
+}
+
+func NewService(cfg *Config) (*Service, error) {
+	tls, err := cfg.LoadTLSConfig()
+	if err != nil {
+		return nil, err
+	}
+	s := &Service{
+		cfg:       cfg,
+		serverCfg: &session.Config{TLS: tls, Mux: cfg.NewMuxConfig(true)},
+		clientCfg: &session.Config{TLS: tls, Mux: cfg.NewMuxConfig(false)},
+		f:         forwarder.New(),
+		sessions:  make(map[*session.Session]struct{}),
+		contexts:  make(map[context.Context]context.CancelFunc),
+		closeSig:  make(chan struct{}),
+	}
+	return s, nil
+}
+
+func (s *Service) serveSession(ss *session.Session) {
+	defer func() {
+		_ = ss.Close()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		delete(s.sessions, ss)
+		if len(s.sessions) == 0 {
+			go s.dialTLS()
+		}
+	}()
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.sessions[ss] = struct{}{}
+	}()
+	for {
+		accepted, err := ss.Accept()
+		if err != nil {
+			slog.Error(err)
+			return
+		}
+		go s.dialLocal(accepted)
+	}
+}
+
+func (s *Service) dialLocal(accepted net.Conn) {
+	timeout := time.Duration(s.cfg.Local.DialTimeout) * time.Second
+	dialed, err := net.DialTimeout(network, s.cfg.Local.Dial, timeout)
+	if err != nil {
+		slog.Error(err)
+		return
+	}
+	s.f.Forward(accepted, dialed)
+}
+
+func (s *Service) serveLocal(l net.Listener) {
+	for {
+		accepted, err := l.Accept()
+		if err != nil {
+			slog.Error(err)
+			return
+		}
+		ss := s.findSession()
+		if ss == nil {
+			_ = accepted.Close()
+			continue
+		}
+		go s.dialStream(ss, accepted)
+	}
+}
+
+func (s *Service) findSession() *session.Session {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for ss := range s.sessions {
+		return ss
+	}
+	return nil
+}
+
+func (s *Service) dialStream(ss *session.Session, accepted net.Conn) {
+	dialed, err := ss.Open()
+	if err != nil {
+		slog.Error(err)
+		return
+	}
+	s.f.Forward(accepted, dialed)
+}
+
+func (s *Service) addContext(ctx context.Context, cancel context.CancelFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.contexts[ctx] = cancel
+}
+
+func (s *Service) deleteContext(ctx context.Context) {
+	var cancel context.CancelFunc
+	defer func() {
+		if cancel != nil {
+			cancel()
+		}
+	}()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cancel = s.contexts[ctx]
+	delete(s.contexts, ctx)
+}
+
+func (s *Service) dialTLS() {
+	address := s.cfg.Server.Dial
+	if address == "" {
+		return
+	}
+	timeout := time.Duration(s.cfg.Server.DialTimeout) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	s.addContext(ctx, cancel)
+	defer s.deleteContext(ctx)
+	ss, err := session.DialContext(ctx, address, s.clientCfg)
+	if err != nil {
+		slog.Error(err)
+		return
+	}
+	go s.serveSession(ss)
+}
+
+func (s *Service) serveTLS(l net.Listener) {
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			slog.Error(err)
+			return
+		}
+		go s.serveOneTLS(conn)
+	}
+}
+
+func (s *Service) serveOneTLS(conn net.Conn) {
+	atomic.AddUint32(&s.unauthorized, 1)
+	defer atomic.AddUint32(&s.unauthorized, ^uint32(0))
+	timeout := time.Duration(s.cfg.Server.DialTimeout) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	s.addContext(ctx, cancel)
+	defer s.deleteContext(ctx)
+	ss, err := session.ServeContext(ctx, conn, s.serverCfg)
+	if err != nil {
+		slog.Error(err)
+		return
+	}
+	go s.serveSession(ss)
+}
+
+func (s *Service) Start() error {
+	if s.cfg.Server.Listen != "" {
+		l, err := net.Listen(network, s.cfg.Server.Listen)
+		if err != nil {
+			return err
+		}
+		s.tlsListener = l
+		hcfg := s.cfg.NewHardenConfig(func() uint32 {
+			return atomic.LoadUint32(&s.unauthorized)
+		})
+		go s.serveTLS(hlistener.Wrap(l, hcfg))
+	}
+	if s.cfg.Local.Listen != "" {
+		l, err := net.Listen(network, s.cfg.Local.Listen)
+		if err != nil {
+			return err
+		}
+		s.tcpListener = l
+		go s.serveLocal(s.tcpListener)
+	}
+	go s.dialTLS()
+	return nil
+}
+
+func (s *Service) Shutdown() {
+	close(s.closeSig)
+	if s.tlsListener != nil {
+		_ = s.tlsListener.Close()
+	}
+	if s.tcpListener != nil {
+		_ = s.tcpListener.Close()
+	}
+	s.f.Close()
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for ctx, cancel := range s.contexts {
+			delete(s.contexts, ctx)
+			cancel()
+		}
+	}()
+}

@@ -59,13 +59,13 @@ func main() {
 		slog.Fatal("logging:", err)
 		os.Exit(1)
 	}
-	server := NewServer()
-	if err := server.LoadConfig(cfg); err != nil {
+	service, err := NewService(cfg)
+	if err != nil {
 		slog.Fatal("load config:", err)
 		os.Exit(1)
 	}
 	slog.Info("server starting")
-	if err := server.Start(); err != nil {
+	if err := service.Start(); err != nil {
 		slog.Fatal("server start:", err)
 		os.Exit(1)
 	}
@@ -80,29 +80,8 @@ func main() {
 			_, _ = daemon.Notify(daemon.Stopping)
 			break
 		}
-		// reload
-		_, _ = daemon.Notify(daemon.Reloading)
-		cfg, err := readConfig(path)
-		if err != nil {
-			slog.Error("read config:", err)
-			continue
-		}
-		slog.Default().SetLevel(cfg.LogLevel)
-		if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
-			slog.Error("logging:", err)
-			continue
-		}
-		if err := server.LoadConfig(cfg); err != nil {
-			slog.Error("load config:", err)
-			continue
-		}
-		_, _ = daemon.Notify(daemon.Ready)
-		slog.Info("config successfully reloaded")
 	}
 
-	if err := server.Shutdown(); err != nil {
-		slog.Fatal("server shutdown:", err)
-		os.Exit(1)
-	}
+	service.Shutdown()
 	slog.Info("server stopped gracefully")
 }

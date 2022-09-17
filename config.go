@@ -4,39 +4,20 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"log"
-	"net"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/tlswrapper/hlistener"
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-// ServerConfig contains configs for a TLS server
 type ServerConfig struct {
-	// TLS server bind address
+	// server-side bind address
 	Listen string `json:"listen"`
-	// upstream TCP service address
-	Forward string `json:"forward"`
-}
-
-// ClientConfig contains configs for a TLS client
-type ClientConfig struct {
-	// (optional) SNI field in TLS handshake, default to "example.com"
-	ServerName string `json:"sni"`
-	// bind address
-	Listen string `json:"listen"`
-	// server address
+	// client-side connect addresses
 	Dial string `json:"dial"`
-}
-
-// Config file
-type Config struct {
-	// (optional) TLS servers we run
-	Server []ServerConfig `json:"server"`
-	// (optional) TLS servers we may connect to
-	Client []ClientConfig `json:"client"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
 	ServerName string `json:"sni"`
 	// TLS: local certificate
@@ -49,7 +30,7 @@ type Config struct {
 	NoDelay bool `json:"nodelay"`
 	// (optional) client-side keep alive interval in seconds, default to 25 (every 25s)
 	KeepAlive int `json:"keepalive"`
-	// (optional) server-side keep alive interval in seconds, default to 0 (disabled)
+	// (optional) server-side keep alive interval in seconds, default to 300 (every 5min)
 	ServerKeepAlive int `json:"serverkeepalive"`
 	// (optional) soft limit of concurrent unauthenticated connections, default to 10
 	StartupLimitStart int `json:"startuplimitstart"`
@@ -57,16 +38,33 @@ type Config struct {
 	StartupLimitRate int `json:"startuplimitrate"`
 	// (optional) hard limit of concurrent unauthenticated connections, default to 60
 	StartupLimitFull int `json:"startuplimitfull"`
-	// (optional) session idle timeout in seconds, default to 900 (15min)
+	// (optional) session idle timeout in seconds, default to 7200 (2hrs)
 	IdleTimeout int `json:"idletimeout"`
 	// (optional) mux accept backlog, default to 8, you may not want to change this
 	AcceptBacklog int `json:"backlog"`
 	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
 	StreamWindow uint32 `json:"window"`
-	// (optional) generic request timeout in seconds, default to 30, increase on long fat networks
-	RequestTimeout int `json:"timeout"`
-	// (optional) data write request timeout in seconds, default to 30, used to detect network failes early, increase on slow networks
-	WriteTimeout int `json:"writetimeout"`
+	// (optional) authentication timeout in seconds, default to 30
+	AuthTimeout int `json:"authtimeout"`
+	// (optional) dial timeout in seconds, default to 30
+	DialTimeout int `json:"dialtimeout"`
+	// (optional) connection timeout in seconds, default to 30
+	Timeout int `json:"timeout"`
+}
+
+type LocalConfig struct {
+	// bind address to serve TCP clients
+	Listen string `json:"listen"`
+	// upstream TCP service address
+	Dial string `json:"dial"`
+	// (optional) dial timeout in seconds, default to 30
+	DialTimeout int `json:"dialtimeout"`
+}
+
+// Config file
+type Config struct {
+	Server ServerConfig `json:"server"`
+	Local  LocalConfig  `json:"local"`
 	// (optional) log output, default to stderr
 	Log string `json:"log"`
 	// (optional) log output, default to 2 (info)
@@ -74,41 +72,36 @@ type Config struct {
 }
 
 var defaultConfig = Config{
-	ServerName:        "example.com",
-	NoDelay:           true,
-	KeepAlive:         25, // every 25s
-	ServerKeepAlive:   0,
-	StartupLimitStart: 10,
-	StartupLimitRate:  30,
-	StartupLimitFull:  60,
-	IdleTimeout:       900, // 15min
-	AcceptBacklog:     8,
-	StreamWindow:      256 * 1024, // 256 KiB
-	RequestTimeout:    30,
-	WriteTimeout:      30,
-	Log:               "stderr",
-	LogLevel:          2,
+	Server: ServerConfig{
+		ServerName:        "example.com",
+		NoDelay:           true,
+		KeepAlive:         25,  // every 25s
+		ServerKeepAlive:   300, // every 5min
+		StartupLimitStart: 10,
+		StartupLimitRate:  30,
+		StartupLimitFull:  60,
+		IdleTimeout:       7200, // 2hrs
+		AcceptBacklog:     8,
+		StreamWindow:      256 * 1024, // 256 KiB
+		AuthTimeout:       30,
+		DialTimeout:       30,
+		Timeout:           30,
+	},
+	Local: LocalConfig{
+		DialTimeout: 30,
+	},
+	Log:      "stderr",
+	LogLevel: 2,
 }
 
-// SetConnParams sets TCP params
-func (c *Config) SetConnParams(conn net.Conn) {
-	if tcpConn := conn.(*net.TCPConn); tcpConn != nil {
-		_ = tcpConn.SetNoDelay(c.NoDelay)
-		_ = tcpConn.SetKeepAlive(false) // we have an encrypted one
-	}
-}
-
-// NewTLSConfig creates tls.Config
-func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
-	if sni == "" {
-		sni = c.ServerName
-	}
-	cert, err := tls.LoadX509KeyPair(c.Certificate, c.PrivateKey)
+// LoadTLSConfig loads tls.Config
+func (c *Config) LoadTLSConfig() (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(c.Server.Certificate, c.Server.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
 	certPool := x509.NewCertPool()
-	for _, path := range c.AuthorizedCerts {
+	for _, path := range c.Server.AuthorizedCerts {
 		certBytes, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
@@ -123,15 +116,15 @@ func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    certPool,
 		RootCAs:      certPool,
-		ServerName:   sni,
+		ServerName:   c.Server.ServerName,
 		MinVersion:   tls.VersionTLS13,
 		MaxVersion:   tls.VersionTLS13,
 	}, nil
 }
 
 // Timeout gets the generic request timeout
-func (c *Config) Timeout() time.Duration {
-	return time.Duration(c.RequestTimeout) * time.Second
+func (c *Config) AuthTimeout() time.Duration {
+	return time.Duration(c.Server.AuthTimeout) * time.Second
 }
 
 type logWrapper struct {
@@ -153,22 +146,33 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 
 // NewMuxConfig creates yamux.Config
 func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
-	keepAliveInterval := time.Duration(c.KeepAlive) * time.Second
+	keepAliveInterval := time.Duration(c.Server.KeepAlive) * time.Second
 	if isServer {
-		keepAliveInterval = time.Duration(c.ServerKeepAlive) * time.Second
+		keepAliveInterval = time.Duration(c.Server.ServerKeepAlive) * time.Second
 	}
 	enableKeepAlive := keepAliveInterval >= time.Second
 	if !enableKeepAlive {
 		keepAliveInterval = 15 * time.Second
 	}
+	timeout := time.Duration(c.Server.Timeout) * time.Second
 	return &yamux.Config{
-		AcceptBacklog:          c.AcceptBacklog,
+		AcceptBacklog:          c.Server.AcceptBacklog,
 		EnableKeepAlive:        enableKeepAlive,
 		KeepAliveInterval:      keepAliveInterval,
-		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
-		MaxStreamWindowSize:    c.StreamWindow,
-		StreamOpenTimeout:      c.Timeout(),
-		StreamCloseTimeout:     c.Timeout(),
+		ConnectionWriteTimeout: timeout,
+		MaxStreamWindowSize:    c.Server.StreamWindow,
+		StreamOpenTimeout:      timeout,
+		StreamCloseTimeout:     timeout,
 		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
+	}
+}
+
+// NewHardenConfig creates hlistener.Config
+func (c *Config) NewHardenConfig(unauthorized func() uint32) *hlistener.Config {
+	return &hlistener.Config{
+		Start:        uint32(c.Server.StartupLimitStart),
+		Full:         uint32(c.Server.StartupLimitFull),
+		Rate:         float64(c.Server.StartupLimitRate) / 100.0,
+		Unauthorized: unauthorized,
 	}
 }
