@@ -56,7 +56,7 @@ type LocalConfig struct {
 	// bind address to serve TCP clients
 	Listen string `json:"listen"`
 	// upstream TCP service address
-	Dial string `json:"dial"`
+	Forward string `json:"forward"`
 	// (optional) dial timeout in seconds, default to 30
 	DialTimeout int `json:"dialtimeout"`
 }

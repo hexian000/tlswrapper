@@ -75,7 +75,7 @@ func (s *Service) serveSession(ss *session.Session) {
 
 func (s *Service) dialLocal(accepted net.Conn) {
 	timeout := time.Duration(s.cfg.Local.DialTimeout) * time.Second
-	dialed, err := net.DialTimeout(network, s.cfg.Local.Dial, timeout)
+	dialed, err := net.DialTimeout(network, s.cfg.Local.Forward, timeout)
 	if err != nil {
 		slog.Error(err)
 		return
