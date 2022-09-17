@@ -293,9 +293,9 @@ func (s *Server) Start() error {
 			}
 			h := &TLSHandler{server: s, config: config}
 			l = hlistener.Wrap(l, &hlistener.Config{
-				Start:        10,
-				Full:         60,
-				Rate:         0.3,
+				Start:        uint32(s.cfg.StartupLimitStart),
+				Full:         uint32(s.cfg.StartupLimitFull),
+				Rate:         float64(s.cfg.StartupLimitRate) / 100.0,
 				Unauthorized: h.Unauthorized,
 			})
 			_ = s.Serve(l, h)

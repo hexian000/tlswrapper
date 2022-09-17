@@ -47,12 +47,16 @@ type Config struct {
 	AuthorizedCerts []string `json:"authcerts"`
 	// (optional) TCP no delay, default to true
 	NoDelay bool `json:"nodelay"`
-	// (optional) TCP linger, default to 30
-	Linger int `json:"linger"`
-	// (optional) client-side keep alive interval in seconds, default to 0 (disabled)
+	// (optional) client-side keep alive interval in seconds, default to 25 (every 25s)
 	KeepAlive int `json:"keepalive"`
 	// (optional) server-side keep alive interval in seconds, default to 0 (disabled)
 	ServerKeepAlive int `json:"serverkeepalive"`
+	// (optional) soft limit of concurrent unauthenticated connections, default to 10
+	StartupLimitStart int `json:"startuplimitstart"`
+	// (optional) probability of random disconnection when soft limit is exceeded, default to 30 (30%)
+	StartupLimitRate int `json:"startuplimitrate"`
+	// (optional) hard limit of concurrent unauthenticated connections, default to 60
+	StartupLimitFull int `json:"startuplimitfull"`
 	// (optional) session idle timeout in seconds, default to 900 (15min)
 	IdleTimeout int `json:"idletimeout"`
 	// (optional) mux accept backlog, default to 8, you may not want to change this
@@ -70,24 +74,26 @@ type Config struct {
 }
 
 var defaultConfig = Config{
-	ServerName:     "example.com",
-	NoDelay:        true,
-	Linger:         30,
-	KeepAlive:      25,  // every 25s
-	IdleTimeout:    900, // 15min
-	AcceptBacklog:  8,
-	StreamWindow:   256 * 1024, // 256 KiB
-	RequestTimeout: 30,
-	WriteTimeout:   30,
-	Log:            "stderr",
-	LogLevel:       2,
+	ServerName:        "example.com",
+	NoDelay:           true,
+	KeepAlive:         25, // every 25s
+	ServerKeepAlive:   0,
+	StartupLimitStart: 10,
+	StartupLimitRate:  30,
+	StartupLimitFull:  60,
+	IdleTimeout:       900, // 15min
+	AcceptBacklog:     8,
+	StreamWindow:      256 * 1024, // 256 KiB
+	RequestTimeout:    30,
+	WriteTimeout:      30,
+	Log:               "stderr",
+	LogLevel:          2,
 }
 
 // SetConnParams sets TCP params
 func (c *Config) SetConnParams(conn net.Conn) {
 	if tcpConn := conn.(*net.TCPConn); tcpConn != nil {
 		_ = tcpConn.SetNoDelay(c.NoDelay)
-		_ = tcpConn.SetLinger(c.Linger)
 		_ = tcpConn.SetKeepAlive(false) // we have an encrypted one
 	}
 }
