@@ -151,6 +151,13 @@ func (s *Service) dialTLS() {
 	ss, err := session.DialContext(ctx, address, s.clientCfg)
 	if err != nil {
 		slog.Error(err)
+		func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if len(s.sessions) == 0 {
+				go s.dialTLS()
+			}
+		}()
 		return
 	}
 	slog.Infof("new session to: %v, setup: %v", ss.Addr(), time.Since(begin))
