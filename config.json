@@ -1,16 +1,16 @@
 {
   "server": {
     "listen": "0.0.0.0:12345",
-    "dial": "127.0.0.1:8080"
+    "dial": "127.0.0.1:8080",
+    "cert": "server-cert.pem",
+    "key": "server-key.pem",
+    "authcerts": [
+      "client1-cert.pem",
+      "client2-cert.pem"
+    ]
   },
   "local": {
     "listen": "127.0.0.1:8080",
     "forward": "example.com:12345"
-  },
-  "cert": "server-cert.pem",
-  "key": "server-key.pem",
-  "authcerts": [
-    "client1-cert.pem",
-    "client2-cert.pem"
-  ]
+  }
 }

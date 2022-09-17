@@ -61,12 +61,12 @@ func main() {
 	}
 	service, err := NewService(cfg)
 	if err != nil {
-		slog.Fatal("load config:", err)
+		slog.Fatal("init:", err)
 		os.Exit(1)
 	}
-	slog.Info("server starting")
+	slog.Info("service starting")
 	if err := service.Start(); err != nil {
-		slog.Fatal("server start:", err)
+		slog.Fatal("service start:", err)
 		os.Exit(1)
 	}
 	_, _ = daemon.Notify(daemon.Ready)
