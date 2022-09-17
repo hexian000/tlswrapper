@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hexian000/tlswrapper/hlistener"
 	"github.com/hexian000/tlswrapper/forwarder"
+	"github.com/hexian000/tlswrapper/hlistener"
 	"github.com/hexian000/tlswrapper/session"
 	"github.com/hexian000/tlswrapper/slog"
 )
@@ -80,6 +80,7 @@ func (s *Service) dialLocal(accepted net.Conn) {
 		slog.Error(err)
 		return
 	}
+	slog.Verbosef("server foward: %v -> %v", accepted.RemoteAddr(), dialed.RemoteAddr())
 	s.f.Forward(accepted, dialed)
 }
 
@@ -114,6 +115,7 @@ func (s *Service) dialStream(ss *session.Session, accepted net.Conn) {
 		slog.Error(err)
 		return
 	}
+	slog.Verbosef("local foward: %v -> %v", accepted.RemoteAddr(), ss.Addr())
 	s.f.Forward(accepted, dialed)
 }
 
@@ -141,6 +143,7 @@ func (s *Service) dialTLS() {
 	if address == "" {
 		return
 	}
+	begin := time.Now()
 	timeout := time.Duration(s.cfg.Server.DialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	s.addContext(ctx, cancel)
@@ -150,6 +153,7 @@ func (s *Service) dialTLS() {
 		slog.Error(err)
 		return
 	}
+	slog.Infof("new session to: %v, setup: %v", ss.Addr(), time.Since(begin))
 	go s.serveSession(ss)
 }
 
@@ -167,6 +171,7 @@ func (s *Service) serveTLS(l net.Listener) {
 func (s *Service) serveOneTLS(conn net.Conn) {
 	atomic.AddUint32(&s.unauthorized, 1)
 	defer atomic.AddUint32(&s.unauthorized, ^uint32(0))
+	begin := time.Now()
 	timeout := time.Duration(s.cfg.Server.DialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	s.addContext(ctx, cancel)
@@ -176,6 +181,7 @@ func (s *Service) serveOneTLS(conn net.Conn) {
 		slog.Error(err)
 		return
 	}
+	slog.Infof("new session from: %v, setup: %v", ss.Addr(), time.Since(begin))
 	go s.serveSession(ss)
 }
 
