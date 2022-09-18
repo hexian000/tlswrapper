@@ -1,9 +1,9 @@
 {
   "server": {
-    "listen": ":12345",
+    "listen": ":8443",
     "dial": [
-      "site1.example.com:12345",
-      "site2.example.com:12345"
+      "site1.example.com:8443",
+      "site2.example.com:8443"
     ],
     "cert": "server-cert.pem",
     "key": "server-key.pem",

@@ -52,16 +52,17 @@ By default, all certificates are self-signed. This will not reduce security.
 
 ```json
 {
-  "server": [
-    {
-      "listen": "0.0.0.0:12345"
+    "server": {
+        "listen": ":8443",
+        "cert": "server-cert.pem",
+        "key": "server-key.pem",
+        "authcerts": [
+            "client-cert.pem"
+        ]
+    },
+    "local": {
+        "forward": "127.0.0.1:80"
     }
-  ],
-  "cert": "server-cert.pem",
-  "key": "server-key.pem",
-  "authcerts": [
-    "client-cert.pem"
-  ]
 }
 ```
 
@@ -69,31 +70,22 @@ By default, all certificates are self-signed. This will not reduce security.
 
 ```json
 {
-  "client": [
-    {
-      "listen": "127.0.0.1:8080",
-      "dial": "example.com:12345"
+    "server": {
+        "dial": [
+            "site1.example.com:8443",
+            "site2.example.com:8443"
+        ],
+        "cert": "server-cert.pem",
+        "key": "server-key.pem",
+        "authcerts": [
+            "client-cert.pem"
+        ]
+    },
+    "local": {
+        "listen": "127.0.0.1:8080"
     }
-  ],
-  "cert": "client-cert.pem",
-  "key": "client-key.pem",
-  "authcerts": [
-    "server-cert.pem"
-  ]
 }
 ```
-
-#### Options
-
-- "server": TLS listener configs
-- "server[\*].listen": server bind address
-- "server[\*].forward": upstream TCP service address, leave empty or unconfigured to use builtin HTTP proxy
-- "client": TLS client configs
-- "client[\*].listen": proxy listen address
-- "client[\*].dial": server address
-- "cert": peer certificate
-- "key": peer private key
-- "authcerts": peer authorized certificates list, bundles are supported
 
 see [source code](config.go) for complete document
 
