@@ -189,8 +189,8 @@ func (s *Service) redial() {
 	}
 	for range s.redialSig {
 		for s.numSessions() < 1 {
-			s.current = (s.current + 1) % len(addresses)
 			addr := addresses[s.current]
+			s.current = (s.current + 1) % len(addresses)
 			s.dialTLS(addr)
 			s.redialWait(2 * time.Second)
 		}
