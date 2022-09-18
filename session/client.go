@@ -14,9 +14,6 @@ func DialContext(ctx context.Context, address string, cfg *Config) (*Session, er
 	if err != nil {
 		return nil, err
 	}
-	if tcpConn := conn.(*net.TCPConn); tcpConn != nil {
-		_ = tcpConn.SetKeepAlive(false) // we have an encrypted one
-	}
 	tlsConn := tls.Client(conn, cfg.TLS)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		_ = conn.Close()
