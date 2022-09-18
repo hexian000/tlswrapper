@@ -17,7 +17,7 @@ type ServerConfig struct {
 	// server-side bind address
 	Listen string `json:"listen"`
 	// client-side connect addresses
-	Dial string `json:"dial"`
+	Dial []string `json:"dial"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
 	ServerName string `json:"sni"`
 	// TLS: local certificate

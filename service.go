@@ -21,14 +21,15 @@ type Service struct {
 	serverCfg *session.Config
 	clientCfg *session.Config
 	f         *forwarder.Forwarder
-	sessions  map[*session.Session]struct{}
+	sessions  []*session.Session
 	contexts  map[context.Context]context.CancelFunc
 
 	tlsListener  net.Listener
 	tcpListener  net.Listener
 	unauthorized uint32
 
-	closeSig chan struct{}
+	current   int
+	redialSig chan struct{}
 }
 
 func NewService(cfg *Config) (*Service, error) {
@@ -41,27 +42,46 @@ func NewService(cfg *Config) (*Service, error) {
 		serverCfg: &session.Config{TLS: tls, Mux: cfg.NewMuxConfig(true)},
 		clientCfg: &session.Config{TLS: tls, Mux: cfg.NewMuxConfig(false)},
 		f:         forwarder.New(),
-		sessions:  make(map[*session.Session]struct{}),
+		sessions:  make([]*session.Session, 0),
 		contexts:  make(map[context.Context]context.CancelFunc),
-		closeSig:  make(chan struct{}),
+		redialSig: make(chan struct{}, 1),
 	}
 	return s, nil
 }
 
+func (s *Service) addSession(ss *session.Session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions = append(s.sessions, ss)
+}
+
+func (s *Service) deleteSession(ss *session.Session) {
+	sessions := make([]*session.Session, 0, len(s.sessions))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, it := range s.sessions {
+		if it != ss {
+			sessions = append(sessions, it)
+		}
+	}
+	s.sessions = sessions
+}
+
+func (s *Service) numSessions() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.sessions)
+}
+
 func (s *Service) serveSession(ss *session.Session) {
+	s.addSession(ss)
 	defer func() {
 		_ = ss.Close()
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		delete(s.sessions, ss)
-		if len(s.sessions) == 0 {
-			go s.dialTLS()
+		s.deleteSession(ss)
+		select {
+		case s.redialSig <- struct{}{}:
+		default:
 		}
-	}()
-	func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.sessions[ss] = struct{}{}
 	}()
 	for {
 		accepted, err := ss.Accept()
@@ -103,7 +123,7 @@ func (s *Service) serveLocal(l net.Listener) {
 func (s *Service) findSession() *session.Session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for ss := range s.sessions {
+	for _, ss := range s.sessions {
 		return ss
 	}
 	return nil
@@ -138,11 +158,7 @@ func (s *Service) deleteContext(ctx context.Context) {
 	delete(s.contexts, ctx)
 }
 
-func (s *Service) dialTLS() {
-	address := s.cfg.Server.Dial
-	if address == "" {
-		return
-	}
+func (s *Service) dialTLS(address string) {
 	begin := time.Now()
 	timeout := time.Duration(s.cfg.Server.DialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -151,17 +167,24 @@ func (s *Service) dialTLS() {
 	ss, err := session.DialContext(ctx, address, s.clientCfg)
 	if err != nil {
 		slog.Error(err)
-		func() {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			if len(s.sessions) == 0 {
-				go s.dialTLS()
-			}
-		}()
 		return
 	}
 	slog.Infof("new session to: %v, setup: %v", ss.Addr(), time.Since(begin))
 	go s.serveSession(ss)
+}
+
+func (s *Service) redial() {
+	addresses := s.cfg.Server.Dial
+	if len(addresses) == 0 {
+		return
+	}
+	for range s.redialSig {
+		for s.numSessions() < 1 {
+			s.current = (s.current + 1) % len(addresses)
+			addr := addresses[s.current]
+			s.dialTLS(addr)
+		}
+	}
 }
 
 func (s *Service) serveTLS(l net.Listener) {
@@ -212,12 +235,13 @@ func (s *Service) Start() error {
 		s.tcpListener = l
 		go s.serveLocal(s.tcpListener)
 	}
-	go s.dialTLS()
+	go s.redial()
+	s.redialSig <- struct{}{}
 	return nil
 }
 
 func (s *Service) Shutdown() {
-	close(s.closeSig)
+	close(s.redialSig)
 	if s.tlsListener != nil {
 		_ = s.tlsListener.Close()
 	}
