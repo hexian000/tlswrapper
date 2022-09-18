@@ -212,7 +212,7 @@ func (s *Service) serveOneTLS(conn net.Conn) {
 	atomic.AddUint32(&s.unauthorized, 1)
 	defer atomic.AddUint32(&s.unauthorized, ^uint32(0))
 	begin := time.Now()
-	timeout := time.Duration(s.cfg.Server.DialTimeout) * time.Second
+	timeout := time.Duration(s.cfg.Server.AuthTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	s.addContext(ctx, cancel)
 	defer s.deleteContext(ctx)

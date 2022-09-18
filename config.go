@@ -122,11 +122,6 @@ func (c *Config) LoadTLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
-// Timeout gets the generic request timeout
-func (c *Config) AuthTimeout() time.Duration {
-	return time.Duration(c.Server.AuthTimeout) * time.Second
-}
-
 type logWrapper struct {
 	*slog.Logger
 }
