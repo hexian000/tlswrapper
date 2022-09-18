@@ -74,7 +74,6 @@ func (s *Service) numSessions() int {
 }
 
 func (s *Service) serveSession(ss *session.Session) {
-	s.addSession(ss)
 	defer func() {
 		_ = ss.Close()
 		s.deleteSession(ss)
@@ -170,7 +169,17 @@ func (s *Service) dialTLS(address string) {
 		return
 	}
 	slog.Infof("new session to: %v, setup: %v", ss.Addr(), time.Since(begin))
+	s.addSession(ss)
 	go s.serveSession(ss)
+}
+
+func (s *Service) redialWait(d time.Duration) {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-s.redialSig:
+	}
 }
 
 func (s *Service) redial() {
@@ -183,6 +192,7 @@ func (s *Service) redial() {
 			s.current = (s.current + 1) % len(addresses)
 			addr := addresses[s.current]
 			s.dialTLS(addr)
+			s.redialWait(2 * time.Second)
 		}
 	}
 }
@@ -212,6 +222,7 @@ func (s *Service) serveOneTLS(conn net.Conn) {
 		return
 	}
 	slog.Infof("new session from: %v, setup: %v", ss.Addr(), time.Since(begin))
+	s.addSession(ss)
 	go s.serveSession(ss)
 }
 
