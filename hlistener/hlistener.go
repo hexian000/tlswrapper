@@ -13,7 +13,7 @@ type Config struct {
 }
 
 type Stats struct {
-	Accepted, Refused uint64
+	Accepted, Refused uint32
 }
 
 type Listener struct {
@@ -39,10 +39,10 @@ func (l *Listener) Accept() (net.Conn, error) {
 		}
 		if refuse {
 			_ = conn.Close()
-			atomic.AddUint64(&l.s.Refused, 1)
+			atomic.AddUint32(&l.s.Refused, 1)
 			continue
 		}
-		atomic.AddUint64(&l.s.Accepted, 1)
+		atomic.AddUint32(&l.s.Accepted, 1)
 		return conn, err
 	}
 }
@@ -57,8 +57,8 @@ func (l *Listener) Addr() net.Addr {
 
 func (l *Listener) Stat() Stats {
 	return Stats{
-		Accepted: atomic.LoadUint64(&l.s.Accepted),
-		Refused:  atomic.LoadUint64(&l.s.Refused),
+		Accepted: atomic.LoadUint32(&l.s.Accepted),
+		Refused:  atomic.LoadUint32(&l.s.Refused),
 	}
 }
 
