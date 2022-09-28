@@ -117,6 +117,7 @@ func (s *Service) serveLocal(l net.Listener) {
 		ss := s.findSession()
 		if ss == nil {
 			_ = accepted.Close()
+			s.notifyRedial()
 			continue
 		}
 		go s.dialStream(ss, accepted)
