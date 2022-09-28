@@ -28,8 +28,9 @@ type Service struct {
 	tcpListener  net.Listener
 	unauthorized uint32
 
-	current   int
-	redialSig chan struct{}
+	current     int
+	redialSig   chan struct{}
+	shutdownSig chan struct{}
 }
 
 func NewService(cfg *Config) (*Service, error) {
@@ -38,13 +39,14 @@ func NewService(cfg *Config) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
-		cfg:       cfg,
-		serverCfg: &session.Config{TLS: tls, Mux: cfg.NewMuxConfig(true)},
-		clientCfg: &session.Config{TLS: tls, Mux: cfg.NewMuxConfig(false)},
-		f:         forwarder.New(),
-		sessions:  make([]*session.Session, 0),
-		contexts:  make(map[context.Context]context.CancelFunc),
-		redialSig: make(chan struct{}, 1),
+		cfg:         cfg,
+		serverCfg:   &session.Config{TLS: tls, Mux: cfg.NewMuxConfig(true)},
+		clientCfg:   &session.Config{TLS: tls, Mux: cfg.NewMuxConfig(false)},
+		f:           forwarder.New(),
+		sessions:    make([]*session.Session, 0),
+		contexts:    make(map[context.Context]context.CancelFunc),
+		redialSig:   make(chan struct{}, 1),
+		shutdownSig: make(chan struct{}),
 	}
 	return s, nil
 }
@@ -56,6 +58,7 @@ func (s *Service) addSession(ss *session.Session) {
 }
 
 func (s *Service) deleteSession(ss *session.Session) {
+	_ = ss.Close()
 	sessions := make([]*session.Session, 0, len(s.sessions))
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -65,6 +68,7 @@ func (s *Service) deleteSession(ss *session.Session) {
 		}
 	}
 	s.sessions = sessions
+	s.notifyRedial()
 }
 
 func (s *Service) numSessions() int {
@@ -73,15 +77,15 @@ func (s *Service) numSessions() int {
 	return len(s.sessions)
 }
 
+func (s *Service) notifyRedial() {
+	select {
+	case s.redialSig <- struct{}{}:
+	default:
+	}
+}
+
 func (s *Service) serveSession(ss *session.Session) {
-	defer func() {
-		_ = ss.Close()
-		s.deleteSession(ss)
-		select {
-		case s.redialSig <- struct{}{}:
-		default:
-		}
-	}()
+	defer s.deleteSession(ss)
 	for {
 		accepted, err := ss.Accept()
 		if err != nil {
@@ -132,6 +136,7 @@ func (s *Service) dialStream(ss *session.Session, accepted net.Conn) {
 	dialed, err := ss.Open()
 	if err != nil {
 		slog.Error(err)
+		s.deleteSession(ss)
 		return
 	}
 	slog.Verbosef("local foward: %v -> %v", accepted.RemoteAddr(), ss.Addr())
@@ -178,7 +183,7 @@ func (s *Service) redialWait(d time.Duration) {
 	defer timer.Stop()
 	select {
 	case <-timer.C:
-	case <-s.redialSig:
+	case <-s.shutdownSig:
 	}
 }
 
@@ -188,6 +193,11 @@ func (s *Service) redial() {
 		return
 	}
 	for range s.redialSig {
+		select {
+		case <-s.shutdownSig:
+			return
+		default:
+		}
 		for s.numSessions() < 1 {
 			addr := addresses[s.current]
 			s.current = (s.current + 1) % len(addresses)
@@ -247,12 +257,12 @@ func (s *Service) Start() error {
 		go s.serveLocal(s.tcpListener)
 	}
 	go s.redial()
-	s.redialSig <- struct{}{}
+	s.notifyRedial()
 	return nil
 }
 
 func (s *Service) Shutdown() {
-	close(s.redialSig)
+	close(s.shutdownSig)
 	if s.tlsListener != nil {
 		_ = s.tlsListener.Close()
 	}
