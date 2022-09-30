@@ -59,16 +59,16 @@ func (s *Service) addSession(ss *session.Session) {
 
 func (s *Service) deleteSession(ss *session.Session) {
 	_ = ss.Close()
-	sessions := make([]*session.Session, 0, len(s.sessions))
+	defer s.notifyRedial()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	sessions := make([]*session.Session, 0, len(s.sessions))
 	for _, it := range s.sessions {
 		if it != ss {
 			sessions = append(sessions, it)
 		}
 	}
 	s.sessions = sessions
-	s.notifyRedial()
 }
 
 func (s *Service) numSessions() int {
@@ -165,7 +165,7 @@ func (s *Service) deleteContext(ctx context.Context) {
 
 func (s *Service) dialTLS(address string) {
 	begin := time.Now()
-	timeout := time.Duration(s.cfg.Server.DialTimeout) * time.Second
+	timeout := time.Duration(s.cfg.Server.AuthTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	s.addContext(ctx, cancel)
 	defer s.deleteContext(ctx)
