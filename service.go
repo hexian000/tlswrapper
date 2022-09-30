@@ -179,13 +179,15 @@ func (s *Service) dialTLS(address string) {
 	go s.serveSession(ss)
 }
 
-func (s *Service) redialWait(d time.Duration) {
+func (s *Service) redialWait(d time.Duration) bool {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
+		return true
 	case <-s.shutdownSig:
 	}
+	return false
 }
 
 func (s *Service) redial() {
@@ -203,7 +205,9 @@ func (s *Service) redial() {
 			addr := addresses[s.current]
 			s.current = (s.current + 1) % len(addresses)
 			s.dialTLS(addr)
-			s.redialWait(2 * time.Second)
+			if !s.redialWait(2 * time.Second) {
+				return
+			}
 		}
 	}
 }
