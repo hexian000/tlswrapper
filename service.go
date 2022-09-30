@@ -193,11 +193,11 @@ func (s *Service) redial() {
 	if len(addresses) == 0 {
 		return
 	}
-	for range s.redialSig {
+	for {
 		select {
+		case <-s.redialSig:
 		case <-s.shutdownSig:
 			return
-		default:
 		}
 		for s.numSessions() < 1 {
 			addr := addresses[s.current]
