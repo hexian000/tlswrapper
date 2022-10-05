@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/hexian000/tlswrapper/daemon"
@@ -18,7 +19,7 @@ var (
 )
 
 func init() {
-	fmt.Printf("tlswrapper %s\n  %s\n", version, homepage)
+	fmt.Printf("tlswrapper %s\n  %s\n\n", version, homepage)
 }
 
 func parseFlags() string {
@@ -29,6 +30,7 @@ func parseFlags() string {
 	flag.Parse()
 	if flagHelp || flagConfig == "" {
 		flag.Usage()
+		fmt.Printf("\nbuilt with %s\n", runtime.Version())
 		os.Exit(1)
 	}
 	return flagConfig
