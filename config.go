@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hexian000/tlswrapper/hlistener"
+	"github.com/hexian000/tlswrapper/slog"
 	"github.com/xtaci/smux"
 )
 
@@ -27,7 +28,7 @@ type ServerConfig struct {
 	NoDelay bool `json:"nodelay"`
 	// (optional) client-side keep alive interval in seconds, default to 25 (every 25s)
 	KeepAlive int `json:"keepalive"`
-	// (optional) server-side keep alive interval in seconds, default to 300 (every 5min)
+	// (optional) server-side keep alive interval in seconds, default to 0 (disabled)
 	ServerKeepAlive int `json:"serverkeepalive"`
 	// (optional) soft limit of concurrent unauthenticated connections, default to 10
 	StartupLimitStart int `json:"startuplimitstart"`
@@ -35,16 +36,10 @@ type ServerConfig struct {
 	StartupLimitRate int `json:"startuplimitrate"`
 	// (optional) hard limit of concurrent unauthenticated connections, default to 60
 	StartupLimitFull int `json:"startuplimitfull"`
-	// (optional) session idle timeout in seconds, default to 7200 (2hrs)
-	IdleTimeout int `json:"idletimeout"`
-	// (optional) mux accept backlog, default to 8, you may not want to change this
-	AcceptBacklog int `json:"backlog"`
 	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
 	StreamWindow uint32 `json:"window"`
 	// (optional) authentication timeout in seconds, default to 30
 	AuthTimeout int `json:"authtimeout"`
-	// (optional) dial timeout in seconds, default to 30
-	DialTimeout int `json:"dialtimeout"`
 	// (optional) connection timeout in seconds, default to 30
 	Timeout int `json:"timeout"`
 }
@@ -72,16 +67,13 @@ var defaultConfig = Config{
 	Server: ServerConfig{
 		ServerName:        "example.com",
 		NoDelay:           true,
-		KeepAlive:         25,  // every 25s
-		ServerKeepAlive:   300, // every 5min
+		KeepAlive:         10, // every 10s
+		ServerKeepAlive:   0,  // disabled
 		StartupLimitStart: 10,
 		StartupLimitRate:  30,
 		StartupLimitFull:  60,
-		IdleTimeout:       7200, // 2hrs
-		AcceptBacklog:     8,
 		StreamWindow:      256 * 1024, // 256 KiB
 		AuthTimeout:       30,
-		DialTimeout:       30,
 		Timeout:           30,
 	},
 	Local: LocalConfig{
@@ -126,7 +118,7 @@ func (c *Config) NewMuxConfig(isServer bool) *smux.Config {
 		keepAliveInterval = time.Duration(c.Server.ServerKeepAlive) * time.Second
 	}
 	timeout := time.Duration(c.Server.Timeout) * time.Second
-	return &smux.Config{
+	cfg := &smux.Config{
 		Version:           2,
 		KeepAliveDisabled: keepAliveInterval < time.Second,
 		KeepAliveInterval: keepAliveInterval,
@@ -135,6 +127,11 @@ func (c *Config) NewMuxConfig(isServer bool) *smux.Config {
 		MaxReceiveBuffer:  8 * int(c.Server.StreamWindow),
 		MaxStreamBuffer:   int(c.Server.StreamWindow),
 	}
+	if err := smux.VerifyConfig(cfg); err != nil {
+		slog.Errorf("mux config error: %v", err)
+		return nil
+	}
+	return cfg
 }
 
 // NewHardenConfig creates hlistener.Config
