@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -96,14 +97,13 @@ func (s *Service) serveSession(ss *session.Session) {
 	}
 }
 
-func (s *Service) dialLocal(accepted net.Conn) {
+func (s *Service) dialLocal(accepted io.ReadWriteCloser) {
 	timeout := time.Duration(s.cfg.Local.DialTimeout) * time.Second
 	dialed, err := net.DialTimeout(network, s.cfg.Local.Forward, timeout)
 	if err != nil {
 		slog.Error(err)
 		return
 	}
-	slog.Verbosef("server foward: %v -> %v", accepted.RemoteAddr(), dialed.RemoteAddr())
 	s.f.Forward(accepted, dialed)
 }
 

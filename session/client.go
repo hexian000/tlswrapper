@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 
-	"github.com/hashicorp/yamux"
+	"github.com/xtaci/smux"
 )
 
 func DialContext(ctx context.Context, address string, cfg *Config) (*Session, error) {
@@ -19,7 +19,7 @@ func DialContext(ctx context.Context, address string, cfg *Config) (*Session, er
 		_ = conn.Close()
 		return nil, err
 	}
-	mux, err := yamux.Client(tlsConn, cfg.Mux)
+	mux, err := smux.Client(tlsConn, cfg.Mux)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err

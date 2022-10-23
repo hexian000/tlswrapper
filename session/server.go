@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 
-	"github.com/hashicorp/yamux"
+	"github.com/xtaci/smux"
 )
 
 func ServeContext(ctx context.Context, conn net.Conn, cfg *Config) (*Session, error) {
@@ -15,7 +15,7 @@ func ServeContext(ctx context.Context, conn net.Conn, cfg *Config) (*Session, er
 		_ = conn.Close()
 		return nil, err
 	}
-	mux, err := yamux.Server(tlsConn, cfg.Mux)
+	mux, err := smux.Server(tlsConn, cfg.Mux)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err

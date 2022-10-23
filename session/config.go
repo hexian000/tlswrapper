@@ -3,10 +3,10 @@ package session
 import (
 	"crypto/tls"
 
-	"github.com/hashicorp/yamux"
+	"github.com/xtaci/smux"
 )
 
 type Config struct {
 	TLS *tls.Config
-	Mux *yamux.Config
+	Mux *smux.Config
 }

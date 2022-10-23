@@ -1,15 +1,16 @@
 package session
 
 import (
+	"io"
 	"net"
 
-	"github.com/hashicorp/yamux"
+	"github.com/xtaci/smux"
 )
 
 const network = "tcp"
 
 type Session struct {
-	mux *yamux.Session
+	mux  *smux.Session
 	addr net.Addr
 }
 
@@ -17,11 +18,11 @@ func (ss *Session) Addr() net.Addr {
 	return ss.addr
 }
 
-func (ss *Session) Accept() (net.Conn, error) {
+func (ss *Session) Accept() (io.ReadWriteCloser, error) {
 	return ss.mux.Accept()
 }
 
-func (ss *Session) Open() (net.Conn, error) {
+func (ss *Session) Open() (io.ReadWriteCloser, error) {
 	return ss.mux.Open()
 }
 

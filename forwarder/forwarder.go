@@ -2,7 +2,6 @@ package forwarder
 
 import (
 	"io"
-	"net"
 	"sync"
 
 	"github.com/hexian000/tlswrapper/slog"
@@ -18,7 +17,7 @@ func New() *Forwarder {
 	return &Forwarder{closers: make(map[io.Closer]struct{})}
 }
 
-func (f *Forwarder) copyConn(dst net.Conn, src net.Conn) {
+func (f *Forwarder) bidirCopy(dst io.ReadWriteCloser, src io.ReadWriteCloser) {
 	defer f.wg.Done()
 	defer func() {
 		if err := recover(); err != nil {
@@ -43,12 +42,12 @@ func (f *Forwarder) close(c io.Closer) {
 	delete(f.closers, c)
 }
 
-func (f *Forwarder) Forward(accepted net.Conn, dialed net.Conn) {
+func (f *Forwarder) Forward(accepted io.ReadWriteCloser, dialed io.ReadWriteCloser) {
 	f.addCloser(accepted)
 	f.addCloser(dialed)
 	f.wg.Add(2)
-	go f.copyConn(accepted, dialed)
-	go f.copyConn(dialed, accepted)
+	go f.bidirCopy(accepted, dialed)
+	go f.bidirCopy(dialed, accepted)
 }
 
 func (f *Forwarder) Close() {

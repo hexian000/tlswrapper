@@ -3,14 +3,11 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"log"
 	"os"
-	"strings"
 	"time"
 
-	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/hlistener"
-	"github.com/hexian000/tlswrapper/slog"
+	"github.com/xtaci/smux"
 )
 
 type ServerConfig struct {
@@ -122,43 +119,21 @@ func (c *Config) LoadTLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
-type logWrapper struct {
-	*slog.Logger
-}
-
-func (w *logWrapper) Write(p []byte) (n int, err error) {
-	const calldepth = 4
-	raw := string(p)
-	if msg := strings.TrimPrefix(raw, "[ERR] "); len(msg) != len(raw) {
-		w.Output(calldepth, slog.LevelError, msg)
-	} else if msg := strings.TrimPrefix(raw, "[WARN] "); len(msg) != len(raw) {
-		w.Output(calldepth, slog.LevelWarning, msg)
-	} else {
-		w.Output(calldepth, slog.LevelError, raw)
-	}
-	return len(p), nil
-}
-
 // NewMuxConfig creates yamux.Config
-func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
+func (c *Config) NewMuxConfig(isServer bool) *smux.Config {
 	keepAliveInterval := time.Duration(c.Server.KeepAlive) * time.Second
 	if isServer {
 		keepAliveInterval = time.Duration(c.Server.ServerKeepAlive) * time.Second
 	}
-	enableKeepAlive := keepAliveInterval >= time.Second
-	if !enableKeepAlive {
-		keepAliveInterval = 15 * time.Second
-	}
 	timeout := time.Duration(c.Server.Timeout) * time.Second
-	return &yamux.Config{
-		AcceptBacklog:          c.Server.AcceptBacklog,
-		EnableKeepAlive:        enableKeepAlive,
-		KeepAliveInterval:      keepAliveInterval,
-		ConnectionWriteTimeout: timeout,
-		MaxStreamWindowSize:    c.Server.StreamWindow,
-		StreamOpenTimeout:      timeout,
-		StreamCloseTimeout:     timeout,
-		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
+	return &smux.Config{
+		Version:           2,
+		KeepAliveDisabled: keepAliveInterval < time.Second,
+		KeepAliveInterval: keepAliveInterval,
+		KeepAliveTimeout:  timeout,
+		MaxFrameSize:      16384,
+		MaxReceiveBuffer:  8 * int(c.Server.StreamWindow),
+		MaxStreamBuffer:   int(c.Server.StreamWindow),
 	}
 }
 
