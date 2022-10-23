@@ -21,7 +21,7 @@ If you are also interested in building a reverse proxy cluster and/or accessing 
 +-------------------------------+
 |          TCP traffic          |
 +-------------------------------+
-|   yamux stream multiplexing   |
+|   smux stream multiplexing    |
 +-------------------------------+
 |        mutual TLS 1.3         |
 +-------------------------------+
@@ -116,4 +116,4 @@ go install github.com/hexian000/tlswrapper
 ## Credits
 
 - [go](https://github.com/golang/go)
-- [yamux](https://github.com/hashicorp/yamux)
+- [smux](https://github.com/xtaci/smux)
