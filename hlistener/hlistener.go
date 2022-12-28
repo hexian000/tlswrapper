@@ -19,7 +19,8 @@ type Stats struct {
 type Listener struct {
 	l net.Listener
 	c Config
-	s Stats
+	// atomic vars need to be aligned
+	s *Stats
 }
 
 func (l *Listener) Accept() (net.Conn, error) {
@@ -64,5 +65,5 @@ func (l *Listener) Stat() Stats {
 
 // Wrap the raw listener
 func Wrap(l net.Listener, c *Config) net.Listener {
-	return &Listener{l: l, c: *c}
+	return &Listener{l: l, c: *c, s: &Stats{}}
 }
