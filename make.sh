@@ -33,6 +33,9 @@ case "$1" in
     GOOS="linux" GOARCH="arm64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-arm64
     GOOS="linux" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-amd64
     GOOS="windows" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.windows-amd64.exe
+    if command -v upx >/dev/null; then
+        (cd build && upx --lzma --best tlswrapper.linux-*)
+    fi
     ;;
 *)
     # build for native system only
