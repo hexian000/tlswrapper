@@ -137,13 +137,18 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	defer atomic.AddUint32(&h.unauthorized, ^uint32(0))
 	start := time.Now()
 	h.server.cfg.SetConnParams(conn)
-	tlsConn := tls.Server(conn, h.server.tlscfg)
-	err := tlsConn.HandshakeContext(ctx)
-	if err != nil {
-		slog.Error(err)
-		return
+	if h.server.tlscfg != nil {
+		tlsConn := tls.Server(conn, h.server.tlscfg)
+		err := tlsConn.HandshakeContext(ctx)
+		if err != nil {
+			slog.Error(err)
+			return
+		}
+		conn = tlsConn
+	} else {
+		slog.Warning("connection is not encrypted")
 	}
-	session, err := yamux.Server(tlsConn, h.server.muxcfg)
+	session, err := yamux.Server(conn, h.server.muxcfg)
 	if err != nil {
 		slog.Error(err)
 		return

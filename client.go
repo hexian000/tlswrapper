@@ -20,14 +20,19 @@ func (s *Server) sessionDial(ctx context.Context, addr string, tlscfg *tls.Confi
 		return nil, err
 	}
 	s.cfg.SetConnParams(conn)
-	tlsConn := tls.Client(conn, tlscfg)
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		_ = tlsConn.Close()
-		return nil, err
+	if tlscfg != nil {
+		tlsConn := tls.Client(conn, tlscfg)
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			_ = tlsConn.Close()
+			return nil, err
+		}
+		conn = tlsConn
+	} else {
+		slog.Warning("connection is not encrypted")
 	}
-	mux, err := yamux.Client(tlsConn, s.muxcfg)
+	mux, err := yamux.Client(conn, s.muxcfg)
 	if err != nil {
-		_ = tlsConn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	slog.Info("session dial:", conn.LocalAddr(), "<->", conn.RemoteAddr(), "setup:", time.Since(startTime))

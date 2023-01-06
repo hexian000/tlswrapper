@@ -103,6 +103,9 @@ func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
 	if sni == "" {
 		sni = c.ServerName
 	}
+	if c.Certificate == "" && c.PrivateKey == "" {
+		return nil, nil
+	}
 	cert, err := tls.LoadX509KeyPair(c.Certificate, c.PrivateKey)
 	if err != nil {
 		return nil, err
