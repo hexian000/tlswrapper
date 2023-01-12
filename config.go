@@ -87,7 +87,7 @@ var defaultConfig = Config{
 	RequestTimeout:    30,
 	WriteTimeout:      30,
 	Log:               "stderr",
-	LogLevel:          2,
+	LogLevel:          slog.LevelInfo,
 }
 
 // SetConnParams sets TCP params

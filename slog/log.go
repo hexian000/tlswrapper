@@ -7,17 +7,17 @@ import (
 )
 
 const (
-	LevelVerbose = iota
-	LevelDebug
-	LevelInfo
-	LevelWarning
-	LevelError
+	LevelSilence = iota
 	LevelFatal
-	LevelSilence
+	LevelError
+	LevelWarning
+	LevelInfo
+	LevelDebug
+	LevelVerbose
 )
 
 var levelChar = [...]byte{
-	'V', 'D', 'I', 'W', 'E', 'F',
+	' ', 'F', 'E', 'W', 'I', 'D', 'V',
 }
 
 type Logger struct {
