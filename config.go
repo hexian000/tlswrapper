@@ -1,4 +1,4 @@
-package main
+package tlswrapper
 
 import (
 	"crypto/tls"
@@ -13,30 +13,20 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-// ServerConfig contains configs for a TLS server
-type ServerConfig struct {
-	// TLS server bind address
+type TunnelConfig struct {
+	// server listen address
+	MuxListen string `json:"muxlisten"`
+	// client dial address
+	MuxDial string `json:"muxdial"`
+	// port forwarding listen address
 	Listen string `json:"listen"`
-	// upstream TCP service address
-	Forward string `json:"forward"`
-}
-
-// ClientConfig contains configs for a TLS client
-type ClientConfig struct {
-	// (optional) SNI field in TLS handshake, default to "example.com"
-	ServerName string `json:"sni"`
-	// bind address
-	Listen string `json:"listen"`
-	// server address
+	// reverse port forwarding dial address
 	Dial string `json:"dial"`
 }
 
 // Config file
 type Config struct {
-	// (optional) TLS servers we run
-	Server []ServerConfig `json:"server"`
-	// (optional) TLS servers we may connect to
-	Client []ClientConfig `json:"client"`
+	Tunnels []TunnelConfig `json:"tunnel"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
 	ServerName string `json:"sni"`
 	// TLS: local certificate
@@ -59,7 +49,9 @@ type Config struct {
 	StartupLimitFull int `json:"startuplimitfull"`
 	// (optional) session idle timeout in seconds, default to 900 (15min)
 	IdleTimeout int `json:"idletimeout"`
-	// (optional) mux accept backlog, default to 8, you may not want to change this
+	// (optional) max concurrent connections, default to 4096
+	MaxConn int `json:"maxconn"`
+	// (optional) mux accept backlog, default to 16, you may not want to change this
 	AcceptBacklog int `json:"backlog"`
 	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
 	StreamWindow uint32 `json:"window"`
@@ -73,7 +65,7 @@ type Config struct {
 	LogLevel int `json:"loglevel"`
 }
 
-var defaultConfig = Config{
+var DefaultConfig = Config{
 	ServerName:        "example.com",
 	NoDelay:           true,
 	KeepAlive:         25, // every 25s
@@ -82,7 +74,8 @@ var defaultConfig = Config{
 	StartupLimitRate:  30,
 	StartupLimitFull:  60,
 	IdleTimeout:       900, // 15min
-	AcceptBacklog:     8,
+	MaxConn:           4096,
+	AcceptBacklog:     16,
 	StreamWindow:      256 * 1024, // 256 KiB
 	RequestTimeout:    30,
 	WriteTimeout:      30,

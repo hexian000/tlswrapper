@@ -1,5 +1,5 @@
-#!/bin/sh -e
-
+#!/bin/sh
+set -e
 cd "$(dirname "$0")"
 mkdir -p build
 
@@ -15,6 +15,8 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 fi
 echo "+ version: ${VERSION}"
 
+PACKAGE="./cmd/tlswrapper"
+OUT="./build/tlswrapper"
 GOFLAGS="-trimpath -mod vendor"
 LDFLAGS="-s -w"
 if [ -n "${VERSION}" ]; then
@@ -28,11 +30,16 @@ case "$1" in
     # cross build for all supported targets
     # not supported targets are likely to work
     set -x
-    GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-mipsle
-    GOOS="linux" GOARCH="arm" GOARM=7 nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-armv7
-    GOOS="linux" GOARCH="arm64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-arm64
-    GOOS="linux" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.linux-amd64
-    GOOS="windows" GOARCH="amd64" nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper.windows-amd64.exe
+    GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
+        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-mipsle" "${PACKAGE}"
+    GOOS="linux" GOARCH="arm" GOARM=7 \
+        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-armv7" "${PACKAGE}"
+    GOOS="linux" GOARCH="arm64" \
+        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-arm64" "${PACKAGE}"
+    GOOS="linux" GOARCH="amd64" \
+        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-amd64" "${PACKAGE}"
+    GOOS="windows" GOARCH="amd64" \
+        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
     if command -v upx >/dev/null; then
         (cd build && upx --lzma --best tlswrapper.linux-*)
     fi
@@ -40,6 +47,6 @@ case "$1" in
 *)
     # build for native system only
     set -x
-    nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o build/tlswrapper
+    nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}" "${PACKAGE}"
     ;;
 esac

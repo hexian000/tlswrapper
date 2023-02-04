@@ -37,7 +37,7 @@ func (l *Logger) Output(calldepth int, level int, s string) {
 	out := func() logOutput {
 		l.mu.RLock()
 		defer l.mu.RUnlock()
-		if level >= l.level {
+		if level > l.level {
 			return nil
 		}
 		return l.out

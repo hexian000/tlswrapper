@@ -1,4 +1,4 @@
-package main_test
+package tlswrapper_test
 
 import (
 	"crypto/tls"

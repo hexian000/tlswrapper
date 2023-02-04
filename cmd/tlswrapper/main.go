@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"syscall"
 
+	"github.com/hexian000/tlswrapper"
 	"github.com/hexian000/tlswrapper/daemon"
 	"github.com/hexian000/tlswrapper/slog"
 )
@@ -18,10 +19,6 @@ var (
 	homepage = "https://github.com/hexian000/tlswrapper"
 )
 
-func init() {
-	fmt.Printf("tlswrapper %s\n  %s\n\n", version, homepage)
-}
-
 func parseFlags() string {
 	var flagHelp bool
 	var flagConfig string
@@ -29,6 +26,7 @@ func parseFlags() string {
 	flag.StringVar(&flagConfig, "c", "", "config file")
 	flag.Parse()
 	if flagHelp || flagConfig == "" {
+		fmt.Printf("tlswrapper %s\n  %s\n\n", version, homepage)
 		flag.Usage()
 		fmt.Printf("\nruntime: %s\n", runtime.Version())
 		os.Exit(1)
@@ -36,13 +34,13 @@ func parseFlags() string {
 	return flagConfig
 }
 
-func readConfig(path string) (*Config, error) {
+func readConfig(path string) (*tlswrapper.Config, error) {
 	slog.Verbose("read config:", path)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	cfg := defaultConfig
+	cfg := tlswrapper.DefaultConfig
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return nil, err
 	}
@@ -61,7 +59,7 @@ func main() {
 		slog.Fatal("logging:", err)
 		os.Exit(1)
 	}
-	server := NewServer()
+	server := tlswrapper.NewServer(cfg)
 	if err := server.LoadConfig(cfg); err != nil {
 		slog.Fatal("load config:", err)
 		os.Exit(1)
