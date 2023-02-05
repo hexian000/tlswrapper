@@ -3,6 +3,7 @@ package tlswrapper
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"sync"
 	"time"
@@ -82,7 +83,7 @@ func (t *Tunnel) run() {
 		}
 		defer t.s.cancel(ctx)
 		_, err := t.dialMux(ctx)
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrNoSession) {
 			slog.Warning("redial:", err)
 		}
 	}
