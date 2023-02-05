@@ -81,7 +81,10 @@ func (t *Tunnel) run() {
 			return
 		}
 		defer t.s.cancel(ctx)
-		_, _ = t.dialMux(ctx)
+		_, err := t.dialMux(ctx)
+		if err != nil {
+			slog.Warning("redial:", err)
+		}
 	}
 	redial()
 	for {
