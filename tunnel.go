@@ -1,6 +1,7 @@
 package tlswrapper
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"sync"
@@ -74,18 +75,51 @@ func (t *Tunnel) run() {
 	}()
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	_, _ = t.getMux()
+	redial := func() {
+		ctx := t.s.withTimeout()
+		if ctx == nil {
+			return
+		}
+		defer t.s.cancel(ctx)
+		_, _ = t.dialMux(ctx)
+	}
+	redial()
 	for {
 		select {
 		case <-t.s.g.CloseC():
 			return
 		case <-ticker.C:
 		}
-		_, _ = t.getMux()
+		redial()
 	}
 }
 
-func (t *Tunnel) dialMux() (*yamux.Session, error) {
+func (t *Tunnel) addMux(mux *yamux.Session) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for mux := range t.mux {
+		if mux.IsClosed() {
+			delete(t.mux, mux)
+		}
+	}
+	t.mux[mux] = struct{}{}
+}
+
+func (t *Tunnel) getMux() *yamux.Session {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	for mux := range t.mux {
+		if !mux.IsClosed() {
+			return mux
+		}
+	}
+	return nil
+}
+
+func (t *Tunnel) dialMux(ctx context.Context) (*yamux.Session, error) {
+	if mux := t.getMux(); mux != nil {
+		return mux, nil
+	}
 	if t.c.MuxDial == "" {
 		return nil, ErrNoSession
 	}
@@ -94,11 +128,6 @@ func (t *Tunnel) dialMux() (*yamux.Session, error) {
 	}
 	defer t.dialMu.Unlock()
 	start := time.Now()
-	ctx := t.s.withTimeout()
-	if ctx == nil {
-		return nil, ErrShutdown
-	}
-	defer t.s.cancel(ctx)
 	conn, err := t.s.dialer.DialContext(ctx, network, t.c.MuxDial)
 	if err != nil {
 		return nil, err
@@ -118,50 +147,23 @@ func (t *Tunnel) dialMux() (*yamux.Session, error) {
 		return nil, err
 	}
 	if t.c.Dial != "" {
-		go t.s.Serve(mux, &ForwardHandler{
-			t.s,
-			t.c.Dial,
-		})
+		if err := t.s.g.Go(func() {
+			t.s.Serve(mux, &ForwardHandler{
+				t.s,
+				t.c.Dial,
+			})
+		}); err != nil {
+			_ = mux.Close()
+			return nil, err
+		}
 	}
 	slog.Info("session dial:", conn.RemoteAddr(), "setup:", time.Since(start))
-	return mux, nil
-}
-
-func (t *Tunnel) addMux(mux *yamux.Session) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for mux := range t.mux {
-		if mux.IsClosed() {
-			delete(t.mux, mux)
-		}
-	}
-	t.mux[mux] = struct{}{}
-}
-
-func (t *Tunnel) getMux() (*yamux.Session, error) {
-	mux := func() *yamux.Session {
-		t.mu.RLock()
-		defer t.mu.RUnlock()
-		for mux := range t.mux {
-			if !mux.IsClosed() {
-				return mux
-			}
-		}
-		return nil
-	}()
-	if mux != nil {
-		return mux, nil
-	}
-	mux, err := t.dialMux()
-	if err != nil {
-		return nil, err
-	}
 	t.addMux(mux)
 	return mux, nil
 }
 
-func (t *Tunnel) MuxDial() (net.Conn, error) {
-	mux, err := t.getMux()
+func (t *Tunnel) MuxDial(ctx context.Context) (net.Conn, error) {
+	mux, err := t.dialMux(ctx)
 	if err != nil {
 		return nil, err
 	}

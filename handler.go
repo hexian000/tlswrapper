@@ -49,10 +49,16 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		return
 	}
 	if h.t.c.Dial != "" {
-		go h.s.Serve(mux, &ForwardHandler{
-			h.s,
-			h.t.c.Dial,
-		})
+		if err := h.s.g.Go(func() {
+			h.s.Serve(mux, &ForwardHandler{
+				h.s,
+				h.t.c.Dial,
+			})
+		}); err != nil {
+			slog.Error(err)
+			_ = mux.Close()
+			return
+		}
 	}
 	h.t.addMux(mux)
 	slog.Info("session accept:", conn.RemoteAddr(), "setup:", time.Since(start))
@@ -86,7 +92,7 @@ type TunnelHandler struct {
 }
 
 func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
-	dialed, err := h.t.MuxDial()
+	dialed, err := h.t.MuxDial(ctx)
 	if err != nil {
 		slog.Errorf("tunnel [%s]: %s", h.t.name, err)
 		_ = accepted.Close()
