@@ -26,7 +26,10 @@ type Logger struct {
 	level int
 }
 
-var std = &Logger{out: newLineOutput(os.Stdout)}
+var std = &Logger{
+	out:   newLineOutput(os.Stdout),
+	level: LevelVerbose,
+}
 
 func Default() *Logger {
 	return std
