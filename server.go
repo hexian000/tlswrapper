@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"reflect"
 	"runtime/debug"
@@ -130,12 +131,13 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			if errors.Is(err, net.ErrClosed) ||
+			if errors.Is(err, io.EOF) ||
+				errors.Is(err, net.ErrClosed) ||
 				errors.Is(err, yamux.ErrSessionShutdown) {
 				return
 			}
 			slog.Errorf("accept: %v", err)
-			continue
+			return
 		}
 		s.serveOne(conn, handler)
 	}
