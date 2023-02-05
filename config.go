@@ -27,6 +27,8 @@ type TunnelConfig struct {
 // Config file
 type Config struct {
 	Tunnels []TunnelConfig `json:"tunnel"`
+	// (optional) health check and metrics, default to "" (disabled)
+	HTTPListen string `json:"httplisten"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
 	ServerName string `json:"sni"`
 	// TLS: local certificate
@@ -47,8 +49,6 @@ type Config struct {
 	StartupLimitRate int `json:"startuplimitrate"`
 	// (optional) hard limit of concurrent unauthenticated connections, default to 60
 	StartupLimitFull int `json:"startuplimitfull"`
-	// (optional) session idle timeout in seconds, default to 900 (15min)
-	IdleTimeout int `json:"idletimeout"`
 	// (optional) max concurrent connections, default to 4096
 	MaxConn int `json:"maxconn"`
 	// (optional) mux accept backlog, default to 16, you may not want to change this
@@ -73,7 +73,6 @@ var DefaultConfig = Config{
 	StartupLimitStart: 10,
 	StartupLimitRate:  30,
 	StartupLimitFull:  60,
-	IdleTimeout:       900, // 15min
 	MaxConn:           4096,
 	AcceptBacklog:     16,
 	StreamWindow:      256 * 1024, // 256 KiB

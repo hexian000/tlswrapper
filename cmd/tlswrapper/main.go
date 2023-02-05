@@ -14,11 +14,6 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-var (
-	version  = "dev-build"
-	homepage = "https://github.com/hexian000/tlswrapper"
-)
-
 func parseFlags() string {
 	var flagHelp bool
 	var flagConfig string
@@ -26,7 +21,7 @@ func parseFlags() string {
 	flag.StringVar(&flagConfig, "c", "", "config file")
 	flag.Parse()
 	if flagHelp || flagConfig == "" {
-		fmt.Printf("tlswrapper %s\n  %s\n\n", version, homepage)
+		fmt.Printf("tlswrapper %s\n  %s\n\n", tlswrapper.Version, tlswrapper.Homepage)
 		flag.Usage()
 		fmt.Printf("\nruntime: %s\n", runtime.Version())
 		os.Exit(1)

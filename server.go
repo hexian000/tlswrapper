@@ -137,6 +137,17 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 
 // Start the service
 func (s *Server) Start() error {
+	if s.c.HTTPListen != "" {
+		l, err := s.Listen(s.c.HTTPListen)
+		if err != nil {
+			return err
+		}
+		if err := s.g.Go(func() {
+			RunHTTPServer(l, s)
+		}); err != nil {
+			return err
+		}
+	}
 	for i, c := range s.c.Tunnels {
 		name := c.MuxListen
 		if name == "" {

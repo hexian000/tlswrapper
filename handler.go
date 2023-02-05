@@ -43,7 +43,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	} else {
 		slog.Warning("connection is not encrypted")
 	}
-	mux, err := yamux.Server(conn, h.s.muxcfg)
+	mux, err := yamux.Server(conn, h.s.servermuxcfg)
 	if err != nil {
 		slog.Error(err)
 		return

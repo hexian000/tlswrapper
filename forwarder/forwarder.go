@@ -16,23 +16,24 @@ var ErrConnLimit = errors.New("connection limit is exceeded")
 
 type Forwarder interface {
 	Forward(accepted net.Conn, dialed net.Conn) error
+	Count() int
 	Close()
 }
 
 type forwarder struct {
-	mu          sync.Mutex
-	g           routines.Group
-	conn        map[net.Conn]struct{}
-	concurrency chan struct{}
-	closeCh     chan struct{}
+	mu      sync.Mutex
+	g       routines.Group
+	conn    map[net.Conn]struct{}
+	counter chan struct{}
+	closeCh chan struct{}
 }
 
 func New(maxConn int, g routines.Group) Forwarder {
 	return &forwarder{
-		conn:        make(map[net.Conn]struct{}),
-		concurrency: make(chan struct{}, maxConn*2),
-		closeCh:     make(chan struct{}),
-		g:           g,
+		conn:    make(map[net.Conn]struct{}),
+		counter: make(chan struct{}, maxConn*2),
+		closeCh: make(chan struct{}),
+		g:       g,
 	}
 }
 
@@ -72,7 +73,7 @@ func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 	select {
 	case <-f.closeCh:
 		return routines.ErrStopping
-	case f.concurrency <- struct{}{}:
+	case f.counter <- struct{}{}:
 	default:
 		return ErrConnLimit
 	}
@@ -81,7 +82,7 @@ func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 	cleanup := func() {
 		cleanupOnce.Do(func() {
 			f.delConn(accepted, dialed)
-			<-f.concurrency
+			<-f.counter
 		})
 	}
 	if err := f.g.Go(func() {
@@ -99,6 +100,10 @@ func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 		return err
 	}
 	return nil
+}
+
+func (f *forwarder) Count()int {
+	return len(f.counter)
 }
 
 func (f *forwarder) Close() {

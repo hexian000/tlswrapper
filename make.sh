@@ -20,7 +20,7 @@ OUT="./build/tlswrapper"
 GOFLAGS="-trimpath -mod vendor"
 LDFLAGS="-s -w"
 if [ -n "${VERSION}" ]; then
-    LDFLAGS="${LDFLAGS} -X main.version=${VERSION}"
+    LDFLAGS="${LDFLAGS} -X github.com/hexian000/tlswrapper.Version=${VERSION}"
 fi
 
 export CGO_ENABLED=0
