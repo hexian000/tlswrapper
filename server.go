@@ -86,6 +86,23 @@ func (s *Server) addTunnel(name string, c *TunnelConfig) *Tunnel {
 	return t
 }
 
+func (s *Server) NumSessions() int {
+	tunnels := func() []*Tunnel {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		tunnels := make([]*Tunnel, 0, len(s.tunnels))
+		for _, t := range s.tunnels {
+			tunnels = append(tunnels, t)
+		}
+		return tunnels
+	}()
+	num := 0
+	for _, t := range tunnels {
+		num += t.NumSessions()
+	}
+	return num
+}
+
 func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) {
 	slog.Debug("forward to:", addr)
 	dialed, err := s.dialer.DialContext(ctx, network, addr)

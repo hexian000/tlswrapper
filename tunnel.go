@@ -116,6 +116,12 @@ func (t *Tunnel) getMux() *yamux.Session {
 	return nil
 }
 
+func (t *Tunnel) NumSessions() int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return len(t.mux)
+}
+
 func (t *Tunnel) dialMux(ctx context.Context) (*yamux.Session, error) {
 	if mux := t.getMux(); mux != nil {
 		return mux, nil
