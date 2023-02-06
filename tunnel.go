@@ -123,7 +123,13 @@ func (t *Tunnel) getMux() *yamux.Session {
 func (t *Tunnel) NumSessions() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return len(t.mux)
+	n := 0
+	for mux := range t.mux {
+		if !mux.IsClosed() {
+			n++
+		}
+	}
+	return n
 }
 
 func (t *Tunnel) dialMux(ctx context.Context) (*yamux.Session, error) {

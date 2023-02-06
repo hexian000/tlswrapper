@@ -15,7 +15,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/stat", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -50,6 +50,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %v", "Tunnels", len(s.c.Tunnels))
 		printf("%-20s: %v", "Active Sessions", s.NumSessions())
 		printf("%-20s: %v", "Active Streams", s.f.Count())
+		printf("%-20s: %v", "Managed Routines", s.g.Count())
 		printf("")
 		printf("==============================")
 		printf("generated in %v", time.Since(start))
