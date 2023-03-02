@@ -4,14 +4,17 @@
 
 ## What for
 
-Wrap your TCP-based service with multiplexing mTLS tunnels. 
+Wrap your TCP-based service with multiplexed mutual TLS tunnels. 
 
-If you are also interested in building a reverse proxy cluster and/or accessing any service published by any peer, see also [gated](https://github.com/hexian000/gated).
+Creating multiplexed TCP tunnels is generally not a good idea, see [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking). Make sure you have good reason to do so.
 
 ```
        Trusted      |     Untrusted    |     Trusted
 +--------+    +------------+    +------------+    +--------+
 | Client |-n->| tlswrapper |-1->| tlswrapper |-n->| Server |
++--------+    +------------+    +------------+    +--------+
++--------+    +------------+    +------------+    +--------+
+| Server |<-n-| tlswrapper |-1->| tlswrapper |<-n-| Client |
 +--------+    +------------+    +------------+    +--------+
 ```
 
@@ -52,9 +55,10 @@ By default, all certificates are self-signed. This will not reduce security.
 
 ```json
 {
-  "server": [
+  "tunnel": [
     {
-      "listen": "0.0.0.0:12345"
+      "muxlisten": "0.0.0.0:12345",
+      "dial": "127.0.0.1:8080"
     }
   ],
   "cert": "server-cert.pem",
@@ -69,10 +73,10 @@ By default, all certificates are self-signed. This will not reduce security.
 
 ```json
 {
-  "client": [
+  "tunnel": [
     {
       "listen": "127.0.0.1:8080",
-      "dial": "example.com:12345"
+      "muxdial": "example.com:12345"
     }
   ],
   "cert": "client-cert.pem",
@@ -85,12 +89,11 @@ By default, all certificates are self-signed. This will not reduce security.
 
 #### Options
 
-- "server": TLS listener configs
-- "server[\*].listen": server bind address
-- "server[\*].forward": upstream TCP service address, leave empty or unconfigured to use builtin HTTP proxy
-- "client": TLS client configs
-- "client[\*].listen": proxy listen address
-- "client[\*].dial": server address
+- "tunnel": TLS tunnel configs
+- "tunnel[\*].muxlisten": Server bind address for TLS connections
+- "tunnel[\*].muxdial": Client dial address for TLS connections
+- "tunnel[\*].listen": Listen for port forwarding
+- "tunnel[\*].dial": The address we forward incoming connections to
 - "cert": peer certificate
 - "key": peer private key
 - "authcerts": peer authorized certificates list, bundles are supported
@@ -113,12 +116,12 @@ You may also found the systemd user unit [tlswrapper.service](tlswrapper.service
 # get source code
 git clone https://github.com/hexian000/tlswrapper.git
 cd tlswrapper
-# build for native system
+# build an executable for local system
 ./make.sh
 ```
 or
 ```sh
-go install github.com/hexian000/tlswrapper
+go install github.com/hexian000/tlswrapper@latest
 ```
 
 ## Credits
