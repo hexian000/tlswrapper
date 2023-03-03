@@ -40,9 +40,6 @@ case "$1" in
         nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-amd64" "${PACKAGE}"
     GOOS="windows" GOARCH="amd64" \
         nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
-    if command -v upx >/dev/null; then
-        (cd build && upx --lzma --best tlswrapper.linux-*)
-    fi
     ;;
 *)
     # build for native system only
