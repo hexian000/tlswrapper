@@ -1,6 +1,7 @@
 package tlswrapper
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -10,17 +11,35 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
+var uptime = time.Now()
+
 func RunHTTPServer(l net.Listener, s *Server) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		b, err := json.MarshalIndent(s.c, "", "    ")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(b)
 	})
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		start := time.Now()
+		now := time.Now()
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
@@ -37,7 +56,8 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			}
 		}
 		printf("tlswrapper %s\n  %s\n", Version, Homepage)
-		printf("%-20s: %v", "Time", time.Now().Format(time.RFC3339))
+		printf("%-20s: %v", "Server Time", now.Format(time.RFC3339))
+		printf("%-20s: %v", "Uptime", now.Sub(uptime))
 		printf("%-20s: %v", "Max Procs", runtime.GOMAXPROCS(-1))
 		printf("%-20s: %v", "Num Goroutines", runtime.NumGoroutine())
 		var memstats runtime.MemStats
@@ -46,7 +66,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %d KiB", "Heap Allocated", memstats.Sys>>10)
 		printf("%-20s: %d KiB", "Stack Used", memstats.StackInuse>>10)
 		printf("%-20s: %d KiB", "Stack Allocated", memstats.StackSys>>10)
-		printf("%-20s: %v ago", "Last GC", time.Since(time.Unix(0, int64(memstats.LastGC))))
+		printf("%-20s: %v ago", "Last GC", now.Sub(time.Unix(0, int64(memstats.LastGC))))
 		printf("%-20s: %v", "Last GC pause", time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256]))
 		printf("")
 		printf("%-20s: %v", "Tunnels", len(s.c.Tunnels))
@@ -55,7 +75,6 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %v", "Managed Routines", s.g.Count())
 		printf("")
 		printf("==============================")
-		printf("generated in %v", time.Since(start))
 		printf("runtime: %s", runtime.Version())
 	})
 	mux.HandleFunc("/gc", func(w http.ResponseWriter, r *http.Request) {
