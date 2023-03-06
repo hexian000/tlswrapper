@@ -66,8 +66,10 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %d KiB", "Heap Allocated", memstats.Sys>>10)
 		printf("%-20s: %d KiB", "Stack Used", memstats.StackInuse>>10)
 		printf("%-20s: %d KiB", "Stack Allocated", memstats.StackSys>>10)
-		printf("%-20s: %v ago", "Last GC", now.Sub(time.Unix(0, int64(memstats.LastGC))))
-		printf("%-20s: %v", "Last GC pause", time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256]))
+		if memstats.LastGC > 0 {
+			printf("%-20s: %v ago", "Last GC", now.Sub(time.Unix(0, int64(memstats.LastGC))))
+			printf("%-20s: %v", "Last GC pause", time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256]))
+		}
 		printf("")
 		printf("%-20s: %v", "Tunnels", len(s.c.Tunnels))
 		printf("%-20s: %v", "Active Sessions", s.NumSessions())
