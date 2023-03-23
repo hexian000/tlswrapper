@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"runtime/debug"
 	"time"
 
 	"github.com/hexian000/tlswrapper/slog"
@@ -62,12 +63,14 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %v", "Num Goroutines", runtime.NumGoroutine())
 		var memstats runtime.MemStats
 		runtime.ReadMemStats(&memstats)
-		printf("%-20s: %d KiB", "Heap Used", memstats.Alloc>>10)
-		printf("%-20s: %d KiB", "Heap Allocated", memstats.Sys>>10)
+		printf("%-20s: %d KiB", "Heap Used", memstats.HeapAlloc>>10)
+		printf("%-20s: %d KiB", "Next GC", memstats.NextGC>>10)
+		printf("%-20s: %d KiB", "Heap Allocated", memstats.HeapSys>>10)
 		printf("%-20s: %d KiB", "Stack Used", memstats.StackInuse>>10)
 		printf("%-20s: %d KiB", "Stack Allocated", memstats.StackSys>>10)
+		printf("%-20s: %d KiB", "Total Allocated", memstats.Sys>>10)
 		if memstats.LastGC > 0 {
-			printf("%-20s: %v ago", "Last GC", now.Sub(time.Unix(0, int64(memstats.LastGC))))
+			printf("%-20s: %v ago", "Last GC", time.Since(time.Unix(0, int64(memstats.LastGC))))
 			printf("%-20s: %v", "Last GC pause", time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256]))
 		}
 		printf("")
@@ -87,12 +90,15 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
-		start := time.Now()
-		runtime.GC()
-		_, err := w.Write([]byte(time.Since(start).String() + "\n"))
-		if err != nil {
-			panic(err)
+		printf := func(format string, v ...interface{}) {
+			_, err := w.Write([]byte(fmt.Sprintf(format, v...) + "\n"))
+			if err != nil {
+				panic(err)
+			}
 		}
+		start := time.Now()
+		debug.FreeOSMemory()
+		printf("%v", time.Since(start))
 	})
 	mux.HandleFunc("/stack", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -100,9 +106,15 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			return
 		}
 		start := time.Now()
-		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusOK)
+		defer func() {
+			if err := recover(); err != nil {
+				slog.Error(err)
+				return
+			}
+		}()
 		printf := func(format string, v ...interface{}) {
 			_, err := w.Write([]byte(fmt.Sprintf(format, v...) + "\n"))
 			if err != nil {
