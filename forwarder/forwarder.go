@@ -102,7 +102,7 @@ func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 	return nil
 }
 
-func (f *forwarder) Count()int {
+func (f *forwarder) Count() int {
 	return len(f.counter)
 }
 
