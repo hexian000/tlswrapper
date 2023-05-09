@@ -9,6 +9,7 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     if [ -z "${VERSION}" ]; then
         VERSION="git-$(git rev-parse --short HEAD)"
     fi
+    git update-index --refresh -q
     if ! git diff-index --quiet HEAD --; then
         VERSION="${VERSION}+"
     fi
