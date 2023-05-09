@@ -21,7 +21,7 @@ var iec_units = [...]string{
 }
 
 func intlog2(value uint64) int {
-	return 63 - bits.LeadingZeros64(value)
+	return bits.Len64(value) - 1
 }
 
 func formatIEC(value uint64) string {
