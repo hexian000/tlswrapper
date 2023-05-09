@@ -3,6 +3,8 @@ package tlswrapper
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/bits"
 	"net"
 	"net/http"
 	"runtime"
@@ -13,6 +15,32 @@ import (
 )
 
 var uptime = time.Now()
+
+var iec_units = [...]string{
+	"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB",
+}
+
+func intlog2(value uint64) int {
+	return 63 - bits.LeadingZeros64(value)
+}
+
+func formatIEC(value uint64) string {
+	if value < 8192 {
+		return fmt.Sprintf("%d %s", value, iec_units[0])
+	}
+	n := (intlog2(value) - 3) / 10
+	if n >= len(iec_units) {
+		n = len(iec_units) - 1
+	}
+	v := math.Ldexp(float64(value), n*-10)
+	if v < 10.0 {
+		return fmt.Sprintf("%.02f %s", v, iec_units[n])
+	}
+	if v < 100.0 {
+		return fmt.Sprintf("%.01f %s", v, iec_units[n])
+	}
+	return fmt.Sprintf("%.0f %s", v, iec_units[n])
+}
 
 func RunHTTPServer(l net.Listener, s *Server) error {
 	mux := http.NewServeMux()
@@ -63,12 +91,12 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %v", "Num Goroutines", runtime.NumGoroutine())
 		var memstats runtime.MemStats
 		runtime.ReadMemStats(&memstats)
-		printf("%-20s: %d KiB", "Heap Used", memstats.HeapAlloc>>10)
-		printf("%-20s: %d KiB", "Next GC", memstats.NextGC>>10)
-		printf("%-20s: %d KiB", "Heap Allocated", memstats.HeapSys>>10)
-		printf("%-20s: %d KiB", "Stack Used", memstats.StackInuse>>10)
-		printf("%-20s: %d KiB", "Stack Allocated", memstats.StackSys>>10)
-		printf("%-20s: %d KiB", "Total Allocated", memstats.Sys>>10)
+		printf("%-20s: %s", "Heap Used", formatIEC(memstats.HeapAlloc))
+		printf("%-20s: %s", "Next GC", formatIEC(memstats.NextGC))
+		printf("%-20s: %s", "Heap Allocated", formatIEC(memstats.HeapSys))
+		printf("%-20s: %s", "Stack Used", formatIEC(memstats.StackInuse))
+		printf("%-20s: %s", "Stack Allocated", formatIEC(memstats.StackSys))
+		printf("%-20s: %s", "Total Allocated", formatIEC(memstats.Sys))
 		if memstats.LastGC > 0 {
 			printf("%-20s: %v ago", "Last GC", time.Since(time.Unix(0, int64(memstats.LastGC))))
 			printf("%-20s: %v", "Last GC pause", time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256]))
