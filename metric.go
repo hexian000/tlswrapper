@@ -93,10 +93,10 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		runtime.ReadMemStats(&memstats)
 		printf("%-20s: %s", "Heap Used", formatIEC(memstats.HeapAlloc))
 		printf("%-20s: %s", "Next GC", formatIEC(memstats.NextGC))
-		printf("%-20s: %s", "Heap Allocated", formatIEC(memstats.HeapSys))
+		printf("%-20s: %s", "Heap Allocated", formatIEC(memstats.HeapSys-memstats.HeapReleased))
 		printf("%-20s: %s", "Stack Used", formatIEC(memstats.StackInuse))
 		printf("%-20s: %s", "Stack Allocated", formatIEC(memstats.StackSys))
-		printf("%-20s: %s", "Total Allocated", formatIEC(memstats.Sys))
+		printf("%-20s: %s", "Total Allocated", formatIEC(memstats.Sys-memstats.HeapReleased))
 		if memstats.LastGC > 0 {
 			printf("%-20s: %v ago", "Last GC", time.Since(time.Unix(0, int64(memstats.LastGC))))
 			printf("%-20s: %v", "Last GC pause", time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256]))
