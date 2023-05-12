@@ -58,6 +58,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			w.Write([]byte(err.Error()))
 			return
 		}
+		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
@@ -69,6 +70,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			return
 		}
 		now := time.Now()
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
@@ -134,6 +136,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			return
 		}
 		start := time.Now()
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
