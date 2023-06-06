@@ -10,8 +10,12 @@ var iec_units = [...]string{
 	"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB",
 }
 
+func isFinite(f float64) bool {
+	return !math.IsNaN(f - f)
+}
+
 func IECBytes(value float64) string {
-	if math.IsNaN(value) || math.IsInf(value, 0) || value < 8192 {
+	if !isFinite(value) || value < 8192.0 {
 		return fmt.Sprintf("%.0f %s", value, iec_units[0])
 	}
 	n := (int(math.Log2(value)) - 3) / 10
