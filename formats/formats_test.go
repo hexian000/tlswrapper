@@ -1,7 +1,6 @@
 package formats_test
 
 import (
-	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -10,22 +9,120 @@ import (
 )
 
 func TestIECBytes(t *testing.T) {
-	fmt.Printf("|%16s|\n", formats.IECBytes(math.NaN()))
-	fmt.Printf("|%16s|\n", formats.IECBytes(-math.NaN()))
-	fmt.Printf("|%16s|\n", formats.IECBytes(math.Inf(1)))
-	fmt.Printf("|%16s|\n", formats.IECBytes(math.Inf(-1)))
 	zero := 0.0
-	fmt.Printf("|%16s|\n", formats.IECBytes(zero))
-	fmt.Printf("|%16s|\n", formats.IECBytes(-zero))
-	for i := 0; i < 30; i++ {
-		fmt.Printf("|%16s|\n", formats.IECBytes(math.Pow10(i)))
+	cases := [...]struct {
+		in float64
+		s  string
+	}{
+		{math.NaN(), "NaN B"},
+		{-math.NaN(), "NaN B"},
+		{math.Inf(1), "+Inf B"},
+		{math.Inf(-1), "-Inf B"},
+		{zero, "0 B"},
+		{-zero, "-0 B"},
+		{1e+00, "1 B"},
+		{1e+01, "10 B"},
+		{1e+02, "100 B"},
+		{1e+03, "1000 B"},
+		{1e+04, "9.77 KiB"},
+		{1e+05, "97.7 KiB"},
+		{1e+06, "977 KiB"},
+		{1e+07, "9.54 MiB"},
+		{1e+08, "95.4 MiB"},
+		{1e+09, "954 MiB"},
+		{1e+10, "9.31 GiB"},
+		{1e+11, "93.1 GiB"},
+		{1e+12, "931 GiB"},
+		{1e+13, "9.09 TiB"},
+		{1e+14, "90.9 TiB"},
+		{1e+15, "909 TiB"},
+		{1e+16, "8.88 PiB"},
+		{1e+17, "88.8 PiB"},
+		{1e+18, "888 PiB"},
+		{1e+19, "8.67 EiB"},
+		{1e+20, "86.7 EiB"},
+		{1e+21, "867 EiB"},
+		{1e+22, "8.47 ZiB"},
+		{1e+23, "84.7 ZiB"},
+		{1e+24, "847 ZiB"},
+		{1e+25, "8.27 YiB"},
+		{1e+26, "82.7 YiB"},
+		{1e+27, "827 YiB"},
+		{1e+28, "8272 YiB"},
+		{1e+29, "82718 YiB"},
+	}
+	for _, c := range cases {
+		result := formats.IECBytes(c.in)
+		if result != c.s {
+			t.Fatalf("expect \"%s\", got \"%s\"", c.s, result)
+		}
+		// fmt.Printf("{%.0e, \"%s\"},\n", c.in, result)
 	}
 }
 
 func TestDurationSeconds(t *testing.T) {
-	d := time.Duration(1)
-	for i := 0; i < 31; i++ {
-		fmt.Printf("|%16s|%32s|\n", formats.DurationSeconds(d), formats.DurationNanos(d))
-		d <<= 2
+	cases := [...]struct {
+		in                  time.Duration
+		secs, millis, nanos string
+	}{
+		{time.Duration(1), "0:00", "0:00.000", "0:00.000000001"},
+		{time.Duration(4), "0:00", "0:00.000", "0:00.000000004"},
+		{time.Duration(16), "0:00", "0:00.000", "0:00.000000016"},
+		{time.Duration(64), "0:00", "0:00.000", "0:00.000000064"},
+		{time.Duration(256), "0:00", "0:00.000", "0:00.000000256"},
+		{time.Duration(1024), "0:00", "0:00.000", "0:00.000001024"},
+		{time.Duration(4096), "0:00", "0:00.000", "0:00.000004096"},
+		{time.Duration(16384), "0:00", "0:00.000", "0:00.000016384"},
+		{time.Duration(65536), "0:00", "0:00.000", "0:00.000065536"},
+		{time.Duration(262144), "0:00", "0:00.000", "0:00.000262144"},
+		{time.Duration(1048576), "0:00", "0:00.001", "0:00.001048576"},
+		{time.Duration(4194304), "0:00", "0:00.004", "0:00.004194304"},
+		{time.Duration(16777216), "0:00", "0:00.016", "0:00.016777216"},
+		{time.Duration(67108864), "0:00", "0:00.067", "0:00.067108864"},
+		{time.Duration(268435456), "0:00", "0:00.268", "0:00.268435456"},
+		{time.Duration(1073741824), "0:01", "0:01.073", "0:01.073741824"},
+		{time.Duration(4294967296), "0:04", "0:04.294", "0:04.294967296"},
+		{time.Duration(17179869184), "0:17", "0:17.179", "0:17.179869184"},
+		{time.Duration(68719476736), "1:08", "1:08.719", "1:08.719476736"},
+		{time.Duration(274877906944), "4:34", "4:34.877", "4:34.877906944"},
+		{time.Duration(1099511627776), "18:19", "18:19.511",
+			"18:19.511627776"},
+		{time.Duration(4398046511104), "1:13:18", "1:13:18.046",
+			"1:13:18.046511104"},
+		{time.Duration(17592186044416), "4:53:12", "4:53:12.186",
+			"4:53:12.186044416"},
+		{time.Duration(70368744177664), "19:32:48", "19:32:48.744",
+			"19:32:48.744177664"},
+		{time.Duration(281474976710656), "3d06:11:14", "3d06:11:14.976",
+			"3d06:11:14.976710656"},
+		{time.Duration(1125899906842624), "13d00:44:59", "13d00:44:59.906",
+			"13d00:44:59.906842624"},
+		{time.Duration(4503599627370496), "52d02:59:59", "52d02:59:59.627",
+			"52d02:59:59.627370496"},
+		{time.Duration(18014398509481984), "208d11:59:58",
+			"208d11:59:58.509", "208d11:59:58.509481984"},
+		{time.Duration(72057594037927936), "833d23:59:54",
+			"833d23:59:54.037", "833d23:59:54.037927936"},
+		{time.Duration(288230376151711744), "3335d23:59:36",
+			"3335d23:59:36.151", "3335d23:59:36.151711744"},
+		{time.Duration(1152921504606846976), "13343d23:58:24",
+			"13343d23:58:24.606", "13343d23:58:24.606846976"},
+		{time.Duration(-1152921504606846976), "-13343d23:58:24",
+			"-13343d23:58:24.606", "-13343d23:58:24.606846976"}}
+	for _, c := range cases {
+		secs := formats.DurationSeconds(c.in)
+		if secs != c.secs {
+			t.Fatalf("expect \"%s\", got \"%s\"", c.secs, secs)
+		}
+		millis := formats.DurationMillis(c.in)
+		if millis != c.millis {
+			t.Fatalf("expect \"%s\", got \"%s\"", c.millis, millis)
+		}
+		nanos := formats.DurationNanos(c.in)
+		if nanos != c.nanos {
+			t.Fatalf("expect \"%s\", got \"%s\"", c.nanos, nanos)
+		}
+		// fmt.Printf("{time.Duration(%d), \"%s\", \"%s\", \"%s\"},\n", c.in,
+		// 	secs, millis, nanos)
 	}
 }

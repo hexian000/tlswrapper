@@ -50,10 +50,8 @@ func DurationSeconds(d time.Duration) string {
 		return fmt.Sprintf("%dd%02d:%02d:%02d", sign*days, hours, minutes, seconds)
 	} else if hours != 0 {
 		return fmt.Sprintf("%d:%02d:%02d", sign*hours, minutes, seconds)
-	} else if minutes != 0 {
-		return fmt.Sprintf("%d:%02d", sign*minutes, seconds)
 	}
-	return fmt.Sprintf("%d", sign*seconds)
+	return fmt.Sprintf("%d:%02d", sign*minutes, seconds)
 }
 
 func DurationMillis(d time.Duration) string {
@@ -76,10 +74,8 @@ func DurationMillis(d time.Duration) string {
 		return fmt.Sprintf("%dd%02d:%02d:%02d.%03d", sign*days, hours, minutes, seconds, millis)
 	} else if hours != 0 {
 		return fmt.Sprintf("%d:%02d:%02d.%03d", sign*hours, minutes, seconds, millis)
-	} else if minutes != 0 {
-		return fmt.Sprintf("%d:%02d.%03d", sign*minutes, seconds, millis)
 	}
-	return fmt.Sprintf("%d.%03d", sign*seconds, millis)
+	return fmt.Sprintf("%d:%02d.%03d", sign*minutes, seconds, millis)
 }
 
 func DurationNanos(d time.Duration) string {
@@ -105,8 +101,6 @@ func DurationNanos(d time.Duration) string {
 		return fmt.Sprintf("%dd%02d:%02d:%02d.%03d%03d%03d", sign*days, hours, minutes, seconds, millis, micros, nanos)
 	} else if hours != 0 {
 		return fmt.Sprintf("%d:%02d:%02d.%03d%03d%03d", sign*hours, minutes, seconds, millis, micros, nanos)
-	} else if minutes != 0 {
-		return fmt.Sprintf("%d:%02d.%03d%03d%03d", sign*minutes, seconds, millis, micros, nanos)
 	}
-	return fmt.Sprintf("%d.%03d%03d%03d", sign*seconds, millis, micros, nanos)
+	return fmt.Sprintf("%d:%02d.%03d%03d%03d", sign*minutes, seconds, millis, micros, nanos)
 }
