@@ -4,11 +4,26 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/hexian000/tlswrapper)](https://goreportcard.com/report/github.com/hexian000/tlswrapper)
 [![Release](https://img.shields.io/github/release/hexian000/tlswrapper.svg?style=flat)](https://github.com/hexian000/tlswrapper/releases)
 
-## What for
+- [Features](#features)
+- [Protocol Stack](#protocol-stack)
+- [Authentication Model](#authentication-model)
+- [Quick Start](#quick-start)
+  - [Generate key pair with OpenSSL](#generate-key-pair-with-openssl)
+  - [Create "config.json"](#create-configjson)
+  - [Start](#start)
+- [Build/Install](#buildinstall)
+- [Credits](#credits)
 
-Wrap your TCP-based service with multiplexed mutual TLS tunnels. 
+## Features
 
-Creating multiplexed TCP tunnels is generally not a good idea, see [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking). Make sure you have good reason to do so.
+Wrap your TCP-based service with multiplexed mutual TLS tunnels.
+
+- Multiplexed: All traffic goes over one TCP connection.
+- Encrypted: All data is properly encrypted.
+- Mutual Authenticated: Enforces both peers to be authenticated with preshared public key.
+- Mutual Forwarded: Each peer can listen and connect to the other peer simultaneously over the same underlying connection.
+
+*In terms of performance, creating multiplexed TCP tunnels is generally not a good idea, see [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking). Make sure you have good reason to do so.*
 
 ```
        Trusted      |     Untrusted    |     Trusted
@@ -45,13 +60,15 @@ By default, all certificates are self-signed. This will not reduce security.
 
 ## Quick Start
 
-### 1. Generate key pair with OpenSSL:
+### Generate key pair with OpenSSL
+
+See [gencerts.sh](gencerts.sh).
 
 ```sh
 ./gencerts.sh client server
 ```
 
-### 2. Create "config.json"
+### Create "config.json"
 
 #### Server
 
@@ -100,11 +117,11 @@ By default, all certificates are self-signed. This will not reduce security.
 - "key": peer private key
 - "authcerts": peer authorized certificates list, bundles are supported
 
-see [source code](config.go) for complete document
+See [source code](config.go) for complete list of all available options.
 
-see [config.json](config.json) for example config file
+See [config.json](config.json) for example config file.
 
-### 3. Start
+### Start
 
 ```sh
 ./tlswrapper -c config.json
