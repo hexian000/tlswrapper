@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/tlswrapper/meter"
 	"github.com/hexian000/tlswrapper/slog"
 )
 
@@ -32,6 +33,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	defer atomic.AddUint32(&h.unauthorized, ^uint32(0))
 	start := time.Now()
 	h.s.c.SetConnParams(conn)
+	conn = meter.Conn(conn, h.t.metrics)
 	if h.s.tlscfg != nil {
 		tlsConn := tls.Server(conn, h.s.tlscfg)
 		err := tlsConn.HandshakeContext(ctx)

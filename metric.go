@@ -81,6 +81,8 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %v", "Active Sessions", s.NumSessions())
 		printf("%-20s: %v", "Active Streams", s.f.Count())
 		printf("%-20s: %v", "Managed Routines", s.g.Count())
+		rx, tx := s.CountBytes()
+		printf("%-20s: %s / %s", "Traffic (Rx/Tx)", formats.IECBytes(float64(rx)), formats.IECBytes(float64(tx)))
 		printf("")
 		printf("==============================")
 		printf("runtime: %s", runtime.Version())
