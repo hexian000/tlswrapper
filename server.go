@@ -10,9 +10,11 @@ import (
 	"reflect"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/forwarder"
+	"github.com/hexian000/tlswrapper/meter"
 	"github.com/hexian000/tlswrapper/routines"
 	"github.com/hexian000/tlswrapper/slog"
 )
@@ -33,7 +35,8 @@ type Server struct {
 	muxcfg       *yamux.Config
 	servermuxcfg *yamux.Config
 
-	f forwarder.Forwarder
+	f     forwarder.Forwarder
+	meter *meter.ConnMetrics
 
 	listeners map[string]net.Listener
 	tunnels   map[string]*Tunnel
@@ -51,6 +54,7 @@ func NewServer(cfg *Config) *Server {
 		tunnels:   make(map[string]*Tunnel),
 		contexts:  make(map[context.Context]context.CancelFunc),
 		f:         forwarder.New(cfg.MaxConn, g),
+		meter:     &meter.ConnMetrics{},
 		g:         g,
 		c:         cfg,
 	}
@@ -106,11 +110,8 @@ func (s *Server) NumSessions() int {
 }
 
 func (s *Server) CountBytes() (read uint64, written uint64) {
-	for _, t := range s.getTunnels() {
-		r, w := t.CountBytes()
-		read += r
-		written += w
-	}
+	read = atomic.LoadUint64(&s.meter.Read)
+	written = atomic.LoadUint64(&s.meter.Written)
 	return
 }
 

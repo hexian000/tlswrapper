@@ -33,7 +33,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	defer atomic.AddUint32(&h.unauthorized, ^uint32(0))
 	start := time.Now()
 	h.s.c.SetConnParams(conn)
-	conn = meter.Conn(conn, h.t.metrics)
+	conn = meter.Conn(conn, h.s.meter)
 	if h.s.tlscfg != nil {
 		tlsConn := tls.Server(conn, h.s.tlscfg)
 		err := tlsConn.HandshakeContext(ctx)

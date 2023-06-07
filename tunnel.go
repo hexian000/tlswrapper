@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -16,22 +15,20 @@ import (
 )
 
 type Tunnel struct {
-	name    string
-	s       *Server
-	c       *TunnelConfig
-	metrics *meter.ConnMetrics
-	mu      sync.RWMutex
-	mux     map[*yamux.Session]struct{}
-	dialMu  sync.Mutex
+	name   string
+	s      *Server
+	c      *TunnelConfig
+	mu     sync.RWMutex
+	mux    map[*yamux.Session]struct{}
+	dialMu sync.Mutex
 }
 
 func NewTunnel(name string, s *Server, c *TunnelConfig) *Tunnel {
 	return &Tunnel{
-		name:    name,
-		s:       s,
-		c:       c,
-		metrics: &meter.ConnMetrics{},
-		mux:     make(map[*yamux.Session]struct{}),
+		name: name,
+		s:    s,
+		c:    c,
+		mux:  make(map[*yamux.Session]struct{}),
 	}
 }
 
@@ -124,12 +121,6 @@ func (t *Tunnel) getMux() *yamux.Session {
 	return nil
 }
 
-func (t *Tunnel) CountBytes() (read uint64, written uint64) {
-	read = atomic.LoadUint64(&t.metrics.Read)
-	written = atomic.LoadUint64(&t.metrics.Written)
-	return
-}
-
 func (t *Tunnel) NumSessions() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -159,7 +150,7 @@ func (t *Tunnel) dialMux(ctx context.Context) (*yamux.Session, error) {
 		return nil, err
 	}
 	t.s.c.SetConnParams(conn)
-	conn = meter.Conn(conn, t.metrics)
+	conn = meter.Conn(conn, t.s.meter)
 	if t.s.tlscfg != nil {
 		tlsConn := tls.Client(conn, t.s.tlscfg)
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
