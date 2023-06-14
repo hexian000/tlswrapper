@@ -84,12 +84,8 @@ func DurationNanos(d time.Duration) string {
 		sign = -1
 		d = -d
 	}
-	nanos := int(d % 1000)
-	d /= 1000
-	micros := int(d % 1000)
-	d /= 1000
-	millis := int(d % 1000)
-	d /= 1000
+	nanos := int64(d % 1000000000)
+	d /= 1000000000
 	seconds := int(d % 60)
 	d /= 60
 	minutes := int(d % 60)
@@ -98,9 +94,9 @@ func DurationNanos(d time.Duration) string {
 	d /= 24
 	days := int(d)
 	if days != 0 {
-		return fmt.Sprintf("%dd%02d:%02d:%02d.%03d%03d%03d", sign*days, hours, minutes, seconds, millis, micros, nanos)
+		return fmt.Sprintf("%dd%02d:%02d:%02d.%09d", sign*days, hours, minutes, seconds, nanos)
 	} else if hours != 0 {
-		return fmt.Sprintf("%d:%02d:%02d.%03d%03d%03d", sign*hours, minutes, seconds, millis, micros, nanos)
+		return fmt.Sprintf("%d:%02d:%02d.%09d", sign*hours, minutes, seconds, nanos)
 	}
-	return fmt.Sprintf("%d:%02d.%03d%03d%03d", sign*minutes, seconds, millis, micros, nanos)
+	return fmt.Sprintf("%d:%02d.%09d", sign*minutes, seconds, nanos)
 }
