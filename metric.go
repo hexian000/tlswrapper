@@ -84,7 +84,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		rx, tx := s.CountBytes()
 		printf("%-20s: %s / %s\n", "Traffic (Rx/Tx)", formats.IECBytes(float64(rx)), formats.IECBytes(float64(tx)))
 		printf("\n==============================\n")
-		printf("runtime: %s", runtime.Version())
+		printf("runtime: %s\n", runtime.Version())
 	})
 	mux.HandleFunc("/gc", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
