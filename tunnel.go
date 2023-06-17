@@ -66,6 +66,18 @@ func (t *Tunnel) Start() error {
 	return t.s.g.Go(t.run)
 }
 
+func (t *Tunnel) redial() {
+	ctx := t.s.withTimeout()
+	if ctx == nil {
+		return
+	}
+	defer t.s.cancel(ctx)
+	_, err := t.dialMux(ctx)
+	if err != nil && !errors.Is(err, ErrNoSession) {
+		slog.Warning("redial:", err)
+	}
+}
+
 func (t *Tunnel) run() {
 	defer func() {
 		t.mu.Lock()
@@ -77,25 +89,14 @@ func (t *Tunnel) run() {
 	}()
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	redial := func() {
-		ctx := t.s.withTimeout()
-		if ctx == nil {
-			return
-		}
-		defer t.s.cancel(ctx)
-		_, err := t.dialMux(ctx)
-		if err != nil && !errors.Is(err, ErrNoSession) {
-			slog.Warning("redial:", err)
-		}
-	}
-	redial()
+	t.redial()
 	for {
 		select {
 		case <-t.s.g.CloseC():
 			return
 		case <-ticker.C:
 		}
-		redial()
+		t.redial()
 	}
 }
 

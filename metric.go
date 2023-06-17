@@ -75,6 +75,9 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		if memstats.LastGC > 0 {
 			printf("%-20s: %v ago\n", "Last GC", time.Since(time.Unix(0, int64(memstats.LastGC))))
 			printf("%-20s: %v\n", "Last GC pause", time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256]))
+		} else {
+			printf("%-20s: %s\n", "Last GC", "(none)")
+			printf("%-20s: %s\n", "Last GC pause", "(none)")
 		}
 		printf("\n")
 		printf("%-20s: %v\n", "Tunnels", len(s.c.Tunnels))
