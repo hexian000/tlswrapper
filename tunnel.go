@@ -67,12 +67,12 @@ func (t *Tunnel) Start() error {
 }
 
 func (t *Tunnel) redial() {
-	ctx := t.s.withTimeout()
+	ctx := t.s.ctx.withTimeout()
 	if ctx == nil {
 		return
 	}
-	defer t.s.cancel(ctx)
-	_, err := t.dialMux(ctx)
+	defer t.s.ctx.cancel(ctx)
+	_, err := t.dial(ctx)
 	if err != nil && !errors.Is(err, ErrNoSession) {
 		slog.Warning("redial:", err)
 	}
@@ -89,14 +89,13 @@ func (t *Tunnel) run() {
 	}()
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	t.redial()
 	for {
+		t.redial()
 		select {
 		case <-t.s.g.CloseC():
 			return
 		case <-ticker.C:
 		}
-		t.redial()
 	}
 }
 
@@ -134,7 +133,7 @@ func (t *Tunnel) NumSessions() int {
 	return n
 }
 
-func (t *Tunnel) dialMux(ctx context.Context) (*yamux.Session, error) {
+func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if mux := t.getMux(); mux != nil {
 		return mux, nil
 	}
@@ -182,7 +181,7 @@ func (t *Tunnel) dialMux(ctx context.Context) (*yamux.Session, error) {
 }
 
 func (t *Tunnel) MuxDial(ctx context.Context) (net.Conn, error) {
-	mux, err := t.dialMux(ctx)
+	mux, err := t.dial(ctx)
 	if err != nil {
 		return nil, err
 	}

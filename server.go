@@ -28,8 +28,6 @@ var (
 
 // Server object
 type Server struct {
-	mu sync.Mutex
-
 	c            *Config
 	tlscfg       *tls.Config
 	muxcfg       *yamux.Config
@@ -40,7 +38,8 @@ type Server struct {
 
 	listeners map[string]net.Listener
 	tunnels   map[string]*Tunnel
-	contexts  map[context.Context]context.CancelFunc
+	tunnelsMu sync.Mutex
+	ctx       contextMgr
 
 	dialer net.Dialer
 	g      routines.Group
@@ -52,48 +51,28 @@ func NewServer(cfg *Config) *Server {
 	return &Server{
 		listeners: make(map[string]net.Listener),
 		tunnels:   make(map[string]*Tunnel),
-		contexts:  make(map[context.Context]context.CancelFunc),
-		f:         forwarder.New(cfg.MaxConn, g),
-		meter:     &meter.ConnMetrics{},
-		g:         g,
-		c:         cfg,
-	}
-}
-
-func (s *Server) withTimeout() context.Context {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.contexts == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), s.c.Timeout())
-	s.contexts[ctx] = cancel
-	return ctx
-}
-
-func (s *Server) cancel(ctx context.Context) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.contexts == nil {
-		return
-	}
-	if cancel, ok := s.contexts[ctx]; ok {
-		cancel()
-		delete(s.contexts, ctx)
+		ctx: contextMgr{
+			timeout:  cfg.Timeout,
+			contexts: make(map[context.Context]context.CancelFunc),
+		},
+		f:     forwarder.New(cfg.MaxConn, g),
+		meter: &meter.ConnMetrics{},
+		g:     g,
+		c:     cfg,
 	}
 }
 
 func (s *Server) addTunnel(name string, c *TunnelConfig) *Tunnel {
 	t := NewTunnel(name, s, c)
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.tunnelsMu.Lock()
+	defer s.tunnelsMu.Unlock()
 	s.tunnels[name] = t
 	return t
 }
 
 func (s *Server) getTunnels() []*Tunnel {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.tunnelsMu.Lock()
+	defer s.tunnelsMu.Unlock()
 	tunnels := make([]*Tunnel, 0, len(s.tunnels))
 	for _, t := range s.tunnels {
 		tunnels = append(tunnels, t)
@@ -130,11 +109,11 @@ func (s *Server) serveOne(accepted net.Conn, handler Handler) {
 			slog.Error("panic:", r, string(debug.Stack()))
 		}
 	}()
-	ctx := s.withTimeout()
+	ctx := s.ctx.withTimeout()
 	if ctx == nil {
 		return
 	}
-	defer s.cancel(ctx)
+	defer s.ctx.cancel(ctx)
 	handler.Serve(ctx, accepted)
 }
 
@@ -200,14 +179,7 @@ func (s *Server) Shutdown() error {
 		_ = listener.Close()
 		delete(s.listeners, addr)
 	}
-	func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		for _, cancel := range s.contexts {
-			cancel()
-		}
-		s.contexts = nil
-	}()
+	s.ctx.close()
 	s.f.Close()
 	s.g.Close()
 	slog.Info("waiting for unfinished connections")
