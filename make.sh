@@ -1,5 +1,4 @@
 #!/bin/sh
-set -e
 cd "$(dirname "$0")"
 mkdir -p build
 
@@ -16,6 +15,7 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 fi
 echo "+ version: ${VERSION}"
 
+set -e
 PACKAGE="./cmd/tlswrapper"
 OUT="./build/tlswrapper"
 GOFLAGS="-trimpath -mod vendor"
