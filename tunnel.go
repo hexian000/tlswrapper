@@ -48,7 +48,7 @@ func (t *Tunnel) Start() error {
 			Full:         uint32(t.s.c.StartupLimitFull),
 			Rate:         float64(t.s.c.StartupLimitRate) / 100.0,
 			Unauthorized: h.Unauthorized,
-		})
+		}, t.s.lstats)
 		l = t.l
 		if err := t.s.g.Go(func() {
 			t.s.Serve(l, h)

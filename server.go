@@ -14,6 +14,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/forwarder"
+	"github.com/hexian000/tlswrapper/hlistener"
 	"github.com/hexian000/tlswrapper/meter"
 	"github.com/hexian000/tlswrapper/routines"
 	"github.com/hexian000/tlswrapper/slog"
@@ -33,8 +34,9 @@ type Server struct {
 	muxcfg       *yamux.Config
 	servermuxcfg *yamux.Config
 
-	f     forwarder.Forwarder
-	meter *meter.ConnMetrics
+	f      forwarder.Forwarder
+	meter  *meter.ConnMetrics
+	lstats *hlistener.Stats
 
 	listeners map[string]net.Listener
 	tunnels   map[string]*Tunnel
@@ -55,10 +57,11 @@ func NewServer(cfg *Config) *Server {
 			timeout:  cfg.Timeout,
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
-		f:     forwarder.New(cfg.MaxConn, g),
-		meter: &meter.ConnMetrics{},
-		g:     g,
-		c:     cfg,
+		f:      forwarder.New(cfg.MaxConn, g),
+		meter:  &meter.ConnMetrics{},
+		lstats: &hlistener.Stats{},
+		g:      g,
+		c:      cfg,
 	}
 }
 
@@ -91,6 +94,12 @@ func (s *Server) NumSessions() int {
 func (s *Server) CountBytes() (read uint64, written uint64) {
 	read = atomic.LoadUint64(&s.meter.Read)
 	written = atomic.LoadUint64(&s.meter.Written)
+	return
+}
+
+func (s *Server) CountConns() (accepted uint64, refused uint64) {
+	accepted = atomic.LoadUint64(&s.lstats.Accepted)
+	refused = atomic.LoadUint64(&s.lstats.Refused)
 	return
 }
 

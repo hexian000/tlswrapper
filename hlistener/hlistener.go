@@ -6,14 +6,14 @@ import (
 	"sync/atomic"
 )
 
+type Stats struct {
+	Accepted, Refused uint64
+}
+
 type Config struct {
 	Start, Full  uint32
 	Rate         float64
 	Unauthorized func() uint32
-}
-
-type Stats struct {
-	Accepted, Refused uint64
 }
 
 type Listener struct {
@@ -64,6 +64,9 @@ func (l *Listener) Stat() Stats {
 }
 
 // Wrap the raw listener
-func Wrap(l net.Listener, c *Config) *Listener {
-	return &Listener{l: l, c: *c, s: &Stats{}}
+func Wrap(l net.Listener, c *Config, s *Stats) *Listener {
+	if s == nil {
+		s = &Stats{}
+	}
+	return &Listener{l: l, c: *c, s: s}
 }
