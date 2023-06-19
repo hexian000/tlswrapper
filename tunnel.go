@@ -21,7 +21,7 @@ type Tunnel struct {
 	l           *hlistener.Listener
 	mu          sync.RWMutex
 	mux         map[*yamux.Session]struct{}
-	muxCloseSig chan struct{}
+	muxCloseSig chan *yamux.Session
 	redialCount int
 	dialMu      sync.Mutex
 }
@@ -32,7 +32,7 @@ func NewTunnel(name string, s *Server, c *TunnelConfig) *Tunnel {
 		s:           s,
 		c:           c,
 		mux:         make(map[*yamux.Session]struct{}),
-		muxCloseSig: make(chan struct{}, 1),
+		muxCloseSig: make(chan *yamux.Session, 16),
 	}
 }
 
@@ -71,11 +71,8 @@ func (t *Tunnel) Start() error {
 	return t.s.g.Go(t.run)
 }
 
-func (t *Tunnel) onMuxClosed() {
-	select {
-	case t.muxCloseSig <- struct{}{}:
-	default:
-	}
+func (t *Tunnel) onMuxClosed(mux *yamux.Session) {
+	t.muxCloseSig <- mux
 }
 
 func (t *Tunnel) redial() {
@@ -87,7 +84,8 @@ func (t *Tunnel) redial() {
 	_, err := t.dial(ctx)
 	if err != nil && !errors.Is(err, ErrNoSession) {
 		t.redialCount++
-		slog.Warningf("redial[%d]: [%T] %v", t.redialCount, err, err)
+		slog.Warningf("redial(%d): [%T] %v", t.redialCount, err, err)
+		return
 	}
 	t.redialCount = 0
 }
@@ -125,8 +123,8 @@ func (t *Tunnel) run() {
 	for {
 		t.redial()
 		select {
-		case <-t.muxCloseSig:
-			// connection lost
+		case mux := <-t.muxCloseSig:
+			slog.Infof("tunnel %q: connection lost %v", t.name, mux.RemoteAddr())
 		case <-t.scheduleRedial():
 		case <-t.s.g.CloseC():
 			// server shutdown
@@ -169,6 +167,21 @@ func (t *Tunnel) NumSessions() int {
 	return n
 }
 
+func (t *Tunnel) Serve(mux *yamux.Session) {
+	var h Handler
+	if t.c.Dial != "" {
+		h = &ForwardHandler{
+			t.s,
+			t.c.Dial,
+		}
+	} else {
+		h = &EmptyHandler{}
+	}
+	t.addMux(mux)
+	t.s.Serve(mux, h)
+	t.onMuxClosed(mux)
+}
+
 func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if mux := t.getMux(); mux != nil {
 		return mux, nil
@@ -200,19 +213,13 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	if t.c.Dial != "" {
-		if err := t.s.g.Go(func() {
-			t.s.Serve(mux, &ForwardHandler{
-				t.s,
-				t.c.Dial,
-			})
-		}); err != nil {
-			_ = mux.Close()
-			return nil, err
-		}
+	if err := t.s.g.Go(func() {
+		t.Serve(mux)
+	}); err != nil {
+		_ = mux.Close()
+		return nil, err
 	}
-	slog.Info("session dial:", conn.RemoteAddr(), "setup:", time.Since(start))
-	t.addMux(mux)
+	slog.Infof("tunnel %q: dial %v, setup: %v", t.name, conn.RemoteAddr(), time.Since(start))
 	return mux, nil
 }
 

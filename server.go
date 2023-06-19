@@ -115,7 +115,7 @@ func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) 
 func (s *Server) serveOne(accepted net.Conn, handler Handler) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("panic:", r, string(debug.Stack()))
+			slog.Errorf("panic: %v\n%s", r, string(debug.Stack()))
 		}
 	}()
 	ctx := s.ctx.withTimeout()

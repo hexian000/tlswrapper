@@ -40,10 +40,14 @@ func (l *Listener) Accept() (net.Conn, error) {
 		}
 		if refuse {
 			_ = conn.Close()
-			atomic.AddUint64(&l.s.Refused, 1)
+			if l.s != nil {
+				atomic.AddUint64(&l.s.Refused, 1)
+			}
 			continue
 		}
-		atomic.AddUint64(&l.s.Accepted, 1)
+		if l.s != nil {
+			atomic.AddUint64(&l.s.Accepted, 1)
+		}
 		return conn, err
 	}
 }
@@ -56,17 +60,7 @@ func (l *Listener) Addr() net.Addr {
 	return l.l.Addr()
 }
 
-func (l *Listener) Stat() Stats {
-	return Stats{
-		Accepted: atomic.LoadUint64(&l.s.Accepted),
-		Refused:  atomic.LoadUint64(&l.s.Refused),
-	}
-}
-
 // Wrap the raw listener
 func Wrap(l net.Listener, c *Config, s *Stats) *Listener {
-	if s == nil {
-		s = &Stats{}
-	}
 	return &Listener{l: l, c: *c, s: s}
 }
