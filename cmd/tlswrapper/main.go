@@ -30,7 +30,7 @@ func parseFlags() string {
 }
 
 func readConfig(path string) (*tlswrapper.Config, error) {
-	slog.Verbose("read config:", path)
+	slog.Info("config file:", path)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -59,12 +59,12 @@ func main() {
 		slog.Fatal("load config:", err)
 		os.Exit(1)
 	}
-	slog.Info("server starting")
 	if err := server.Start(); err != nil {
 		slog.Fatal("server start:", err)
 		os.Exit(1)
 	}
 	_, _ = daemon.Notify(daemon.Ready)
+	slog.Info("server is ready")
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)

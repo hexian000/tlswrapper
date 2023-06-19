@@ -95,7 +95,7 @@ func (s *Server) CountBytes() (read uint64, written uint64) {
 }
 
 func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) {
-	slog.Debug("forward to:", addr)
+	slog.Verbose("forward to:", addr)
 	dialed, err := s.dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
