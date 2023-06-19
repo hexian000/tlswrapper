@@ -64,6 +64,6 @@ func (l *Listener) Stat() Stats {
 }
 
 // Wrap the raw listener
-func Wrap(l net.Listener, c *Config) net.Listener {
+func Wrap(l net.Listener, c *Config) *Listener {
 	return &Listener{l: l, c: *c, s: &Stats{}}
 }

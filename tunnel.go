@@ -18,6 +18,7 @@ type Tunnel struct {
 	name   string
 	s      *Server
 	c      *TunnelConfig
+	l      *hlistener.Listener
 	mu     sync.RWMutex
 	mux    map[*yamux.Session]struct{}
 	dialMu sync.Mutex
@@ -39,12 +40,13 @@ func (t *Tunnel) Start() error {
 			return err
 		}
 		h := &TLSHandler{s: t.s, t: t}
-		l = hlistener.Wrap(l, &hlistener.Config{
+		t.l = hlistener.Wrap(l, &hlistener.Config{
 			Start:        uint32(t.s.c.StartupLimitStart),
 			Full:         uint32(t.s.c.StartupLimitFull),
 			Rate:         float64(t.s.c.StartupLimitRate) / 100.0,
 			Unauthorized: h.Unauthorized,
 		})
+		l = t.l
 		if err := t.s.g.Go(func() {
 			t.s.Serve(l, h)
 		}); err != nil {
