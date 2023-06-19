@@ -50,17 +50,22 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Error(err)
 		return
 	}
+	var muxHandler Handler
 	if h.t.c.Dial != "" {
-		if err := h.s.g.Go(func() {
-			h.s.Serve(mux, &ForwardHandler{
-				h.s,
-				h.t.c.Dial,
-			})
-		}); err != nil {
-			slog.Error(err)
-			_ = mux.Close()
-			return
+		muxHandler = &ForwardHandler{
+			h.s,
+			h.t.c.Dial,
 		}
+	} else {
+		muxHandler = &EmptyHandler{}
+	}
+	if err := h.s.g.Go(func() {
+		h.s.Serve(mux, muxHandler)
+		h.t.onMuxClosed()
+	}); err != nil {
+		slog.Error(err)
+		_ = mux.Close()
+		return
 	}
 	h.t.addMux(mux)
 	slog.Info("session accept:", conn.RemoteAddr(), "setup:", time.Since(start))
@@ -106,4 +111,11 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 		_ = dialed.Close()
 		return
 	}
+}
+
+// EmptyHandler rejects all connections
+type EmptyHandler struct{}
+
+func (h *EmptyHandler) Serve(ctx context.Context, accepted net.Conn) {
+	_ = accepted.Close()
 }

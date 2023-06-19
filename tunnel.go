@@ -15,21 +15,24 @@ import (
 )
 
 type Tunnel struct {
-	name   string
-	s      *Server
-	c      *TunnelConfig
-	l      *hlistener.Listener
-	mu     sync.RWMutex
-	mux    map[*yamux.Session]struct{}
-	dialMu sync.Mutex
+	name        string
+	s           *Server
+	c           *TunnelConfig
+	l           *hlistener.Listener
+	mu          sync.RWMutex
+	mux         map[*yamux.Session]struct{}
+	muxCloseSig chan struct{}
+	redialCount int
+	dialMu      sync.Mutex
 }
 
 func NewTunnel(name string, s *Server, c *TunnelConfig) *Tunnel {
 	return &Tunnel{
-		name: name,
-		s:    s,
-		c:    c,
-		mux:  make(map[*yamux.Session]struct{}),
+		name:        name,
+		s:           s,
+		c:           c,
+		mux:         make(map[*yamux.Session]struct{}),
+		muxCloseSig: make(chan struct{}, 1),
 	}
 }
 
@@ -68,6 +71,13 @@ func (t *Tunnel) Start() error {
 	return t.s.g.Go(t.run)
 }
 
+func (t *Tunnel) onMuxClosed() {
+	select {
+	case t.muxCloseSig <- struct{}{}:
+	default:
+	}
+}
+
 func (t *Tunnel) redial() {
 	ctx := t.s.ctx.withTimeout()
 	if ctx == nil {
@@ -76,8 +86,30 @@ func (t *Tunnel) redial() {
 	defer t.s.ctx.cancel(ctx)
 	_, err := t.dial(ctx)
 	if err != nil && !errors.Is(err, ErrNoSession) {
-		slog.Warning("redial:", err)
+		t.redialCount++
+		slog.Warningf("redial[%d]: [%T] %v", t.redialCount, err, err)
 	}
+	t.redialCount = 0
+}
+
+func (t *Tunnel) scheduleRedial() <-chan time.Time {
+	n := t.redialCount - 1
+	if n < 0 {
+		return make(<-chan time.Time)
+	}
+	var waitTimeConst = [...]time.Duration{
+		10 * time.Second,
+		30 * time.Second,
+		1 * time.Minute,
+		2 * time.Minute,
+		5 * time.Minute,
+		15 * time.Minute,
+	}
+	waitTime := 30 * time.Minute
+	if t.redialCount <= len(waitTimeConst) {
+		waitTime = waitTimeConst[t.redialCount-1]
+	}
+	return time.After(waitTime)
 }
 
 func (t *Tunnel) run() {
@@ -89,14 +121,15 @@ func (t *Tunnel) run() {
 			delete(t.mux, mux)
 		}
 	}()
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
 	for {
 		t.redial()
 		select {
+		case <-t.muxCloseSig:
+			// connection lost
+		case <-t.scheduleRedial():
 		case <-t.s.g.CloseC():
+			// server shutdown
 			return
-		case <-ticker.C:
 		}
 	}
 }
