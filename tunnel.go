@@ -71,10 +71,6 @@ func (t *Tunnel) Start() error {
 	return t.s.g.Go(t.run)
 }
 
-func (t *Tunnel) onMuxClosed(mux *yamux.Session) {
-	t.muxCloseSig <- mux
-}
-
 func (t *Tunnel) redial() {
 	ctx := t.s.ctx.withTimeout()
 	if ctx == nil {
@@ -179,7 +175,7 @@ func (t *Tunnel) Serve(mux *yamux.Session) {
 	}
 	t.addMux(mux)
 	t.s.Serve(mux, h)
-	t.onMuxClosed(mux)
+	t.muxCloseSig <- mux
 }
 
 func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
