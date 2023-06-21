@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/tlswrapper/formats"
 	"github.com/hexian000/tlswrapper/hlistener"
 	"github.com/hexian000/tlswrapper/meter"
 	"github.com/hexian000/tlswrapper/proto"
@@ -206,7 +207,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if tlscfg := t.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
 	} else {
-		slog.Warning("connection is not encrypted")
+		slog.Warningf("tunnel %q: connection is not encrypted", t.name)
 	}
 	handshake := &proto.Handshake{
 		Identity: t.c.Identity,
@@ -224,7 +225,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 		_ = mux.Close()
 		return nil, err
 	}
-	slog.Infof("tunnel %q: dial %v, setup: %v", t.name, conn.RemoteAddr(), time.Since(start))
+	slog.Infof("tunnel %q: dial %v, setup: %v", t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
 	return mux, nil
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/tlswrapper/formats"
 	"github.com/hexian000/tlswrapper/meter"
 	"github.com/hexian000/tlswrapper/proto"
 	"github.com/hexian000/tlswrapper/slog"
@@ -38,28 +39,28 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	if tlscfg := h.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
 	} else {
-		slog.Warning("connection is not encrypted")
+		slog.Warningf("tunnel %q: connection is not encrypted", h.t.name)
 	}
 	handshake := &proto.Handshake{
 		Identity: h.t.c.Identity,
 	}
 	if err := proto.RunHandshake(conn, handshake); err != nil {
-		slog.Error(err)
+		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
 		return
 	}
 	mux, err := yamux.Server(conn, h.s.getMuxConfig(true))
 	if err != nil {
-		slog.Error(err)
+		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
 		return
 	}
 	if err := h.s.g.Go(func() {
 		h.t.Serve(mux, handshake.Identity)
 	}); err != nil {
-		slog.Error(err)
+		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
 		_ = mux.Close()
 		return
 	}
-	slog.Infof("tunnel %q: accept %v, setup %v", h.t.name, conn.RemoteAddr(), time.Since(start))
+	slog.Infof("tunnel %q: accept %v, setup %v", h.t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
 }
 
 // ForwardHandler forwards connections to another plain address
@@ -92,12 +93,12 @@ type TunnelHandler struct {
 func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.t.MuxDial(ctx)
 	if err != nil {
-		slog.Errorf("tunnel %q: %s", h.t.name, err)
+		slog.Errorf("tunnel %q: (%T) %v", h.t.name, err, err)
 		_ = accepted.Close()
 		return
 	}
 	if err := h.s.f.Forward(accepted, dialed); err != nil {
-		slog.Errorf("tunnel [%s]: %s", h.t.name, err)
+		slog.Errorf("tunnel %q: (%T) %v", h.t.name, err, err)
 		_ = accepted.Close()
 		_ = dialed.Close()
 		return

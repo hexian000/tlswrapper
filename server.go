@@ -169,7 +169,6 @@ func (s *Server) Start() error {
 		} else {
 			name = fmt.Sprintf("[%d] %s", i, c.MuxDial)
 		}
-		name = fmt.Sprintf("[%d] %s", i, name)
 		t := s.addTunnel(name, &s.c.Tunnels[i])
 		slog.Verbosef("start tunnel: %s", t.name)
 		if err := t.Start(); err != nil {
