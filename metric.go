@@ -25,7 +25,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		b, err := json.MarshalIndent(s.c, "", "    ")
+		b, err := json.MarshalIndent(s.getConfig(), "", "    ")
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
@@ -80,7 +80,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			printf("%-20s: %s\n", "Last GC pause", "(never)")
 		}
 		printf("\n")
-		printf("%-20s: %v\n", "Tunnels", len(s.c.Tunnels))
+		printf("%-20s: %v\n", "Tunnels", len(s.getConfig().Tunnels))
 		printf("%-20s: %v\n", "Active Sessions", s.NumSessions())
 		printf("%-20s: %v\n", "Active Streams", s.f.Count())
 		printf("%-20s: %v\n", "Managed Routines", s.g.Count())

@@ -14,14 +14,18 @@ import (
 )
 
 type TunnelConfig struct {
-	// server listen address
+	// tunnel identity
+	Identity string `json:"identity"`
+	// tunnel listen address
 	MuxListen string `json:"muxlisten"`
-	// client dial address
+	// tunnel dial address
 	MuxDial string `json:"muxdial"`
-	// port forwarding listen address
+	// forwarding listen address
 	Listen string `json:"listen"`
-	// reverse port forwarding dial address
+	// forwarding dial address
 	Dial string `json:"dial"`
+	// reverse forwarding map[identity]address
+	ReverseListen map[string]string `json:"rlisten"`
 }
 
 // Config file

@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/hlistener"
 	"github.com/hexian000/tlswrapper/meter"
+	"github.com/hexian000/tlswrapper/proto"
 	"github.com/hexian000/tlswrapper/slog"
 )
 
@@ -20,7 +21,7 @@ type Tunnel struct {
 	c           *TunnelConfig
 	l           *hlistener.Listener
 	mu          sync.RWMutex
-	mux         map[*yamux.Session]struct{}
+	mux         map[*yamux.Session]string // map[mux]identity
 	muxCloseSig chan *yamux.Session
 	redialCount int
 	dialMu      sync.Mutex
@@ -31,7 +32,7 @@ func NewTunnel(name string, s *Server, c *TunnelConfig) *Tunnel {
 		name:        name,
 		s:           s,
 		c:           c,
-		mux:         make(map[*yamux.Session]struct{}),
+		mux:         make(map[*yamux.Session]string),
 		muxCloseSig: make(chan *yamux.Session, 16),
 	}
 }
@@ -43,10 +44,11 @@ func (t *Tunnel) Start() error {
 			return err
 		}
 		h := &TLSHandler{s: t.s, t: t}
+		c := t.s.getConfig()
 		t.l = hlistener.Wrap(l, &hlistener.Config{
-			Start:        uint32(t.s.c.StartupLimitStart),
-			Full:         uint32(t.s.c.StartupLimitFull),
-			Rate:         float64(t.s.c.StartupLimitRate) / 100.0,
+			Start:        uint32(c.StartupLimitStart),
+			Full:         uint32(c.StartupLimitFull),
+			Rate:         float64(c.StartupLimitRate) / 100.0,
 			Unauthorized: h.Unauthorized,
 		}, t.s.lstats)
 		l = t.l
@@ -129,7 +131,7 @@ func (t *Tunnel) run() {
 	}
 }
 
-func (t *Tunnel) addMux(mux *yamux.Session) {
+func (t *Tunnel) addMux(mux *yamux.Session, identity string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for mux := range t.mux {
@@ -137,7 +139,7 @@ func (t *Tunnel) addMux(mux *yamux.Session) {
 			delete(t.mux, mux)
 		}
 	}
-	t.mux[mux] = struct{}{}
+	t.mux[mux] = identity
 }
 
 func (t *Tunnel) getMux() *yamux.Session {
@@ -163,9 +165,14 @@ func (t *Tunnel) NumSessions() int {
 	return n
 }
 
-func (t *Tunnel) Serve(mux *yamux.Session) {
+func (t *Tunnel) Serve(mux *yamux.Session, identity string) {
 	var h Handler
-	if t.c.Dial != "" {
+	if dialAddr, ok := t.c.ReverseListen[identity]; ok {
+		h = &ForwardHandler{
+			t.s,
+			dialAddr,
+		}
+	} else if dialAddr := t.c.Dial; dialAddr != "" {
 		h = &ForwardHandler{
 			t.s,
 			t.c.Dial,
@@ -173,7 +180,7 @@ func (t *Tunnel) Serve(mux *yamux.Session) {
 	} else {
 		h = &EmptyHandler{}
 	}
-	t.addMux(mux)
+	t.addMux(mux, identity)
 	t.s.Serve(mux, h)
 	t.muxCloseSig <- mux
 }
@@ -194,23 +201,25 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.s.c.SetConnParams(conn)
+	t.s.getConfig().SetConnParams(conn)
 	conn = meter.Conn(conn, t.s.meter)
-	if t.s.tlscfg != nil {
-		tlsConn := tls.Client(conn, t.s.tlscfg)
-		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			return nil, err
-		}
-		conn = tlsConn
+	if tlscfg := t.s.getTLSConfig(); tlscfg != nil {
+		conn = tls.Client(conn, tlscfg)
 	} else {
 		slog.Warning("connection is not encrypted")
 	}
-	mux, err := yamux.Client(conn, t.s.muxcfg)
+	handshake := &proto.Handshake{
+		Identity: t.c.Identity,
+	}
+	if err := proto.RunHandshake(conn, handshake); err != nil {
+		return nil, err
+	}
+	mux, err := yamux.Client(conn, t.s.getMuxConfig(false))
 	if err != nil {
 		return nil, err
 	}
 	if err := t.s.g.Go(func() {
-		t.Serve(mux)
+		t.Serve(mux, handshake.Identity)
 	}); err != nil {
 		_ = mux.Close()
 		return nil, err

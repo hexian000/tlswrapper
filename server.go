@@ -32,6 +32,7 @@ type Server struct {
 	tlscfg       *tls.Config
 	muxcfg       *yamux.Config
 	servermuxcfg *yamux.Config
+	cfgMu        sync.RWMutex
 
 	f      forwarder.Forwarder
 	meter  *meter.ConnMetrics
@@ -162,9 +163,11 @@ func (s *Server) Start() error {
 		}
 	}
 	for i, c := range s.c.Tunnels {
-		name := c.MuxListen
-		if name == "" {
-			name = c.MuxDial
+		var name string
+		if c.MuxListen != "" {
+			name = fmt.Sprintf("[%d] %s", i, c.MuxListen)
+		} else {
+			name = fmt.Sprintf("[%d] %s", i, c.MuxDial)
 		}
 		name = fmt.Sprintf("[%d] %s", i, name)
 		t := s.addTunnel(name, &s.c.Tunnels[i])
@@ -193,10 +196,13 @@ func (s *Server) Shutdown() error {
 
 // Load or reload configuration
 func (s *Server) LoadConfig(cfg *Config) error {
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
 	if s.c != nil {
 		if !reflect.DeepEqual(s.c.Tunnels, cfg.Tunnels) {
-			slog.Warning("tunnel changes are ignored")
+			slog.Warning("tunnel changes could not be reloaded")
 		}
+		cfg.Tunnels = s.c.Tunnels
 	}
 	tlscfg, err := cfg.NewTLSConfig(cfg.ServerName)
 	if err != nil {
@@ -207,4 +213,25 @@ func (s *Server) LoadConfig(cfg *Config) error {
 	s.muxcfg = cfg.NewMuxConfig(false)
 	s.servermuxcfg = cfg.NewMuxConfig(true)
 	return nil
+}
+
+func (s *Server) getConfig() *Config {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.c
+}
+
+func (s *Server) getTLSConfig() *tls.Config {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.tlscfg
+}
+
+func (s *Server) getMuxConfig(isServer bool) *yamux.Config {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	if isServer {
+		return s.servermuxcfg
+	}
+	return s.muxcfg
 }

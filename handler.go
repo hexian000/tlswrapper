@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/meter"
+	"github.com/hexian000/tlswrapper/proto"
 	"github.com/hexian000/tlswrapper/slog"
 )
 
@@ -32,26 +33,27 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	atomic.AddUint32(&h.unauthorized, 1)
 	defer atomic.AddUint32(&h.unauthorized, ^uint32(0))
 	start := time.Now()
-	h.s.c.SetConnParams(conn)
+	h.s.getConfig().SetConnParams(conn)
 	conn = meter.Conn(conn, h.s.meter)
-	if h.s.tlscfg != nil {
-		tlsConn := tls.Server(conn, h.s.tlscfg)
-		err := tlsConn.HandshakeContext(ctx)
-		if err != nil {
-			slog.Error(err)
-			return
-		}
-		conn = tlsConn
+	if tlscfg := h.s.getTLSConfig(); tlscfg != nil {
+		conn = tls.Server(conn, tlscfg)
 	} else {
 		slog.Warning("connection is not encrypted")
 	}
-	mux, err := yamux.Server(conn, h.s.servermuxcfg)
+	handshake := &proto.Handshake{
+		Identity: h.t.c.Identity,
+	}
+	if err := proto.RunHandshake(conn, handshake); err != nil {
+		slog.Error(err)
+		return
+	}
+	mux, err := yamux.Server(conn, h.s.getMuxConfig(true))
 	if err != nil {
 		slog.Error(err)
 		return
 	}
 	if err := h.s.g.Go(func() {
-		h.t.Serve(mux)
+		h.t.Serve(mux, handshake.Identity)
 	}); err != nil {
 		slog.Error(err)
 		_ = mux.Close()
