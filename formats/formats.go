@@ -100,3 +100,57 @@ func DurationNanos(d time.Duration) string {
 	}
 	return fmt.Sprintf("%d:%02d.%09d", sign*minutes, seconds, nanos)
 }
+
+func Duration(d time.Duration) string {
+	sign := 1
+	if d < 0 {
+		sign = -1
+		d = -d
+	}
+	nanos := int64(d % 1000)
+	d /= 1000
+	micros := int64(d % 1000)
+	d /= 1000
+	millis := int64(d % 1000)
+	d /= 1000
+	seconds := int(d % 60)
+	d /= 60
+	minutes := int(d % 60)
+	d /= 60
+	hours := int(d % 24)
+	d /= 24
+	days := int(d)
+	if days != 0 {
+		mant := float64(seconds) + float64(millis)*1e-3 + float64(micros)*1e-6 + float64(nanos)*1e-9
+		return fmt.Sprintf("%dd%02d:%02d:%02.0f", sign*days, hours, minutes, mant)
+	} else if hours != 0 {
+		mant := float64(seconds) + float64(millis)*1e-3 + float64(micros)*1e-6 + float64(nanos)*1e-9
+		return fmt.Sprintf("%d:%02d:%02.0f", sign*hours, minutes, mant)
+	} else if minutes != 0 {
+		mant := float64(seconds) + float64(millis)*1e-3 + float64(micros)*1e-6 + float64(nanos)*1e-9
+		return fmt.Sprintf("%d:%02.0f", sign*minutes, mant)
+	} else if seconds != 0 {
+		mant := float64(seconds) + float64(millis)*1e-3 + float64(micros)*1e-6 + float64(nanos)*1e-9
+		if mant >= 10.0 {
+			return fmt.Sprintf("%.02fs", float64(sign)*mant)
+		}
+		return fmt.Sprintf("%.03fs", float64(sign)*mant)
+	} else if millis != 0 {
+		mant := float64(millis) + float64(micros)*1e-3 + float64(nanos)*1e-6
+		if mant >= 100.0 {
+			return fmt.Sprintf("%.01fms", float64(sign)*mant)
+		} else if mant >= 10.0 {
+			return fmt.Sprintf("%.02fms", float64(sign)*mant)
+		}
+		return fmt.Sprintf("%.03fms", float64(sign)*mant)
+	} else if micros != 0 {
+		mant := float64(micros) + float64(nanos)*1e-3
+		if mant >= 100.0 {
+			return fmt.Sprintf("%.01fµs", float64(sign)*mant)
+		} else if mant >= 10.0 {
+			return fmt.Sprintf("%.02fµs", float64(sign)*mant)
+		}
+		return fmt.Sprintf("%.03fµs", float64(sign)*mant)
+	}
+	return fmt.Sprintf("%dns", int64(sign)*nanos)
+}

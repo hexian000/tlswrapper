@@ -73,11 +73,11 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %s\n", "Stack Allocated", formats.IECBytes(float64(memstats.StackSys)))
 		printf("%-20s: %s\n", "Total Allocated", formats.IECBytes(float64(memstats.Sys-memstats.HeapReleased)))
 		if memstats.LastGC > 0 {
-			printf("%-20s: %v ago\n", "Last GC", time.Since(time.Unix(0, int64(memstats.LastGC))))
-			printf("%-20s: %v\n", "Last GC pause", time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256]))
+			printf("%-20s: %s ago\n", "Last GC", formats.Duration(time.Since(time.Unix(0, int64(memstats.LastGC)))))
+			printf("%-20s: %s\n", "Last GC pause", formats.Duration(time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256])))
 		} else {
-			printf("%-20s: %s\n", "Last GC", "(none)")
-			printf("%-20s: %s\n", "Last GC pause", "(none)")
+			printf("%-20s: %s\n", "Last GC", "(never)")
+			printf("%-20s: %s\n", "Last GC pause", "(never)")
 		}
 		printf("\n")
 		printf("%-20s: %v\n", "Tunnels", len(s.c.Tunnels))
@@ -109,10 +109,10 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		debug.FreeOSMemory()
 		var memstats runtime.MemStats
 		runtime.ReadMemStats(&memstats)
-		printf("%-20s: %v\n", "Live Heap", formats.IECBytes(float64(memstats.HeapSys-memstats.HeapReleased)))
-		printf("%-20s: %v\n", "Live Stack", formats.IECBytes(float64(memstats.StackSys)))
-		printf("%-20s: %v\n", "Allocated", formats.IECBytes(float64(memstats.Sys-memstats.HeapReleased)))
-		printf("%-20s: %v\n", "Time Cost", time.Since(start))
+		printf("%-20s: %s\n", "Live Heap", formats.IECBytes(float64(memstats.HeapSys-memstats.HeapReleased)))
+		printf("%-20s: %s\n", "Live Stack", formats.IECBytes(float64(memstats.StackSys)))
+		printf("%-20s: %s\n", "Allocated", formats.IECBytes(float64(memstats.Sys-memstats.HeapReleased)))
+		printf("%-20s: %s\n", "Time Cost", formats.Duration(time.Since(start)))
 	})
 	mux.HandleFunc("/stack", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -140,7 +140,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		n := runtime.Stack(buf[:], true)
 		printf("%s\n", string(buf[:n]))
 		printf("\n==============================\n")
-		printf("generated in %v\n", time.Since(start))
+		printf("generated in %s\n", formats.Duration(time.Since(start)))
 		printf("runtime: %s\n", runtime.Version())
 	})
 	return http.Serve(l, mux)
