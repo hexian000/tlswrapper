@@ -6,8 +6,8 @@ import (
 )
 
 type ConnMetrics struct {
-	Read    uint64
-	Written uint64
+	Read    atomic.Uint64
+	Written atomic.Uint64
 }
 
 func Conn(c net.Conn, m *ConnMetrics) net.Conn {
@@ -21,12 +21,12 @@ type conn struct {
 
 func (c *conn) Read(b []byte) (n int, err error) {
 	n, err = c.Conn.Read(b)
-	atomic.AddUint64(&c.m.Read, uint64(n))
+	c.m.Read.Add(uint64(n))
 	return
 }
 
 func (c *conn) Write(b []byte) (n int, err error) {
 	n, err = c.Conn.Write(b)
-	atomic.AddUint64(&c.m.Written, uint64(n))
+	c.m.Written.Add(uint64(n))
 	return
 }

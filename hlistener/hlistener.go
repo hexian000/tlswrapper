@@ -7,7 +7,8 @@ import (
 )
 
 type Stats struct {
-	Accepted, Refused uint64
+	Accepted atomic.Uint64
+	Refused  atomic.Uint64
 }
 
 type Config struct {
@@ -41,12 +42,12 @@ func (l *Listener) Accept() (net.Conn, error) {
 		if refuse {
 			_ = conn.Close()
 			if l.s != nil {
-				atomic.AddUint64(&l.s.Refused, 1)
+				l.s.Refused.Add(1)
 			}
 			continue
 		}
 		if l.s != nil {
-			atomic.AddUint64(&l.s.Accepted, 1)
+			l.s.Accepted.Add(1)
 		}
 		return conn, err
 	}

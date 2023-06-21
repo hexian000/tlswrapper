@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"runtime/debug"
 	"sync"
-	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/forwarder"
@@ -92,15 +91,11 @@ func (s *Server) NumSessions() int {
 }
 
 func (s *Server) CountBytes() (read uint64, written uint64) {
-	read = atomic.LoadUint64(&s.meter.Read)
-	written = atomic.LoadUint64(&s.meter.Written)
-	return
+	return s.meter.Read.Load(), s.meter.Written.Load()
 }
 
-func (s *Server) CountConns() (accepted uint64, refused uint64) {
-	accepted = atomic.LoadUint64(&s.lstats.Accepted)
-	refused = atomic.LoadUint64(&s.lstats.Refused)
-	return
+func (s *Server) CountAccepts() (accepted uint64, refused uint64) {
+	return s.lstats.Accepted.Load(), s.lstats.Refused.Load()
 }
 
 func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) {
