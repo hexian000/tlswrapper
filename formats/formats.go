@@ -128,7 +128,7 @@ func Duration(d time.Duration) string {
 		return fmt.Sprintf("%d:%02d:%02.0f", sign*hours, minutes, mant)
 	} else if minutes != 0 {
 		mant := float64(seconds) + float64(millis)*1e-3 + float64(micros)*1e-6 + float64(nanos)*1e-9
-		return fmt.Sprintf("%d:%02.0f", sign*minutes, mant)
+		return fmt.Sprintf("%d:%04.1f", sign*minutes, mant)
 	} else if seconds != 0 {
 		mant := float64(seconds) + float64(millis)*1e-3 + float64(micros)*1e-6 + float64(nanos)*1e-9
 		if mant >= 10.0 {
