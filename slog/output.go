@@ -65,5 +65,5 @@ func (l *lineOutput) Write(m logMessage) {
 		buf = append(buf, '\n')
 	}
 	l.buf = buf
-	l.out.Write(buf)
+	_, _ = l.out.Write(buf)
 }

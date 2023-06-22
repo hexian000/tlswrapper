@@ -61,7 +61,7 @@ func TestTLS(t *testing.T) {
 		b := make([]byte, 256)
 		n, _ := conn.Read(b)
 		println("tls: echo")
-		conn.Write(b[:n])
+		_, _ = conn.Write(b[:n])
 		_ = conn.Close()
 	}()
 	println("tls: dial")

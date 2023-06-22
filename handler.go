@@ -34,6 +34,12 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	atomic.AddUint32(&h.unauthorized, 1)
 	defer atomic.AddUint32(&h.unauthorized, ^uint32(0))
 	start := time.Now()
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
+			return
+		}
+	}
 	c := h.s.getConfig()
 	c.SetConnParams(conn)
 	conn = meter.Conn(conn, h.s.meter)
@@ -54,6 +60,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
 		return
 	}
+	_ = conn.SetDeadline(time.Time{})
 	tun := h.t
 	if handshake.Identity != "" {
 		if t := h.s.findTunnel(handshake.Identity); t != nil {
@@ -117,6 +124,6 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 // EmptyHandler rejects all connections
 type EmptyHandler struct{}
 
-func (h *EmptyHandler) Serve(ctx context.Context, accepted net.Conn) {
+func (h *EmptyHandler) Serve(_ context.Context, accepted net.Conn) {
 	_ = accepted.Close()
 }

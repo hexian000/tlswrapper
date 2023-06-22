@@ -28,7 +28,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		b, err := json.MarshalIndent(s.getConfig(), "", "    ")
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
+			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache")

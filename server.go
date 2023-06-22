@@ -21,7 +21,6 @@ import (
 const network = "tcp"
 
 var (
-	ErrShutdown  = errors.New("server is shutting down")
 	ErrNoSession = errors.New("no session available")
 )
 
@@ -162,7 +161,10 @@ func (s *Server) Start() error {
 			return err
 		}
 		if err := s.g.Go(func() {
-			RunHTTPServer(l, s)
+			err := RunHTTPServer(l, s)
+			if err != nil {
+				slog.Errorf("(%T) %v", err, err)
+			}
 		}); err != nil {
 			return err
 		}
@@ -208,7 +210,7 @@ func (s *Server) Shutdown() error {
 	return nil
 }
 
-// Load or reload configuration
+// LoadConfig reloads the configuration file
 func (s *Server) LoadConfig(cfg *Config) error {
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()

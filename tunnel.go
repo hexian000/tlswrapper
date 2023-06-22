@@ -197,6 +197,11 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return nil, err
+		}
+	}
 	c := t.s.getConfig()
 	c.SetConnParams(conn)
 	conn = meter.Conn(conn, t.s.meter)
@@ -215,6 +220,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	_ = conn.SetDeadline(time.Time{})
 	tun := t
 	if handshake.Identity != "" {
 		if found := t.s.findTunnel(handshake.Identity); found != nil {

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-var iec_units = [...]string{
+var iecUnits = [...]string{
 	"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB",
 }
 
@@ -16,20 +16,20 @@ func isFinite(f float64) bool {
 
 func IECBytes(value float64) string {
 	if !isFinite(value) || value < 8192.0 {
-		return fmt.Sprintf("%.0f %s", value, iec_units[0])
+		return fmt.Sprintf("%.0f %s", value, iecUnits[0])
 	}
 	n := (int(math.Log2(value)) - 3) / 10
-	if n >= len(iec_units) {
-		n = len(iec_units) - 1
+	if n >= len(iecUnits) {
+		n = len(iecUnits) - 1
 	}
 	v := math.Ldexp(value, n*-10)
 	if v < 10.0 {
-		return fmt.Sprintf("%.02f %s", v, iec_units[n])
+		return fmt.Sprintf("%.02f %s", v, iecUnits[n])
 	}
 	if v < 100.0 {
-		return fmt.Sprintf("%.01f %s", v, iec_units[n])
+		return fmt.Sprintf("%.01f %s", v, iecUnits[n])
 	}
-	return fmt.Sprintf("%.0f %s", v, iec_units[n])
+	return fmt.Sprintf("%.0f %s", v, iecUnits[n])
 }
 
 func DurationSeconds(d time.Duration) string {
