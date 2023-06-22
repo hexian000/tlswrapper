@@ -28,6 +28,9 @@ type TunnelConfig struct {
 
 // Config file
 type Config struct {
+	// local site identity
+	Identity string `json:"identity"`
+	// tunnel configs
 	Tunnels []TunnelConfig `json:"tunnel"`
 	// (optional) health check and metrics, default to "" (disabled)
 	HTTPListen string `json:"httplisten"`

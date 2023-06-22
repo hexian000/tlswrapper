@@ -197,7 +197,8 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.s.getConfig().SetConnParams(conn)
+	c := t.s.getConfig()
+	c.SetConnParams(conn)
 	conn = meter.Conn(conn, t.s.meter)
 	if tlscfg := t.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
@@ -205,7 +206,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 		slog.Warningf("tunnel %q: connection is not encrypted", t.name)
 	}
 	handshake := &proto.Handshake{
-		Identity: t.c.Identity,
+		Identity: c.Identity,
 	}
 	if err := proto.RunHandshake(conn, handshake); err != nil {
 		return nil, err
@@ -216,8 +217,8 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	}
 	tun := t
 	if handshake.Identity != "" {
-		if t := t.s.findTunnel(handshake.Identity); t != nil {
-			tun = t
+		if found := t.s.findTunnel(handshake.Identity); found != nil {
+			tun = found
 		} else {
 			slog.Warningf("unknown remote identity %q", handshake.Identity)
 		}

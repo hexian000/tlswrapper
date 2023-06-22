@@ -34,7 +34,8 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	atomic.AddUint32(&h.unauthorized, 1)
 	defer atomic.AddUint32(&h.unauthorized, ^uint32(0))
 	start := time.Now()
-	h.s.getConfig().SetConnParams(conn)
+	c := h.s.getConfig()
+	c.SetConnParams(conn)
 	conn = meter.Conn(conn, h.s.meter)
 	if tlscfg := h.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
@@ -42,7 +43,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Warningf("tunnel %q: connection is not encrypted", h.t.name)
 	}
 	handshake := &proto.Handshake{
-		Identity: h.t.c.Identity,
+		Identity: c.Identity,
 	}
 	if err := proto.RunHandshake(conn, handshake); err != nil {
 		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
