@@ -17,23 +17,23 @@ import (
 )
 
 type Tunnel struct {
-	name        string
+	name        string // used for logging
 	s           *Server
 	c           *TunnelConfig
 	l           *hlistener.Listener
 	mu          sync.RWMutex
-	mux         map[*yamux.Session]string // map[mux]identity
+	mux         map[*yamux.Session]struct{}
 	muxCloseSig chan *yamux.Session
 	redialCount int
 	dialMu      sync.Mutex
 }
 
-func NewTunnel(name string, s *Server, c *TunnelConfig) *Tunnel {
+func NewTunnel(s *Server, c *TunnelConfig) *Tunnel {
 	return &Tunnel{
-		name:        name,
+		name:        c.Identity,
 		s:           s,
 		c:           c,
-		mux:         make(map[*yamux.Session]string),
+		mux:         make(map[*yamux.Session]struct{}),
 		muxCloseSig: make(chan *yamux.Session, 16),
 	}
 }
@@ -132,7 +132,7 @@ func (t *Tunnel) run() {
 	}
 }
 
-func (t *Tunnel) addMux(mux *yamux.Session, identity string) {
+func (t *Tunnel) addMux(mux *yamux.Session) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for mux := range t.mux {
@@ -140,7 +140,7 @@ func (t *Tunnel) addMux(mux *yamux.Session, identity string) {
 			delete(t.mux, mux)
 		}
 	}
-	t.mux[mux] = identity
+	t.mux[mux] = struct{}{}
 }
 
 func (t *Tunnel) getMux() *yamux.Session {
@@ -166,14 +166,9 @@ func (t *Tunnel) NumSessions() int {
 	return n
 }
 
-func (t *Tunnel) Serve(mux *yamux.Session, identity string) {
+func (t *Tunnel) Serve(mux *yamux.Session) {
 	var h Handler
-	if dialAddr, ok := t.c.ReverseListen[identity]; ok {
-		h = &ForwardHandler{
-			t.s,
-			dialAddr,
-		}
-	} else if dialAddr := t.c.Dial; dialAddr != "" {
+	if t.c.Dial != "" {
 		h = &ForwardHandler{
 			t.s,
 			t.c.Dial,
@@ -181,7 +176,7 @@ func (t *Tunnel) Serve(mux *yamux.Session, identity string) {
 	} else {
 		h = &EmptyHandler{}
 	}
-	t.addMux(mux, identity)
+	t.addMux(mux)
 	t.s.Serve(mux, h)
 	t.muxCloseSig <- mux
 }
@@ -219,8 +214,16 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	tun := t
+	if handshake.Identity != "" {
+		if t := t.s.findTunnel(handshake.Identity); t != nil {
+			tun = t
+		} else {
+			slog.Warningf("unknown remote identity %q", handshake.Identity)
+		}
+	}
 	if err := t.s.g.Go(func() {
-		t.Serve(mux, handshake.Identity)
+		tun.Serve(mux)
 	}); err != nil {
 		_ = mux.Close()
 		return nil, err

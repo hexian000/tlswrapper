@@ -24,8 +24,6 @@ type TunnelConfig struct {
 	Listen string `json:"listen"`
 	// forwarding dial address
 	Dial string `json:"dial"`
-	// reverse forwarding map[identity]address
-	ReverseListen map[string]string `json:"rlisten"`
 }
 
 // Config file

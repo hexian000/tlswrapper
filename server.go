@@ -39,8 +39,8 @@ type Server struct {
 	lstats *hlistener.Stats
 
 	listeners map[string]net.Listener
-	tunnels   map[string]*Tunnel
-	tunnelsMu sync.Mutex
+	tunnels   map[string]*Tunnel // map[identity]tunnel
+	tunnelsMu sync.RWMutex
 	ctx       contextMgr
 
 	dialer net.Dialer
@@ -65,17 +65,23 @@ func NewServer(cfg *Config) *Server {
 	}
 }
 
-func (s *Server) addTunnel(name string, c *TunnelConfig) *Tunnel {
-	t := NewTunnel(name, s, c)
+func (s *Server) addTunnel(c *TunnelConfig) *Tunnel {
+	t := NewTunnel(s, c)
 	s.tunnelsMu.Lock()
 	defer s.tunnelsMu.Unlock()
-	s.tunnels[name] = t
+	s.tunnels[c.Identity] = t
 	return t
 }
 
+func (s *Server) findTunnel(identity string) *Tunnel {
+	s.tunnelsMu.RLock()
+	defer s.tunnelsMu.RUnlock()
+	return s.tunnels[identity]
+}
+
 func (s *Server) getTunnels() []*Tunnel {
-	s.tunnelsMu.Lock()
-	defer s.tunnelsMu.Unlock()
+	s.tunnelsMu.RLock()
+	defer s.tunnelsMu.RUnlock()
 	tunnels := make([]*Tunnel, 0, len(s.tunnels))
 	for _, t := range s.tunnels {
 		tunnels = append(tunnels, t)
@@ -162,15 +168,25 @@ func (s *Server) Start() error {
 			return err
 		}
 	}
-	for i, c := range s.c.Tunnels {
-		var name string
-		if c.MuxListen != "" {
-			name = fmt.Sprintf("[%d] %s", i, c.MuxListen)
-		} else {
-			name = fmt.Sprintf("[%d] %s", i, c.MuxDial)
+	for i := range s.c.Tunnels {
+		c := &s.c.Tunnels[i]
+		if c.Identity == "" {
+			if c.MuxListen != "" {
+				c.Identity = fmt.Sprintf("[%d] %s", i, c.MuxListen)
+			} else if c.MuxDial != "" {
+				c.Identity = fmt.Sprintf("[%d] %s", i, c.MuxDial)
+			}
+			if c.Identity == "" {
+				slog.Warningf("tunnel #%d is unreachable", i)
+				continue
+			}
+			slog.Infof("tunnel #%d is using default identity %q", i, c.Identity)
 		}
-		t := s.addTunnel(name, &s.c.Tunnels[i])
-		slog.Verbosef("start tunnel: %s", t.name)
+		if s.findTunnel(c.Identity) != nil {
+			return fmt.Errorf("tunnel #%d redefined existing identity %q", i, c.Identity)
+		}
+		t := s.addTunnel(c)
+		slog.Debugf("start tunnel #%d: %q", i, c.Identity)
 		if err := t.Start(); err != nil {
 			return err
 		}

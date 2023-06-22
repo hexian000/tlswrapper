@@ -53,14 +53,22 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
 		return
 	}
+	tun := h.t
+	if handshake.Identity != "" {
+		if t := h.s.findTunnel(handshake.Identity); t != nil {
+			tun = t
+		} else {
+			slog.Warningf("unknown remote identity %q", handshake.Identity)
+		}
+	}
 	if err := h.s.g.Go(func() {
-		h.t.Serve(mux, handshake.Identity)
+		tun.Serve(mux)
 	}); err != nil {
-		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
+		slog.Errorf("tunnel %q: accept %v, (%T) %v", tun.name, conn.RemoteAddr(), err, err)
 		_ = mux.Close()
 		return
 	}
-	slog.Infof("tunnel %q: accept %v, setup %v", h.t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	slog.Infof("tunnel %q: accept %v, setup %v", tun.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
 }
 
 // ForwardHandler forwards connections to another plain address
