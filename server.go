@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"reflect"
 	"runtime/debug"
 	"sync"
 
@@ -214,9 +213,6 @@ func (s *Server) LoadConfig(cfg *Config) error {
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
 	if s.c != nil {
-		if !reflect.DeepEqual(s.c.Tunnels, cfg.Tunnels) {
-			slog.Warning("tunnel changes could not be reloaded")
-		}
 		cfg.Tunnels = s.c.Tunnels
 	}
 	tlscfg, err := cfg.NewTLSConfig(cfg.ServerName)
