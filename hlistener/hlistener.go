@@ -7,8 +7,8 @@ import (
 )
 
 type Stats struct {
+	Total    atomic.Uint64
 	Accepted atomic.Uint64
-	Refused  atomic.Uint64
 }
 
 type Config struct {
@@ -30,6 +30,9 @@ func (l *Listener) Accept() (net.Conn, error) {
 		if err != nil {
 			return conn, err
 		}
+		if l.s != nil {
+			l.s.Total.Add(1)
+		}
 		n := l.c.Unauthorized()
 		refuse := false
 		if n >= l.c.Start {
@@ -41,9 +44,6 @@ func (l *Listener) Accept() (net.Conn, error) {
 		}
 		if refuse {
 			_ = conn.Close()
-			if l.s != nil {
-				l.s.Refused.Add(1)
-			}
 			continue
 		}
 		if l.s != nil {

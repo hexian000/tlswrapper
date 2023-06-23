@@ -9,6 +9,7 @@ import (
 	"net"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/forwarder"
@@ -43,6 +44,8 @@ type Server struct {
 
 	dialer net.Dialer
 	g      routines.Group
+
+	authorized atomic.Uint64
 }
 
 // NewServer creates a server object
@@ -99,8 +102,8 @@ func (s *Server) CountBytes() (read uint64, written uint64) {
 	return s.meter.Read.Load(), s.meter.Written.Load()
 }
 
-func (s *Server) CountAccepts() (accepted uint64, refused uint64) {
-	return s.lstats.Accepted.Load(), s.lstats.Refused.Load()
+func (s *Server) CountAccepts() (authorized uint64, accepted uint64, total uint64) {
+	return s.authorized.Load(), s.lstats.Accepted.Load(), s.lstats.Total.Load()
 }
 
 func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) {

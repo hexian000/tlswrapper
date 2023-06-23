@@ -23,16 +23,16 @@ type TLSHandler struct {
 	s *Server
 	t *Tunnel
 
-	unauthorized uint32
+	unauthorized atomic.Uint32
 }
 
 func (h *TLSHandler) Unauthorized() uint32 {
-	return atomic.LoadUint32(&h.unauthorized)
+	return h.unauthorized.Load()
 }
 
 func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
-	atomic.AddUint32(&h.unauthorized, 1)
-	defer atomic.AddUint32(&h.unauthorized, ^uint32(0))
+	h.unauthorized.Add(1)
+	defer h.unauthorized.Add(^uint32(0))
 	start := time.Now()
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
@@ -61,6 +61,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		return
 	}
 	_ = conn.SetDeadline(time.Time{})
+	h.s.authorized.Add(1)
 	tun := h.t
 	if handshake.Identity != "" {
 		if t := h.s.findTunnel(handshake.Identity); t != nil {
