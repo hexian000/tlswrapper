@@ -31,7 +31,7 @@ type forwarder struct {
 func New(maxConn int, g routines.Group) Forwarder {
 	return &forwarder{
 		conn:    make(map[net.Conn]struct{}),
-		counter: make(chan struct{}, maxConn*2),
+		counter: make(chan struct{}, maxConn),
 		closeCh: make(chan struct{}),
 		g:       g,
 	}

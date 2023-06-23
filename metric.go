@@ -81,7 +81,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		}
 		printf("\n")
 		printf("%-20s: %v\n", "Tunnels", len(s.getConfig().Tunnels))
-		printf("%-20s: %v / %v\n", "Sessions / Forwards", s.NumSessions(), s.f.Count())
+		printf("%-20s: %v / %v\n", "Sessions / Streams", s.NumSessions(), s.f.Count())
 		printf("%-20s: %v\n", "Managed Routines", s.g.Count())
 		rx, tx := s.CountBytes()
 		printf("%-20s: %s / %s\n", "Traffic (Rx/Tx)", formats.IECBytes(float64(rx)), formats.IECBytes(float64(tx)))
