@@ -61,7 +61,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		}
 		printf("tlswrapper %s\n  %s\n\n", Version, Homepage)
 		printf("%-20s: %v\n", "Server Time", now.Format(time.RFC3339))
-		printf("%-20s: %v\n", "Uptime", formats.DurationSeconds(now.Sub(uptime)))
+		printf("%-20s: %s\n", "Uptime", formats.Duration(now.Sub(uptime)))
 		printf("%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
 		printf("%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
 		var memstats runtime.MemStats
