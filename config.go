@@ -54,27 +54,27 @@ type Config struct {
 	StartupLimitRate int `json:"startuplimitrate"`
 	// (optional) hard limit of concurrent unauthenticated connections, default to 60
 	StartupLimitFull int `json:"startuplimitfull"`
-	// (optional) max concurrent connections, default to 4096
+	// (optional) max concurrent streams, default to 4096
 	MaxConn int `json:"maxconn"`
 	// (optional) mux accept backlog, default to 16, you may not want to change this
 	AcceptBacklog int `json:"backlog"`
 	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
 	StreamWindow uint32 `json:"window"`
-	// (optional) generic request timeout in seconds, default to 30, increase on long fat networks
+	// (optional) generic request timeout in seconds, default to 30
 	RequestTimeout int `json:"timeout"`
-	// (optional) data write request timeout in seconds, default to 30, used to detect network failes early, increase on slow networks
+	// (optional) data write request timeout in seconds, default to 15, used to detect network failes early
 	WriteTimeout int `json:"writetimeout"`
 	// (optional) log output, default to stderr
 	Log string `json:"log"`
-	// (optional) log output, default to 2 (info)
+	// (optional) log output, default to 4 (info)
 	LogLevel int `json:"loglevel"`
 }
 
 var DefaultConfig = Config{
 	ServerName:        "example.com",
 	NoDelay:           true,
-	KeepAlive:         25, // every 25s
-	ServerKeepAlive:   0,
+	KeepAlive:         25,  // every 25s
+	ServerKeepAlive:   300, // every 5min
 	StartupLimitStart: 10,
 	StartupLimitRate:  30,
 	StartupLimitFull:  60,
@@ -82,7 +82,7 @@ var DefaultConfig = Config{
 	AcceptBacklog:     16,
 	StreamWindow:      256 * 1024, // 256 KiB
 	RequestTimeout:    30,
-	WriteTimeout:      30,
+	WriteTimeout:      15,
 	Log:               "stderr",
 	LogLevel:          slog.LevelInfo,
 }
