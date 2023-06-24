@@ -57,6 +57,7 @@ func TestIECBytes(t *testing.T) {
 		if result != c.s {
 			t.Fatalf("expect \"%s\", got \"%s\"", c.s, result)
 		}
+		fmt.Printf("|%16s|\n", result)
 		// fmt.Printf("{%.0e, \"%s\"},\n", c.in, result)
 	}
 }
@@ -67,6 +68,8 @@ func TestDuration(t *testing.T) {
 		secs, millis, nanos, human string
 	}{
 		{1 * time.Minute, "1:00", "1:00.000", "1:00.000000000", "1:00.0"},
+		{math.MaxInt64, "106751d23:47:16", "106751d23:47:16.854", "106751d23:47:16.854775807", "106751d23:47:17"},
+		{math.MinInt64, "-106751d23:47:16", "-106751d23:47:16.854", "-106751d23:47:16.854775808", "-106751d23:47:17"},
 
 		{1, "0:00", "0:00.000", "0:00.000000001", "1ns"},
 		{-1, "-0:00", "-0:00.000", "-0:00.000000001", "-1ns"},
@@ -133,23 +136,23 @@ func TestDuration(t *testing.T) {
 	}
 	for _, c := range cases {
 		secs := formats.DurationSeconds(c.in)
+		millis := formats.DurationMillis(c.in)
+		nanos := formats.DurationNanos(c.in)
+		human := formats.Duration(c.in)
 		if secs != c.secs {
 			t.Fatalf("expect \"%s\", got \"%s\"", c.secs, secs)
 		}
-		millis := formats.DurationMillis(c.in)
 		if millis != c.millis {
 			t.Fatalf("expect \"%s\", got \"%s\"", c.millis, millis)
 		}
-		nanos := formats.DurationNanos(c.in)
 		if nanos != c.nanos {
 			t.Fatalf("expect \"%s\", got \"%s\"", c.nanos, nanos)
 		}
-		human := formats.Duration(c.in)
 		if human != c.human {
 			t.Fatalf("expect \"%s\", got \"%s\"", c.human, human)
 		}
-		// fmt.Printf("{%d, \"%s\", \"%s\", \"%s\", \"%s\"},\n", c.in,
-		// 	secs, millis, nanos, variable)
 		fmt.Printf("|%16s|%20s|%26s|%16s|\n", secs, millis, nanos, human)
+		// fmt.Printf("{%d, \"%s\", \"%s\", \"%s\", \"%s\"},\n", c.in,
+		// 	secs, millis, nanos, human)
 	}
 }

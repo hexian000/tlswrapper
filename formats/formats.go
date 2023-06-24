@@ -37,16 +37,18 @@ func DurationSeconds(d time.Duration) string {
 	sign := ""
 	if d < 0 {
 		sign = "-"
-		d = -d
 	}
-	d /= 1000000000
-	second := int(d % 60)
-	d /= 60
-	minute := int(d % 60)
-	d /= 60
-	hour := int(d % 24)
-	d /= 24
-	day := int(d)
+	value := int64(d / time.Second)
+	if value < 0 {
+		value = -value
+	}
+	second := uint8(value % 60)
+	value /= 60
+	minute := uint8(value % 60)
+	value /= 60
+	hour := uint8(value % 24)
+	value /= 24
+	day := value
 	if day != 0 {
 		return fmt.Sprintf("%s%dd%02d:%02d:%02d", sign, day, hour, minute, second)
 	} else if hour != 0 {
@@ -60,18 +62,20 @@ func DurationMillis(d time.Duration) string {
 	sign := ""
 	if d < 0 {
 		sign = "-"
-		d = -d
 	}
-	d /= 1000000
-	milli := int(d % 1000)
-	d /= 1000
-	second := int(d % 60)
-	d /= 60
-	minute := int(d % 60)
-	d /= 60
-	hour := int(d % 24)
-	d /= 24
-	day := int(d)
+	value := int64(d / time.Millisecond)
+	if value < 0 {
+		value = -value
+	}
+	milli := uint16(value % 1000)
+	value /= 1000
+	second := uint8(value % 60)
+	value /= 60
+	minute := uint8(value % 60)
+	value /= 60
+	hour := uint8(value % 24)
+	value /= 24
+	day := value
 	if day != 0 {
 		return fmt.Sprintf("%s%dd%02d:%02d:%02d.%03d", sign, day, hour, minute, second, milli)
 	} else if hour != 0 {
@@ -82,20 +86,23 @@ func DurationMillis(d time.Duration) string {
 
 // DurationNanos formats the precise duration
 func DurationNanos(d time.Duration) string {
+	value := int64(d / time.Nanosecond)
 	sign := ""
-	if d < 0 {
+	s := int64(1)
+	if value < 0 {
 		sign = "-"
-		d = -d
+		s = int64(-1)
 	}
-	nano := int64(d % 1000000000)
-	d /= 1000000000
-	second := int(d % 60)
-	d /= 60
-	minute := int(d % 60)
-	d /= 60
-	hour := int(d % 24)
-	d /= 24
-	day := int(d)
+	nano := uint32(value % 1000000000 * s)
+	value /= 1000000000
+	value *= s
+	second := uint8(value % 60)
+	value /= 60
+	minute := uint8(value % 60)
+	value /= 60
+	hour := uint8(value % 24)
+	value /= 24
+	day := value
 	if day != 0 {
 		return fmt.Sprintf("%s%dd%02d:%02d:%02d.%09d", sign, day, hour, minute, second, nano)
 	} else if hour != 0 {
@@ -106,24 +113,27 @@ func DurationNanos(d time.Duration) string {
 
 // Duration formats the rounded duration
 func Duration(d time.Duration) string {
+	value := int64(d / time.Nanosecond)
 	sign := ""
-	if d < 0 {
+	s := int64(1)
+	if value < 0 {
 		sign = "-"
-		d = -d
+		s = int64(-1)
 	}
-	nano := int64(d % 1000)
-	d /= 1000
-	micro := int64(d % 1000)
-	d /= 1000
-	milli := int64(d % 1000)
-	d /= 1000
-	second := int(d % 60)
-	d /= 60
-	minute := int(d % 60)
-	d /= 60
-	hour := int(d % 24)
-	d /= 24
-	day := int(d)
+	nano := uint16(value % 1000 * s)
+	value /= 1000
+	value *= s
+	micro := uint16(value % 1000)
+	value /= 1000
+	milli := uint16(value % 1000)
+	value /= 1000
+	second := uint8(value % 60)
+	value /= 60
+	minute := uint8(value % 60)
+	value /= 60
+	hour := uint8(value % 24)
+	value /= 24
+	day := value
 	if day != 0 {
 		seconds := float64(second) + float64(milli)*1e-3 + float64(micro)*1e-6 + float64(nano)*1e-9
 		return fmt.Sprintf("%s%dd%02d:%02d:%02.0f", sign, day, hour, minute, seconds)
