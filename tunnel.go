@@ -216,11 +216,11 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err := proto.RunHandshake(conn, handshake); err != nil {
 		return nil, err
 	}
+	_ = conn.SetDeadline(time.Time{})
 	mux, err := yamux.Client(conn, t.s.getMuxConfig(false))
 	if err != nil {
 		return nil, err
 	}
-	_ = conn.SetDeadline(time.Time{})
 	tun := t
 	if handshake.Identity != "" {
 		if found := t.s.findTunnel(handshake.Identity); found != nil {

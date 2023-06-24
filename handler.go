@@ -55,12 +55,12 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
 		return
 	}
+	_ = conn.SetDeadline(time.Time{})
 	mux, err := yamux.Server(conn, h.s.getMuxConfig(true))
 	if err != nil {
 		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
 		return
 	}
-	_ = conn.SetDeadline(time.Time{})
 	h.s.authorized.Add(1)
 	tun := h.t
 	if handshake.Identity != "" {
