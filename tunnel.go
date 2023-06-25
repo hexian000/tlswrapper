@@ -103,8 +103,8 @@ func (t *Tunnel) scheduleRedial() <-chan time.Time {
 		15 * time.Minute,
 	}
 	waitTime := 30 * time.Minute
-	if t.redialCount <= len(waitTimeConst) {
-		waitTime = waitTimeConst[t.redialCount-1]
+	if n < len(waitTimeConst) {
+		waitTime = waitTimeConst[n]
 	}
 	slog.Debugf("redial: scheduled after %v", waitTime)
 	return time.After(waitTime)
