@@ -51,7 +51,8 @@ func DurationSeconds(d time.Duration) string {
 	day := value
 	if day != 0 {
 		return fmt.Sprintf("%s%dd%02d:%02d:%02d", sign, day, hour, minute, second)
-	} else if hour != 0 {
+	}
+	if hour != 0 {
 		return fmt.Sprintf("%s%d:%02d:%02d", sign, hour, minute, second)
 	}
 	return fmt.Sprintf("%s%d:%02d", sign, minute, second)
@@ -78,7 +79,8 @@ func DurationMillis(d time.Duration) string {
 	day := value
 	if day != 0 {
 		return fmt.Sprintf("%s%dd%02d:%02d:%02d.%03d", sign, day, hour, minute, second, milli)
-	} else if hour != 0 {
+	}
+	if hour != 0 {
 		return fmt.Sprintf("%s%d:%02d:%02d.%03d", sign, hour, minute, second, milli)
 	}
 	return fmt.Sprintf("%s%d:%02d.%03d", sign, minute, second, milli)
@@ -105,7 +107,8 @@ func DurationNanos(d time.Duration) string {
 	day := value
 	if day != 0 {
 		return fmt.Sprintf("%s%dd%02d:%02d:%02d.%09d", sign, day, hour, minute, second, nano)
-	} else if hour != 0 {
+	}
+	if hour != 0 {
 		return fmt.Sprintf("%s%d:%02d:%02d.%09d", sign, hour, minute, second, nano)
 	}
 	return fmt.Sprintf("%s%d:%02d.%09d", sign, minute, second, nano)
@@ -137,37 +140,44 @@ func Duration(d time.Duration) string {
 	if day != 0 {
 		seconds := float64(second) + float64(milli)*1e-3 + float64(micro)*1e-6 + float64(nano)*1e-9
 		return fmt.Sprintf("%s%dd%02d:%02d:%02.0f", sign, day, hour, minute, seconds)
-	} else if hour != 0 {
+	}
+	if hour != 0 {
 		seconds := float64(second) + float64(milli)*1e-3 + float64(micro)*1e-6 + float64(nano)*1e-9
 		return fmt.Sprintf("%s%d:%02d:%02.0f", sign, hour, minute, seconds)
-	} else if minute != 0 {
+	}
+	if minute != 0 {
 		seconds := float64(second) + float64(milli)*1e-3 + float64(micro)*1e-6 + float64(nano)*1e-9
 		if minute >= 10 {
 			return fmt.Sprintf("%s%d:%02.0f", sign, minute, seconds)
 		}
 		return fmt.Sprintf("%s%d:%04.01f", sign, minute, seconds)
-	} else if second != 0 {
+	}
+	if second != 0 {
 		if second >= 10 {
 			seconds := float64(second) + float64(milli)*1e-3 + float64(micro)*1e-6 + float64(nano)*1e-9
 			return fmt.Sprintf("%s%.02fs", sign, seconds)
 		}
 		millis := float64(second)*1e+3 + float64(milli) + float64(micro)*1e-3 + float64(nano)*1e-6
 		return fmt.Sprintf("%s%03.0fms", sign, millis)
-	} else if milli != 0 {
+	}
+	if milli != 0 {
 		if milli >= 100 {
 			millis := float64(milli) + float64(micro)*1e-3 + float64(nano)*1e-6
 			return fmt.Sprintf("%s%.01fms", sign, millis)
-		} else if milli >= 10 {
+		}
+		if milli >= 10 {
 			millis := float64(milli) + float64(micro)*1e-3 + float64(nano)*1e-6
 			return fmt.Sprintf("%s%.02fms", sign, millis)
 		}
 		micros := float64(milli)*1e+3 + float64(micro) + float64(nano)*1e-3
 		return fmt.Sprintf("%s%.0fµs", sign, micros)
-	} else if micro != 0 {
+	}
+	if micro != 0 {
 		if micro >= 100 {
 			micros := float64(micro) + float64(nano)*1e-3
 			return fmt.Sprintf("%s%.01fµs", sign, micros)
-		} else if micro >= 10 {
+		}
+		if micro >= 10 {
 			micros := float64(micro) + float64(nano)*1e-3
 			return fmt.Sprintf("%s%.02fµs", sign, micros)
 		}
