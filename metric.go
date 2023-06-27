@@ -31,7 +31,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
@@ -66,15 +66,21 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
 		var memstats runtime.MemStats
 		runtime.ReadMemStats(&memstats)
-		printf("%-20s: %s\n", "Heap Used", formats.IECBytes(float64(memstats.HeapAlloc)))
-		printf("%-20s: %s\n", "Next GC", formats.IECBytes(float64(memstats.NextGC)))
-		printf("%-20s: %s\n", "Heap Allocated", formats.IECBytes(float64(memstats.HeapSys-memstats.HeapReleased)))
-		printf("%-20s: %s\n", "Stack Used", formats.IECBytes(float64(memstats.StackInuse)))
+		printf("%-20s: %s\n", "Heap In-use", formats.IECBytes(float64(memstats.HeapInuse)))
+		printf("%-20s: %s ≤ %s\n", "Heap Next GC", formats.IECBytes(float64(memstats.HeapAlloc)),
+			formats.IECBytes(float64(memstats.NextGC)))
+		heapResident := memstats.HeapSys - memstats.HeapReleased
+		printf("%-20s: %s\n", "Heap Resident", formats.IECBytes(float64(heapResident)))
 		printf("%-20s: %s\n", "Stack Allocated", formats.IECBytes(float64(memstats.StackSys)))
-		printf("%-20s: %s\n", "Total Allocated", formats.IECBytes(float64(memstats.Sys-memstats.HeapReleased)))
+		runtimeSys := memstats.MSpanSys + memstats.MCacheSys + memstats.BuckHashSys + memstats.GCSys + memstats.OtherSys
+		printf("%-20s: %s\n", "Runtime Allocated", formats.IECBytes(float64(runtimeSys)))
+		resident := memstats.Sys - memstats.HeapReleased
+		printf("%-20s: %s\n", "Total Resident", formats.IECBytes(float64(resident)))
 		if memstats.LastGC > 0 {
-			printf("%-20s: %s ago\n", "Last GC", formats.Duration(time.Since(time.Unix(0, int64(memstats.LastGC)))))
-			printf("%-20s: %s\n", "Last GC pause", formats.Duration(time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256])))
+			lastGC := time.Since(time.Unix(0, int64(memstats.LastGC)))
+			printf("%-20s: %s ago\n", "Last GC", formats.Duration(lastGC))
+			lastPause := time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256])
+			printf("%-20s: %s\n", "Last GC pause", formats.Duration(lastPause))
 		} else {
 			printf("%-20s: %s\n", "Last GC", "(never)")
 			printf("%-20s: %s\n", "Last GC pause", "(never)")
