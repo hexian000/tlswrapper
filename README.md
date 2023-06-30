@@ -23,7 +23,7 @@
 Wrap your TCP-based service with multiplexed mutual TLS tunnels.
 
 - Multiplexed: All traffic goes over one TCP connection.
-- Encrypted: All data is protected by mutual authenticated TLS.
+- Secured: All traffic is optionally protected by mutual authenticated TLS.
 - Mutual Forwarded: Each peer can listen and connect to the other peer simultaneously over the same underlying connection.
 
 *In terms of performance, creating multiplexed TCP tunnels is generally not a good idea, see [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking). Make sure you have good reason to do so.*
@@ -31,10 +31,11 @@ Wrap your TCP-based service with multiplexed mutual TLS tunnels.
 ```
        Trusted      |     Untrusted    |     Trusted
 +--------+    +------------+    +------------+    +--------+
-| Client |-n->| tlswrapper |-1->| tlswrapper |-n->| Server |
-+--------+    +------------+    +------------+    +--------+
-+--------+    +------------+    +------------+    +--------+
-| Server |<-n-| tlswrapper |-1->| tlswrapper |<-n-| Client |
+| Client |-n->|            |    |            |-n->| Server |
++--------+    |            |    |            |    +--------+
+              | tlswrapper |-1->| tlswrapper |
++--------+    |            |    |            |    +--------+
+| Server |<-n-|            |    |            |<-n-| Client |
 +--------+    +------------+    +------------+    +--------+
 ```
 
@@ -46,12 +47,11 @@ Wrap your TCP-based service with multiplexed mutual TLS tunnels.
 +-------------------------------+
 |   yamux stream multiplexing   |
 +-------------------------------+
-|        mutual TLS 1.3         |
+|   mutual TLS 1.3 (optional)   |
 +-------------------------------+
 |  TCP/IP (untrusted network)   |
 +-------------------------------+
 ```
-
 
 ## Authentication Model
 
