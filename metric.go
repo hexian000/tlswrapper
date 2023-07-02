@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"github.com/hexian000/tlswrapper/formats"
@@ -32,17 +31,17 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
-		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(b)
 	})
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
 		var stateless bool
-		if strings.EqualFold(r.Method, http.MethodGet) {
+		if r.Method == http.MethodGet {
 			stateless = true
-		} else if strings.EqualFold(r.Method, http.MethodPost) {
+		} else if r.Method == http.MethodPost {
 			stateless = false
 		} else {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -128,14 +127,21 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		printf("%-20s: %s\n", "Time Cost", formats.Duration(time.Since(start)))
 	})
 	mux.HandleFunc("/stack", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		var stateless bool
+		if r.Method == http.MethodGet {
+			stateless = true
+		} else if r.Method == http.MethodPost {
+			stateless = false
+		} else {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		start := time.Now()
-		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if stateless {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		w.WriteHeader(http.StatusOK)
 		defer func() {
 			if err := recover(); err != nil {
