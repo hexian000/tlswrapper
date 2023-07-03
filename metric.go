@@ -3,6 +3,7 @@ package tlswrapper
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"runtime"
@@ -14,6 +15,44 @@ import (
 )
 
 var uptime = time.Now()
+
+func fprintf(w io.Writer, format string, v ...interface{}) {
+	_, err := w.Write([]byte(fmt.Sprintf(format, v...)))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func printMemStats(w io.Writer, lastGC bool) {
+	var memstats runtime.MemStats
+	runtime.ReadMemStats(&memstats)
+	fprintf(w, "%-20s: %s ≤ %s\n", "Heap Next GC",
+		formats.IECBytes(float64(memstats.HeapAlloc)),
+		formats.IECBytes(float64(memstats.NextGC)))
+	fprintf(w, "%-20s: %s / %s\n", "Heap In-use",
+		formats.IECBytes(float64(memstats.HeapInuse)),
+		formats.IECBytes(float64(memstats.HeapSys-memstats.HeapReleased)))
+	fprintf(w, "%-20s: %s / %s\n", "Stack In-use",
+		formats.IECBytes(float64(memstats.StackInuse)),
+		formats.IECBytes(float64(memstats.StackSys)))
+	runtimeSys := memstats.MSpanSys + memstats.MCacheSys + memstats.BuckHashSys + memstats.GCSys + memstats.OtherSys
+	fprintf(w, "%-20s: %s\n", "Runtime Allocated", formats.IECBytes(float64(runtimeSys)))
+	fprintf(w, "%-20s: %s (+%s)\n", "Total Allocated",
+		formats.IECBytes(float64(memstats.Sys-memstats.HeapReleased)),
+		formats.IECBytes(float64(memstats.HeapReleased)))
+	if !lastGC {
+		return
+	}
+	if memstats.LastGC > 0 {
+		lastGC := time.Since(time.Unix(0, int64(memstats.LastGC)))
+		fprintf(w, "%-20s: %s ago\n", "Last GC", formats.Duration(lastGC))
+		lastPause := time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256])
+		fprintf(w, "%-20s: %s\n", "Last GC pause", formats.Duration(lastPause))
+	} else {
+		fprintf(w, "%-20s: %s\n", "Last GC", "(never)")
+		fprintf(w, "%-20s: %s\n", "Last GC pause", "(never)")
+	}
+}
 
 func RunHTTPServer(l net.Listener, s *Server) error {
 	mux := http.NewServeMux()
@@ -54,54 +93,22 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			w.Header().Set("Cache-Control", "no-store")
 		}
 		w.WriteHeader(http.StatusOK)
-		defer func() {
-			if err := recover(); err != nil {
-				slog.Error(err)
-				return
-			}
-		}()
-		printf := func(format string, v ...interface{}) {
-			_, err := w.Write([]byte(fmt.Sprintf(format, v...)))
-			if err != nil {
-				panic(err)
-			}
-		}
-		printf("tlswrapper %s\n  %s\n\n", Version, Homepage)
-		printf("%-20s: %v\n", "Server Time", now.Format(time.RFC3339))
-		printf("%-20s: %s\n", "Uptime", formats.Duration(now.Sub(uptime)))
-		printf("%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
-		printf("%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
-		var memstats runtime.MemStats
-		runtime.ReadMemStats(&memstats)
-		printf("%-20s: %s\n", "Heap In-use", formats.IECBytes(float64(memstats.HeapInuse)))
-		printf("%-20s: %s ≤ %s\n", "Heap Next GC", formats.IECBytes(float64(memstats.HeapAlloc)),
-			formats.IECBytes(float64(memstats.NextGC)))
-		heapResident := memstats.HeapSys - memstats.HeapReleased
-		printf("%-20s: %s\n", "Heap Resident", formats.IECBytes(float64(heapResident)))
-		printf("%-20s: %s\n", "Stack Allocated", formats.IECBytes(float64(memstats.StackSys)))
-		runtimeSys := memstats.MSpanSys + memstats.MCacheSys + memstats.BuckHashSys + memstats.GCSys + memstats.OtherSys
-		printf("%-20s: %s\n", "Runtime Allocated", formats.IECBytes(float64(runtimeSys)))
-		resident := memstats.Sys - memstats.HeapReleased
-		printf("%-20s: %s\n", "Total Resident", formats.IECBytes(float64(resident)))
-		if memstats.LastGC > 0 {
-			lastGC := time.Since(time.Unix(0, int64(memstats.LastGC)))
-			printf("%-20s: %s ago\n", "Last GC", formats.Duration(lastGC))
-			lastPause := time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256])
-			printf("%-20s: %s\n", "Last GC pause", formats.Duration(lastPause))
-		} else {
-			printf("%-20s: %s\n", "Last GC", "(never)")
-			printf("%-20s: %s\n", "Last GC pause", "(never)")
-		}
-		printf("\n")
-		printf("%-20s: %v\n", "Tunnels", len(s.getConfig().Tunnels))
-		printf("%-20s: %v / %v\n", "Sessions / Streams", s.NumSessions(), s.f.Count())
-		printf("%-20s: %v\n", "Managed Routines", s.g.Count())
+		fprintf(w, "tlswrapper %s\n  %s\n\n", Version, Homepage)
+		fprintf(w, "%-20s: %v\n", "Server Time", now.Format(time.RFC3339))
+		fprintf(w, "%-20s: %s\n", "Uptime", formats.Duration(now.Sub(uptime)))
+		fprintf(w, "%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
+		fprintf(w, "%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
+		printMemStats(w, true)
+		fprintf(w, "\n")
+		fprintf(w, "%-20s: %v\n", "Tunnels", len(s.getConfig().Tunnels))
+		fprintf(w, "%-20s: %v / %v\n", "Sessions / Streams", s.NumSessions(), s.f.Count())
+		fprintf(w, "%-20s: %v\n", "Managed Routines", s.g.Count())
 		rx, tx := s.CountBytes()
-		printf("%-20s: %s / %s\n", "Traffic (Rx/Tx)", formats.IECBytes(float64(rx)), formats.IECBytes(float64(tx)))
+		fprintf(w, "%-20s: %s / %s\n", "Traffic (Rx/Tx)", formats.IECBytes(float64(rx)), formats.IECBytes(float64(tx)))
 		authorized, accepted, total := s.CountAccepts()
-		printf("%-20s: %d authorized / %d accepted / %d total\n", "Secured Listeners", authorized, accepted, total)
-		printf("\n==============================\n")
-		printf("runtime: %s\n", runtime.Version())
+		fprintf(w, "%-20s: %d authorized / %d accepted / %d total\n", "Secured Listeners", authorized, accepted, total)
+		fprintf(w, "\n==============================\n")
+		fprintf(w, "runtime: %s\n", runtime.Version())
 	})
 	mux.HandleFunc("/gc", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -111,20 +118,10 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
-		printf := func(format string, v ...interface{}) {
-			_, err := w.Write([]byte(fmt.Sprintf(format, v...)))
-			if err != nil {
-				panic(err)
-			}
-		}
 		start := time.Now()
 		debug.FreeOSMemory()
-		var memstats runtime.MemStats
-		runtime.ReadMemStats(&memstats)
-		printf("%-20s: %s\n", "Live Heap", formats.IECBytes(float64(memstats.HeapSys-memstats.HeapReleased)))
-		printf("%-20s: %s\n", "Live Stack", formats.IECBytes(float64(memstats.StackSys)))
-		printf("%-20s: %s\n", "Allocated", formats.IECBytes(float64(memstats.Sys-memstats.HeapReleased)))
-		printf("%-20s: %s\n", "Time Cost", formats.Duration(time.Since(start)))
+		printMemStats(w, false)
+		fprintf(w, "%-20s: %s\n", "Time Cost", formats.Duration(time.Since(start)))
 	})
 	mux.HandleFunc("/stack", func(w http.ResponseWriter, r *http.Request) {
 		var stateless bool
@@ -143,24 +140,16 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			w.Header().Set("Cache-Control", "no-store")
 		}
 		w.WriteHeader(http.StatusOK)
-		defer func() {
-			if err := recover(); err != nil {
-				slog.Error(err)
-				return
-			}
-		}()
-		printf := func(format string, v ...interface{}) {
-			_, err := w.Write([]byte(fmt.Sprintf(format, v...)))
-			if err != nil {
-				panic(err)
-			}
-		}
 		var buf [65536]byte
 		n := runtime.Stack(buf[:], true)
-		printf("%s\n", string(buf[:n]))
-		printf("\n==============================\n")
-		printf("generated in %s\n", formats.Duration(time.Since(start)))
-		printf("runtime: %s\n", runtime.Version())
+		fprintf(w, "%s\n", string(buf[:n]))
+		fprintf(w, "\n==============================\n")
+		fprintf(w, "generated in %s\n", formats.Duration(time.Since(start)))
+		fprintf(w, "runtime: %s\n", runtime.Version())
 	})
-	return http.Serve(l, mux)
+	server := &http.Server{
+		Handler:  mux,
+		ErrorLog: slog.Wrap(slog.Default(), slog.LevelError),
+	}
+	return server.Serve(l)
 }

@@ -36,53 +36,53 @@ func Default() *Logger {
 }
 
 func Verbose(v ...interface{}) {
-	std.Output(2, LevelVerbose, fmt.Sprintln(v...))
+	std.Output(2, LevelVerbose, []byte(fmt.Sprintln(v...)))
 }
 
 func Verbosef(format string, v ...interface{}) {
-	std.Output(2, LevelVerbose, fmt.Sprintf(format, v...))
+	std.Output(2, LevelVerbose, []byte(fmt.Sprintf(format, v...)))
 }
 
 func Debug(v ...interface{}) {
-	std.Output(2, LevelDebug, fmt.Sprintln(v...))
+	std.Output(2, LevelDebug, []byte(fmt.Sprintln(v...)))
 }
 
 func Debugf(format string, v ...interface{}) {
-	std.Output(2, LevelDebug, fmt.Sprintf(format, v...))
+	std.Output(2, LevelDebug, []byte(fmt.Sprintf(format, v...)))
 }
 
 func Info(v ...interface{}) {
-	std.Output(2, LevelInfo, fmt.Sprintln(v...))
+	std.Output(2, LevelInfo, []byte(fmt.Sprintln(v...)))
 }
 
 func Infof(format string, v ...interface{}) {
-	std.Output(2, LevelInfo, fmt.Sprintf(format, v...))
+	std.Output(2, LevelInfo, []byte(fmt.Sprintf(format, v...)))
 }
 
 func Warning(v ...interface{}) {
-	std.Output(2, LevelWarning, fmt.Sprintln(v...))
+	std.Output(2, LevelWarning, []byte(fmt.Sprintln(v...)))
 }
 
 func Warningf(format string, v ...interface{}) {
-	std.Output(2, LevelWarning, fmt.Sprintf(format, v...))
+	std.Output(2, LevelWarning, []byte(fmt.Sprintf(format, v...)))
 }
 
 func Error(v ...interface{}) {
-	std.Output(2, LevelError, fmt.Sprintln(v...))
+	std.Output(2, LevelError, []byte(fmt.Sprintln(v...)))
 }
 
 func Errorf(format string, v ...interface{}) {
-	std.Output(2, LevelError, fmt.Sprintf(format, v...))
+	std.Output(2, LevelError, []byte(fmt.Sprintf(format, v...)))
 }
 
 func Fatal(v ...interface{}) {
-	std.Output(2, LevelFatal, fmt.Sprintln(v...))
+	std.Output(2, LevelFatal, []byte(fmt.Sprintln(v...)))
 }
 
 func Fatalf(format string, v ...interface{}) {
-	std.Output(2, LevelFatal, fmt.Sprintf(format, v...))
+	std.Output(2, LevelFatal, []byte(fmt.Sprintf(format, v...)))
 }
 
-func Output(calldepth int, level int, message string) {
-	std.Output(calldepth+1, level, message)
+func Output(calldepth int, level int, msg []byte) {
+	std.Output(calldepth+1, level, msg)
 }
