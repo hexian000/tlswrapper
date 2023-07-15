@@ -13,7 +13,6 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/forwarder"
-	"github.com/hexian000/tlswrapper/hlistener"
 	"github.com/hexian000/tlswrapper/meter"
 	"github.com/hexian000/tlswrapper/routines"
 	"github.com/hexian000/tlswrapper/slog"
@@ -33,9 +32,8 @@ type Server struct {
 	servermuxcfg *yamux.Config
 	cfgMu        sync.RWMutex
 
-	f      forwarder.Forwarder
-	meter  *meter.ConnMetrics
-	lstats *hlistener.Stats
+	f     forwarder.Forwarder
+	meter *meter.ConnMetrics
 
 	listeners map[string]net.Listener
 	tunnels   map[string]*Tunnel // map[identity]tunnel
@@ -58,11 +56,10 @@ func NewServer(cfg *Config) *Server {
 			timeout:  cfg.Timeout,
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
-		f:      forwarder.New(cfg.MaxConn, g),
-		meter:  &meter.ConnMetrics{},
-		lstats: &hlistener.Stats{},
-		g:      g,
-		c:      cfg,
+		f:     forwarder.New(cfg.MaxConn, g),
+		meter: &meter.ConnMetrics{},
+		g:     g,
+		c:     cfg,
 	}
 }
 
@@ -90,20 +87,31 @@ func (s *Server) getTunnels() []*Tunnel {
 	return tunnels
 }
 
-func (s *Server) NumSessions() int {
-	num := 0
+func (s *Server) NumSessions() (num int) {
 	for _, t := range s.getTunnels() {
 		num += t.NumSessions()
 	}
-	return num
+	return
 }
 
 func (s *Server) CountBytes() (read uint64, written uint64) {
 	return s.meter.Read.Load(), s.meter.Written.Load()
 }
 
-func (s *Server) CountAccepts() (authorized uint64, accepted uint64, total uint64) {
-	return s.authorized.Load(), s.lstats.Accepted.Load(), s.lstats.Total.Load()
+func (s *Server) CountAccepts() (accepted uint64, served uint64) {
+	for _, t := range s.getTunnels() {
+		if t.l == nil {
+			continue
+		}
+		a, s := t.l.Stats()
+		accepted += a
+		served += s
+	}
+	return
+}
+
+func (s *Server) CountAuthorized() uint64 {
+	return s.authorized.Load()
 }
 
 func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) {

@@ -6,11 +6,6 @@ import (
 	"sync/atomic"
 )
 
-type Stats struct {
-	Total    atomic.Uint64
-	Accepted atomic.Uint64
-}
-
 type Config struct {
 	Start, Full  uint32
 	Rate         float64
@@ -18,10 +13,12 @@ type Config struct {
 }
 
 type Listener struct {
-	l net.Listener
-	c Config
-	// atomic vars need to be aligned
-	s *Stats
+	l     net.Listener
+	c     Config
+	stats struct {
+		Accepted atomic.Uint64
+		Served   atomic.Uint64
+	}
 }
 
 func (l *Listener) Accept() (net.Conn, error) {
@@ -30,9 +27,7 @@ func (l *Listener) Accept() (net.Conn, error) {
 		if err != nil {
 			return conn, err
 		}
-		if l.s != nil {
-			l.s.Total.Add(1)
-		}
+		l.stats.Accepted.Add(1)
 		n := l.c.Unauthorized()
 		refuse := false
 		if n >= l.c.Start {
@@ -46,9 +41,7 @@ func (l *Listener) Accept() (net.Conn, error) {
 			_ = conn.Close()
 			continue
 		}
-		if l.s != nil {
-			l.s.Accepted.Add(1)
-		}
+		l.stats.Served.Add(1)
 		return conn, err
 	}
 }
@@ -61,7 +54,11 @@ func (l *Listener) Addr() net.Addr {
 	return l.l.Addr()
 }
 
+func (l *Listener) Stats() (accepted uint64, served uint64) {
+	return l.stats.Accepted.Load(), l.stats.Served.Load()
+}
+
 // Wrap the raw listener
-func Wrap(l net.Listener, c *Config, s *Stats) *Listener {
-	return &Listener{l: l, c: *c, s: s}
+func Wrap(l net.Listener, c *Config) *Listener {
+	return &Listener{l: l, c: *c}
 }

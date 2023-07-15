@@ -11,6 +11,9 @@ type ConnMetrics struct {
 }
 
 func Conn(c net.Conn, m *ConnMetrics) net.Conn {
+	// early validation
+	m.Read.Add(0)
+	m.Written.Add(0)
 	return &conn{c, m}
 }
 

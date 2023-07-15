@@ -51,7 +51,7 @@ func (t *Tunnel) Start() error {
 			Full:         uint32(c.StartupLimitFull),
 			Rate:         float64(c.StartupLimitRate) / 100.0,
 			Unauthorized: h.Unauthorized,
-		}, t.s.lstats)
+		})
 		l = t.l
 		if err := t.s.g.Go(func() {
 			t.s.Serve(l, h)
@@ -154,16 +154,15 @@ func (t *Tunnel) getMux() *yamux.Session {
 	return nil
 }
 
-func (t *Tunnel) NumSessions() int {
+func (t *Tunnel) NumSessions() (num int) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	n := 0
 	for mux := range t.mux {
 		if !mux.IsClosed() {
-			n++
+			num++
 		}
 	}
-	return n
+	return
 }
 
 func (t *Tunnel) Serve(mux *yamux.Session) {
