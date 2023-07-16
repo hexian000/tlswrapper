@@ -165,6 +165,17 @@ func (t *Tunnel) NumSessions() (num int) {
 	return
 }
 
+func (t *Tunnel) NumStreams() (num int) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	for mux := range t.mux {
+		if !mux.IsClosed() {
+			num += mux.NumStreams()
+		}
+	}
+	return
+}
+
 func (t *Tunnel) Serve(mux *yamux.Session) {
 	var h Handler
 	if t.c.Dial != "" {

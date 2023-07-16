@@ -94,6 +94,13 @@ func (s *Server) NumSessions() (num int) {
 	return
 }
 
+func (s *Server) NumStreams() (num int) {
+	for _, t := range s.getTunnels() {
+		num += t.NumStreams()
+	}
+	return
+}
+
 func (s *Server) CountBytes() (read uint64, written uint64) {
 	return s.meter.Read.Load(), s.meter.Written.Load()
 }
