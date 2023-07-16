@@ -43,7 +43,11 @@ type Server struct {
 	dialer net.Dialer
 	g      routines.Group
 
-	authorized atomic.Uint64
+	stats struct {
+		authorized atomic.Uint64
+		request    atomic.Uint64
+		success    atomic.Uint64
+	}
 }
 
 // NewServer creates a server object
@@ -118,7 +122,11 @@ func (s *Server) CountAccepts() (accepted uint64, served uint64) {
 }
 
 func (s *Server) CountAuthorized() uint64 {
-	return s.authorized.Load()
+	return s.stats.authorized.Load()
+}
+
+func (s *Server) CountRequests() (request uint64, success uint64) {
+	return s.stats.request.Load(), s.stats.success.Load()
 }
 
 func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) {

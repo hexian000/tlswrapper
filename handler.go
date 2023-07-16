@@ -61,7 +61,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
 		return
 	}
-	h.s.authorized.Add(1)
+	h.s.stats.authorized.Add(1)
 	tun := h.t
 	if handshake.Identity != "" {
 		if t := h.s.findTunnel(handshake.Identity); t != nil {
@@ -87,6 +87,7 @@ type ForwardHandler struct {
 }
 
 func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
+	h.s.stats.request.Add(1)
 	dialed, err := h.s.dialDirect(ctx, h.dial)
 	if err != nil {
 		_ = accepted.Close()
@@ -99,6 +100,7 @@ func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 		_ = dialed.Close()
 		return
 	}
+	h.s.stats.success.Add(1)
 }
 
 // TunnelHandler forwards connections over the tunnel
