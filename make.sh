@@ -29,7 +29,7 @@ export CGO_ENABLED=0
 case "$1" in
 "x")
     # cross build for all supported targets
-    # not supported targets are likely to work
+    # not listed targets are likely to work
     set -x
     GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
         nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-mipsle" "${PACKAGE}"
@@ -43,8 +43,8 @@ case "$1" in
         nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
     ;;
 *)
-    # build for native system only
+    # debug build for native system only
     set -x
-    nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}" "${PACKAGE}"
+    nice go build ${GOFLAGS} -o "${OUT}" "${PACKAGE}"
     ;;
 esac
