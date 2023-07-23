@@ -47,10 +47,10 @@ func (t *Tunnel) Start() error {
 		h := &TLSHandler{s: t.s, t: t}
 		c := t.s.getConfig()
 		t.l = hlistener.Wrap(l, &hlistener.Config{
-			Start:        uint32(c.StartupLimitStart),
-			Full:         uint32(c.StartupLimitFull),
-			Rate:         float64(c.StartupLimitRate) / 100.0,
-			Unauthorized: h.Unauthorized,
+			Start: uint32(c.StartupLimitStart),
+			Full:  uint32(c.StartupLimitFull),
+			Rate:  float64(c.StartupLimitRate) / 100.0,
+			Stats: h.Stats,
 		})
 		l = t.l
 		if err := t.s.g.Go(func() {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/formats"
+	"github.com/hexian000/tlswrapper/hlistener"
 	"github.com/hexian000/tlswrapper/meter"
 	"github.com/hexian000/tlswrapper/proto"
 	"github.com/hexian000/tlswrapper/slog"
@@ -26,8 +27,11 @@ type TLSHandler struct {
 	unauthorized atomic.Uint32
 }
 
-func (h *TLSHandler) Unauthorized() uint32 {
-	return h.unauthorized.Load()
+func (h *TLSHandler) Stats() hlistener.ServerStats {
+	return hlistener.ServerStats{
+		Sessions: uint32(h.s.NumSessions()),
+		HalfOpen: h.unauthorized.Load(),
+	}
 }
 
 func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {

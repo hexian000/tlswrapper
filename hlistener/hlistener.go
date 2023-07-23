@@ -6,10 +6,16 @@ import (
 	"sync/atomic"
 )
 
+type ServerStats struct {
+	Sessions uint32
+	HalfOpen uint32
+}
+
 type Config struct {
-	Start, Full  uint32
-	Rate         float64
-	Unauthorized func() uint32
+	Start, Full uint32
+	Rate        float64
+	MaxSessions uint32
+	Stats       func() ServerStats
 }
 
 type Listener struct {
@@ -21,6 +27,20 @@ type Listener struct {
 	}
 }
 
+func (l *Listener) isLimited() bool {
+	stats := l.c.Stats()
+	if l.c.MaxSessions > 0 && stats.Sessions >= l.c.MaxSessions {
+		return true
+	}
+	if stats.HalfOpen >= l.c.Full {
+		return true
+	}
+	if stats.HalfOpen >= l.c.Start {
+		return rand.Float64() < l.c.Rate
+	}
+	return false
+}
+
 func (l *Listener) Accept() (net.Conn, error) {
 	for {
 		conn, err := l.l.Accept()
@@ -28,16 +48,7 @@ func (l *Listener) Accept() (net.Conn, error) {
 			return conn, err
 		}
 		l.stats.Accepted.Add(1)
-		n := l.c.Unauthorized()
-		refuse := false
-		if n >= l.c.Start {
-			if n >= l.c.Full {
-				refuse = true
-			} else {
-				refuse = rand.Float64() < l.c.Rate
-			}
-		}
-		if refuse {
+		if l.isLimited() {
 			_ = conn.Close()
 			continue
 		}

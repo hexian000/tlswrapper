@@ -46,7 +46,7 @@ type Config struct {
 	NoDelay bool `json:"nodelay"`
 	// (optional) client-side keep alive interval in seconds, default to 25 (every 25s)
 	KeepAlive int `json:"keepalive"`
-	// (optional) server-side keep alive interval in seconds, default to 0 (disabled)
+	// (optional) server-side keep alive interval in seconds, default to 300 (every 5min)
 	ServerKeepAlive int `json:"serverkeepalive"`
 	// (optional) soft limit of concurrent unauthenticated connections, default to 10
 	StartupLimitStart int `json:"startuplimitstart"`
@@ -56,6 +56,8 @@ type Config struct {
 	StartupLimitFull int `json:"startuplimitfull"`
 	// (optional) max concurrent streams, default to 4096
 	MaxConn int `json:"maxconn"`
+	// (optional) max concurrent sessions, default to 128
+	MaxSessions int `json:"maxsessions"`
 	// (optional) mux accept backlog, default to 16, you may not want to change this
 	AcceptBacklog int `json:"backlog"`
 	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
@@ -79,6 +81,7 @@ var DefaultConfig = Config{
 	StartupLimitRate:  30,
 	StartupLimitFull:  60,
 	MaxConn:           4096,
+	MaxSessions:       128,
 	AcceptBacklog:     16,
 	StreamWindow:      256 * 1024, // 256 KiB
 	RequestTimeout:    30,
