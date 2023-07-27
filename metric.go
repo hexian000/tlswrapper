@@ -29,10 +29,10 @@ func printMemStats(w io.Writer, lastGC bool) {
 	fprintf(w, "%-20s: %s ≤ %s\n", "Heap Next GC",
 		formats.IECBytes(float64(memstats.HeapAlloc)),
 		formats.IECBytes(float64(memstats.NextGC)))
-	fprintf(w, "%-20s: %s / %s\n", "Heap In-use",
+	fprintf(w, "%-20s: %s ≤ %s\n", "Heap In-use",
 		formats.IECBytes(float64(memstats.HeapInuse)),
 		formats.IECBytes(float64(memstats.HeapSys-memstats.HeapReleased)))
-	fprintf(w, "%-20s: %s / %s\n", "Stack In-use",
+	fprintf(w, "%-20s: %s ≤ %s\n", "Stack In-use",
 		formats.IECBytes(float64(memstats.StackInuse)),
 		formats.IECBytes(float64(memstats.StackSys)))
 	runtimeSys := memstats.MSpanSys + memstats.MCacheSys + memstats.BuckHashSys + memstats.GCSys + memstats.OtherSys
@@ -56,11 +56,12 @@ func printMemStats(w io.Writer, lastGC bool) {
 
 func RunHTTPServer(l net.Listener, s *Server) error {
 	last := struct {
-		Served    uint64
-		Rejected  uint64
-		Success   uint64
-		Rx, Tx    uint64
-		Timestamp time.Time
+		Accepted   uint64
+		Served     uint64
+		ReqTotal   uint64
+		ReqSuccess uint64
+		Rx, Tx     uint64
+		Timestamp  time.Time
 	}{Timestamp: time.Time{}}
 
 	mux := http.NewServeMux()
@@ -107,29 +108,35 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		fprintf(w, "%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
 		fprintf(w, "%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
 		printMemStats(w, true)
-		fprintf(w, "%-20s: %v / %v\n", "Sessions / Streams", s.NumSessions(), s.NumStreams())
-		rx, tx := s.CountBytes()
-		fprintf(w, "%-20s: %s / %s\n", "Traffic (Rx/Tx)", formats.IECBytes(float64(rx)), formats.IECBytes(float64(tx)))
-		accepted, served := s.CountAccepts()
-		rejected := accepted - served
-		fprintf(w, "%-20s: %d (%d rejected)\n", "Listener Accepts", served, rejected)
-		authorized := s.CountAuthorized()
-		fprintf(w, "%-20s: %d (%+d)\n", "Authorized Conns", authorized, served-authorized)
-		requests, success := s.CountRequests()
-		fprintf(w, "%-20s: %d (%+d)\n", "Requests", success, requests-success)
+		stats := s.Stats()
+		fprintf(w, "%-20s: %v\n", "Num Sessions", stats.NumSessions)
+		fprintf(w, "%-20s: %v\n", "Num Streams", stats.NumStreams)
+		fprintf(w, "%-20s: Rx %s, Tx %s\n", "Traffic",
+			formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
+		rejected := stats.Accepted - stats.Served
+		fprintf(w, "%-20s: %d (%+d rejected)\n", "Listener Accepts",
+			stats.Served, rejected)
+		fprintf(w, "%-20s: %d (%+d)\n", "Authorizations",
+			stats.Authorized, stats.Served-stats.Authorized)
+		fprintf(w, "%-20s: %d (%+d)\n", "Requests",
+			stats.ReqSuccess, stats.ReqTotal-stats.ReqSuccess)
 
 		if !stateless {
 			dt := now.Sub(last.Timestamp).Seconds()
 
-			fprintf(w, "%-20s: %.1f/s (%.1f/s rejected)\n", "Incoming Conns",
-				float64(served-last.Served)/dt, float64(rejected-last.Rejected)/dt)
-			fprintf(w, "%-20s: %.1f/s\n", "Request Success", float64(success-last.Success)/dt)
-			fprintf(w, "%-20s: %s/s / %s/s\n", "Bandwidth (Rx/Tx)",
-				formats.IECBytes(float64(rx-last.Rx)/dt), formats.IECBytes(float64(tx-last.Tx)/dt))
+			fprintf(w, "%-20s: %.1f/s (%+.1f/s rejected)\n", "Authorized",
+				float64(stats.Served-last.Served)/dt,
+				float64((stats.Accepted-stats.Served)-(last.Accepted-last.Served))/dt)
+			fprintf(w, "%-20s: %.1f/s (%+.1f/s)\n", "Requests",
+				float64(stats.ReqSuccess-last.ReqSuccess)/dt,
+				float64((stats.ReqTotal-stats.ReqSuccess)-(last.ReqTotal-last.ReqSuccess))/dt)
+			fprintf(w, "%-20s: Rx %s/s, Tx %s/s\n", "Bandwidth",
+				formats.IECBytes(float64(stats.Rx-last.Rx)/dt),
+				formats.IECBytes(float64(stats.Tx-last.Tx)/dt))
 
-			last.Served, last.Rejected = accepted, rejected
-			last.Success = success
-			last.Rx, last.Tx = rx, tx
+			last.Accepted, last.Served = stats.Accepted, stats.Served
+			last.ReqTotal, last.ReqSuccess = stats.ReqTotal, stats.ReqSuccess
+			last.Rx, last.Tx = stats.Rx, stats.Tx
 			last.Timestamp = now
 		}
 

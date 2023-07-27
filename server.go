@@ -91,6 +91,17 @@ func (s *Server) getTunnels() []*Tunnel {
 	return tunnels
 }
 
+type ServerStats struct {
+	NumSessions int
+	NumStreams  int
+	Rx, Tx      uint64
+	Accepted    uint64
+	Served      uint64
+	Authorized  uint64
+	ReqTotal    uint64
+	ReqSuccess  uint64
+}
+
 func (s *Server) NumSessions() (num int) {
 	for _, t := range s.getTunnels() {
 		num += t.NumSessions()
@@ -98,35 +109,20 @@ func (s *Server) NumSessions() (num int) {
 	return
 }
 
-func (s *Server) NumStreams() (num int) {
+func (s *Server) Stats() (stats ServerStats) {
 	for _, t := range s.getTunnels() {
-		num += t.NumStreams()
-	}
-	return
-}
-
-func (s *Server) CountBytes() (read uint64, written uint64) {
-	return s.meter.Read.Load(), s.meter.Written.Load()
-}
-
-func (s *Server) CountAccepts() (accepted uint64, served uint64) {
-	for _, t := range s.getTunnels() {
-		if t.l == nil {
-			continue
+		stats.NumSessions += t.NumSessions()
+		stats.NumStreams += t.NumStreams()
+		if t.l != nil {
+			accepted, served := t.l.Stats()
+			stats.Accepted += accepted
+			stats.Served += served
 		}
-		a, s := t.l.Stats()
-		accepted += a
-		served += s
 	}
+	stats.Rx, stats.Tx = s.meter.Read.Load(), s.meter.Written.Load()
+	stats.Authorized = s.stats.authorized.Load()
+	stats.ReqTotal, stats.ReqSuccess = s.stats.request.Load(), s.stats.success.Load()
 	return
-}
-
-func (s *Server) CountAuthorized() uint64 {
-	return s.stats.authorized.Load()
-}
-
-func (s *Server) CountRequests() (request uint64, success uint64) {
-	return s.stats.request.Load(), s.stats.success.Load()
 }
 
 func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) {
