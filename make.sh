@@ -2,7 +2,7 @@
 cd "$(dirname "$0")"
 mkdir -p build
 
-VERSION=""
+VERSION="dev"
 if git rev-parse --git-dir >/dev/null 2>&1; then
     VERSION="$(git tag --points-at HEAD)"
     if [ -z "${VERSION}" ]; then
@@ -19,10 +19,7 @@ set -e
 PACKAGE="./cmd/tlswrapper"
 OUT="./build/tlswrapper"
 GOFLAGS="-trimpath -mod vendor"
-LDFLAGS="-s -w"
-if [ -n "${VERSION}" ]; then
-    LDFLAGS="${LDFLAGS} -X github.com/hexian000/tlswrapper.Version=${VERSION}"
-fi
+LDFLAGS="-X github.com/hexian000/tlswrapper.Version=${VERSION}"
 
 export CGO_ENABLED=0
 
@@ -30,6 +27,7 @@ case "$1" in
 "x")
     # cross build for all supported targets
     # not listed targets are likely to work
+    LDFLAGS="-s -w ${LDFLAGS}"
     set -x
     GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
         nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-mipsle" "${PACKAGE}"
@@ -45,6 +43,6 @@ case "$1" in
 *)
     # debug build for native system only
     set -x
-    nice go build ${GOFLAGS} -o "${OUT}" "${PACKAGE}"
+    nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}" "${PACKAGE}"
     ;;
 esac
