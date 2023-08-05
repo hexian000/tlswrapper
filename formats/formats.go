@@ -52,10 +52,10 @@ func IECBytes(value float64) string {
 	if !isNormal(value) {
 		return fmt.Sprintf("%.0f", value)
 	}
-	if value < 8192.0 {
+	if value < 2048.0 {
 		return fmt.Sprintf("%.0f %s", value, iecUnits[0])
 	}
-	n := (int(math.Log2(value)) - 3) / 10
+	n := (int(math.Log2(value)) - 1) / 10
 	if n >= len(iecUnits) {
 		n = len(iecUnits) - 1
 	}
