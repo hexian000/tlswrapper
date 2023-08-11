@@ -14,8 +14,6 @@ import (
 	"github.com/hexian000/tlswrapper/slog"
 )
 
-var uptime = time.Now()
-
 func fprintf(w io.Writer, format string, v ...interface{}) {
 	_, err := w.Write([]byte(fmt.Sprintf(format, v...)))
 	if err != nil {
@@ -96,6 +94,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			return
 		}
 		now := time.Now()
+		uptime := now.Sub(s.started)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if stateless {
@@ -104,7 +103,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		w.WriteHeader(http.StatusOK)
 		fprintf(w, "tlswrapper %s\n  %s\n\n", Version, Homepage)
 		fprintf(w, "%-20s: %v\n", "Server Time", now.Format(time.RFC3339))
-		fprintf(w, "%-20s: %s\n", "Uptime", formats.Duration(now.Sub(uptime)))
+		fprintf(w, "%-20s: %s\n", "Uptime", formats.Duration(uptime))
 		fprintf(w, "%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
 		fprintf(w, "%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
 		printMemStats(w, true)
@@ -113,6 +112,10 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		fprintf(w, "%-20s: %v\n", "Num Streams", stats.NumStreams)
 		fprintf(w, "%-20s: Rx %s, Tx %s\n", "Traffic",
 			formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
+		uptime_hrs := uptime.Hours()
+		fprintf(w, "%-20s: Rx %s/hrs, Tx %s/hrs\n", "Avg Bandwidth",
+			formats.IECBytes(float64(stats.Rx)/uptime_hrs),
+			formats.IECBytes(float64(stats.Tx)/uptime_hrs))
 		rejected := stats.Accepted - stats.Served
 		fprintf(w, "%-20s: %d (%+d rejected)\n", "Listener Accepts",
 			stats.Served, rejected)

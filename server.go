@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/tlswrapper/forwarder"
@@ -42,6 +43,8 @@ type Server struct {
 
 	dialer net.Dialer
 	g      routines.Group
+
+	started time.Time
 
 	stats struct {
 		authorized atomic.Uint64
@@ -214,6 +217,7 @@ func (s *Server) Start() error {
 			return err
 		}
 	}
+	s.started = time.Now()
 	return nil
 }
 
