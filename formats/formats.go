@@ -22,7 +22,7 @@ func SIPrefix(value float64) string {
 	if !isNormal(value) {
 		return fmt.Sprintf("%.0f", value)
 	}
-	e := int(math.Floor(math.Log10(value) / 3.0))
+	e := int(math.Floor(math.Log10(math.Abs(value)) / 3.0))
 	if e == 0 {
 		return fmt.Sprintf("%.6g", value)
 	}
@@ -52,21 +52,22 @@ func IECBytes(value float64) string {
 	if !isNormal(value) {
 		return fmt.Sprintf("%.0f", value)
 	}
-	if value < 2048.0 {
-		return fmt.Sprintf("%.0f %s", value, iecUnits[0])
+	e := (int(math.Log2(math.Abs(value))) - 1) / 10
+	if e < 0 {
+		e = 0
+	} else if e >= len(iecUnits) {
+		e = len(iecUnits) - 1
 	}
-	n := (int(math.Log2(value)) - 1) / 10
-	if n >= len(iecUnits) {
-		n = len(iecUnits) - 1
+	v := math.Ldexp(value, e*-10)
+	if e > 0 {
+		if -10.0 < v && v < 10.0 {
+			return fmt.Sprintf("%.2f %s", v, iecUnits[e])
+		}
+		if -100.0 < v && v < 100.0 {
+			return fmt.Sprintf("%.1f %s", v, iecUnits[e])
+		}
 	}
-	v := math.Ldexp(value, n*-10)
-	if v < 10.0 {
-		return fmt.Sprintf("%.2f %s", v, iecUnits[n])
-	}
-	if v < 100.0 {
-		return fmt.Sprintf("%.1f %s", v, iecUnits[n])
-	}
-	return fmt.Sprintf("%.0f %s", v, iecUnits[n])
+	return fmt.Sprintf("%.0f %s", v, iecUnits[e])
 }
 
 // DurationSeconds formats the truncated duration
