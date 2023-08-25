@@ -23,11 +23,7 @@ func RunHandshake(conn net.Conn, p *Handshake) error {
 	}
 	hdr := make([]byte, 2)
 	binary.BigEndian.PutUint16(hdr, uint16(len(b)))
-	_, err = conn.Write(hdr)
-	if err != nil {
-		return err
-	}
-	_, err = conn.Write(b)
+	_, err = conn.Write(append(hdr, b...))
 	if err != nil {
 		return err
 	}
