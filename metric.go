@@ -112,10 +112,10 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		fprintf(w, "%-20s: %v\n", "Num Streams", stats.NumStreams)
 		fprintf(w, "%-20s: Rx %s, Tx %s\n", "Traffic",
 			formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
-		uptime_hrs := uptime.Hours()
+		uptimeHrs := uptime.Hours()
 		fprintf(w, "%-20s: Rx %s/hrs, Tx %s/hrs\n", "Avg Bandwidth",
-			formats.IECBytes(float64(stats.Rx)/uptime_hrs),
-			formats.IECBytes(float64(stats.Tx)/uptime_hrs))
+			formats.IECBytes(float64(stats.Rx)/uptimeHrs),
+			formats.IECBytes(float64(stats.Tx)/uptimeHrs))
 		rejected := stats.Accepted - stats.Served
 		fprintf(w, "%-20s: %d (%+d rejected)\n", "Listener Accepts",
 			stats.Served, rejected)
