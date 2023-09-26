@@ -23,14 +23,12 @@ func parseFlags() string {
 	if flagHelp || flagConfig == "" {
 		fmt.Printf("tlswrapper %s\n  %s\n\n", tlswrapper.Version, tlswrapper.Homepage)
 		flag.Usage()
-		fmt.Printf("\nruntime: %s\n", runtime.Version())
 		os.Exit(1)
 	}
 	return flagConfig
 }
 
 func readConfig(path string) (*tlswrapper.Config, error) {
-	slog.Info("config file:", path)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -54,6 +52,8 @@ func main() {
 		slog.Fatal("logging:", err)
 		os.Exit(1)
 	}
+	slog.Debugf("runtime: %s\n", runtime.Version())
+	slog.Info("config:", path)
 	server := tlswrapper.NewServer(cfg)
 	if err := server.LoadConfig(cfg); err != nil {
 		slog.Fatal("load config:", err)

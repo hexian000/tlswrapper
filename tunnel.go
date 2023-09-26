@@ -26,6 +26,7 @@ type Tunnel struct {
 	muxCloseSig chan *yamux.Session
 	redialCount int
 	dialMu      sync.Mutex
+	lastChanged time.Time
 }
 
 func NewTunnel(s *Server, c *TunnelConfig) *Tunnel {
@@ -141,6 +142,15 @@ func (t *Tunnel) addMux(mux *yamux.Session) {
 		}
 	}
 	t.mux[mux] = struct{}{}
+	t.lastChanged = time.Now()
+}
+
+func (t *Tunnel) sigMuxClosed(mux *yamux.Session) {
+	t.muxCloseSig <- mux
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.lastChanged = time.Now()
+	delete(t.mux, mux)
 }
 
 func (t *Tunnel) getMux() *yamux.Session {
@@ -165,17 +175,6 @@ func (t *Tunnel) NumSessions() (num int) {
 	return
 }
 
-func (t *Tunnel) NumStreams() (num int) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	for mux := range t.mux {
-		if !mux.IsClosed() {
-			num += mux.NumStreams()
-		}
-	}
-	return
-}
-
 func (t *Tunnel) Serve(mux *yamux.Session) {
 	var h Handler
 	if t.c.Dial != "" {
@@ -187,8 +186,8 @@ func (t *Tunnel) Serve(mux *yamux.Session) {
 		h = &EmptyHandler{}
 	}
 	t.addMux(mux)
+	defer t.sigMuxClosed(mux)
 	t.s.Serve(mux, h)
-	t.muxCloseSig <- mux
 }
 
 func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
@@ -260,4 +259,29 @@ func (t *Tunnel) MuxDial(ctx context.Context) (net.Conn, error) {
 	}
 	slog.Debugf("stream open: %s ID=%v", t.name, stream.StreamID())
 	return stream, nil
+}
+
+type TunnelStats struct {
+	Name        string
+	LastChanged time.Time
+	NumSessions int
+	NumStreams  int
+}
+
+func (t *Tunnel) Stats() TunnelStats {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	numSessions, numStreams := 0, 0
+	for mux := range t.mux {
+		if !mux.IsClosed() {
+			numSessions++
+			numStreams += mux.NumStreams()
+		}
+	}
+	return TunnelStats{
+		Name:        t.name,
+		LastChanged: t.lastChanged,
+		NumSessions: numSessions,
+		NumStreams:  numStreams,
+	}
 }

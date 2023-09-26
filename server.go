@@ -103,6 +103,7 @@ type ServerStats struct {
 	Authorized  uint64
 	ReqTotal    uint64
 	ReqSuccess  uint64
+	tunnels     []TunnelStats
 }
 
 func (s *Server) NumSessions() (num int) {
@@ -111,16 +112,17 @@ func (s *Server) NumSessions() (num int) {
 	}
 	return
 }
-
 func (s *Server) Stats() (stats ServerStats) {
 	for _, t := range s.getTunnels() {
-		stats.NumSessions += t.NumSessions()
-		stats.NumStreams += t.NumStreams()
+		tstats := t.Stats()
+		stats.NumSessions += tstats.NumSessions
+		stats.NumStreams += tstats.NumStreams
 		if t.l != nil {
 			accepted, served := t.l.Stats()
 			stats.Accepted += accepted
 			stats.Served += served
 		}
+		stats.tunnels = append(stats.tunnels, tstats)
 	}
 	stats.Rx, stats.Tx = s.meter.Read.Load(), s.meter.Written.Load()
 	stats.Authorized = s.stats.authorized.Load()

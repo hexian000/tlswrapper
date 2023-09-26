@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"time"
 
 	"github.com/hexian000/tlswrapper/formats"
@@ -60,7 +61,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		ReqSuccess uint64
 		Rx, Tx     uint64
 		Timestamp  time.Time
-	}{Timestamp: time.Time{}}
+	}{}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {
@@ -102,14 +103,13 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		}
 		w.WriteHeader(http.StatusOK)
 		fprintf(w, "tlswrapper %s\n  %s\n\n", Version, Homepage)
-		fprintf(w, "%-20s: %v\n", "Server Time", now.Format(time.RFC3339))
+		fprintf(w, "%-20s: %s\n", "Server Time", now.Format(time.RFC3339))
 		fprintf(w, "%-20s: %s\n", "Uptime", formats.Duration(uptime))
 		fprintf(w, "%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
 		fprintf(w, "%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
 		printMemStats(w, true)
 		stats := s.Stats()
-		fprintf(w, "%-20s: %v\n", "Num Sessions", stats.NumSessions)
-		fprintf(w, "%-20s: %v\n", "Num Streams", stats.NumStreams)
+		fprintf(w, "%-20s: %d (%d streams)\n", "Num Sessions", stats.NumSessions, stats.NumStreams)
 		fprintf(w, "%-20s: Rx %s, Tx %s\n", "Traffic",
 			formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
 		uptimeHrs := uptime.Hours()
@@ -143,8 +143,19 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			last.Timestamp = now
 		}
 
-		fprintf(w, "\n==============================\n")
-		fprintf(w, "runtime: %s\n", runtime.Version())
+		fprintf(w, "\n> Tunnels\n")
+		sort.Slice(stats.tunnels, func(i, j int) bool {
+			return stats.tunnels[i].Name < stats.tunnels[j].Name
+		})
+		for _, t := range stats.tunnels {
+			if t.NumSessions > 0 {
+				fprintf(w, "%-20q: %d streams, online since %s\n", t.Name, t.NumStreams, t.LastChanged.Format(time.RFC3339))
+			} else if (t.LastChanged != time.Time{}) {
+				fprintf(w, "%-20q: offline since %s\n", t.Name, t.LastChanged.Format(time.RFC3339))
+			} else {
+				fprintf(w, "%-20q: never seen\n", t.Name)
+			}
+		}
 	})
 	mux.HandleFunc("/gc", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -169,7 +180,6 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		start := time.Now()
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if stateless {
@@ -179,9 +189,6 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		var buf [65536]byte
 		n := runtime.Stack(buf[:], true)
 		fprintf(w, "%s\n", string(buf[:n]))
-		fprintf(w, "\n==============================\n")
-		fprintf(w, "generated in %s\n", formats.Duration(time.Since(start)))
-		fprintf(w, "runtime: %s\n", runtime.Version())
 	})
 	server := &http.Server{
 		Handler:  mux,
