@@ -78,7 +78,7 @@ func (l *Logger) SetOutput(w io.Writer) {
 }
 
 func (l *Logger) Verbose(v ...interface{}) {
-	l.Output(2, LevelVerbose, []byte(fmt.Sprintln(v...)))
+	l.Output(2, LevelVerbose, []byte(fmt.Sprint(v...)))
 }
 
 func (l *Logger) Verbosef(format string, v ...interface{}) {
@@ -86,7 +86,7 @@ func (l *Logger) Verbosef(format string, v ...interface{}) {
 }
 
 func (l *Logger) Debug(v ...interface{}) {
-	l.Output(2, LevelDebug, []byte(fmt.Sprintln(v...)))
+	l.Output(2, LevelDebug, []byte(fmt.Sprint(v...)))
 }
 
 func (l *Logger) Debugf(format string, v ...interface{}) {
@@ -94,7 +94,7 @@ func (l *Logger) Debugf(format string, v ...interface{}) {
 }
 
 func (l *Logger) Info(v ...interface{}) {
-	l.Output(2, LevelInfo, []byte(fmt.Sprintln(v...)))
+	l.Output(2, LevelInfo, []byte(fmt.Sprint(v...)))
 }
 
 func (l *Logger) Infof(format string, v ...interface{}) {
@@ -102,7 +102,7 @@ func (l *Logger) Infof(format string, v ...interface{}) {
 }
 
 func (l *Logger) Warning(v ...interface{}) {
-	l.Output(2, LevelWarning, []byte(fmt.Sprintln(v...)))
+	l.Output(2, LevelWarning, []byte(fmt.Sprint(v...)))
 }
 
 func (l *Logger) Warningf(format string, v ...interface{}) {
@@ -110,7 +110,7 @@ func (l *Logger) Warningf(format string, v ...interface{}) {
 }
 
 func (l *Logger) Error(v ...interface{}) {
-	l.Output(2, LevelError, []byte(fmt.Sprintln(v...)))
+	l.Output(2, LevelError, []byte(fmt.Sprint(v...)))
 }
 
 func (l *Logger) Errorf(format string, v ...interface{}) {
@@ -118,7 +118,7 @@ func (l *Logger) Errorf(format string, v ...interface{}) {
 }
 
 func (l *Logger) Fatal(v ...interface{}) {
-	l.Output(2, LevelFatal, []byte(fmt.Sprintln(v...)))
+	l.Output(2, LevelFatal, []byte(fmt.Sprint(v...)))
 }
 
 func (l *Logger) Fatalf(format string, v ...interface{}) {

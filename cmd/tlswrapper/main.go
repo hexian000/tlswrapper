@@ -52,7 +52,7 @@ func main() {
 		slog.Fatal("logging:", err)
 		os.Exit(1)
 	}
-	slog.Debugf("runtime: %s\n", runtime.Version())
+	slog.Debugf("runtime: %s", runtime.Version())
 	slog.Info("config:", path)
 	server := tlswrapper.NewServer(cfg)
 	if err := server.LoadConfig(cfg); err != nil {

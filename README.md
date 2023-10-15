@@ -5,6 +5,10 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/hexian000/tlswrapper)](https://goreportcard.com/report/github.com/hexian000/tlswrapper)
 [![Release](https://img.shields.io/github/release/hexian000/tlswrapper.svg?style=flat)](https://github.com/hexian000/tlswrapper/releases)
 
+Wrap any TCP-based service with multiplexed mutual TLS tunnels.
+
+Status: **Stable**
+
 - [Features](#features)
 - [Protocol Stack](#protocol-stack)
 - [Authentication Model](#authentication-model)
@@ -19,8 +23,6 @@
 - [Credits](#credits)
 
 ## Features
-
-Wrap any TCP-based service with multiplexed mutual TLS tunnels.
 
 - Multiplexed: All traffic goes over one TCP connection.
 - Secured: All traffic is optionally protected by mutual authenticated TLS.

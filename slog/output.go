@@ -61,9 +61,7 @@ func (l *lineOutput) Write(m logMessage) {
 	buf = strconv.AppendInt(buf, int64(m.line), 10)
 	buf = append(buf, ' ')
 	buf = append(buf, m.msg...)
-	if len(m.msg) == 0 || m.msg[len(m.msg)-1] != '\n' {
-		buf = append(buf, '\n')
-	}
+	buf = append(buf, '\n')
 	l.buf = buf
 	_, _ = l.out.Write(buf)
 }

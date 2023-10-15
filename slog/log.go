@@ -36,7 +36,7 @@ func Default() *Logger {
 }
 
 func Verbose(v ...interface{}) {
-	std.Output(2, LevelVerbose, []byte(fmt.Sprintln(v...)))
+	std.Output(2, LevelVerbose, []byte(fmt.Sprint(v...)))
 }
 
 func Verbosef(format string, v ...interface{}) {
@@ -44,7 +44,7 @@ func Verbosef(format string, v ...interface{}) {
 }
 
 func Debug(v ...interface{}) {
-	std.Output(2, LevelDebug, []byte(fmt.Sprintln(v...)))
+	std.Output(2, LevelDebug, []byte(fmt.Sprint(v...)))
 }
 
 func Debugf(format string, v ...interface{}) {
@@ -52,7 +52,7 @@ func Debugf(format string, v ...interface{}) {
 }
 
 func Info(v ...interface{}) {
-	std.Output(2, LevelInfo, []byte(fmt.Sprintln(v...)))
+	std.Output(2, LevelInfo, []byte(fmt.Sprint(v...)))
 }
 
 func Infof(format string, v ...interface{}) {
@@ -60,7 +60,7 @@ func Infof(format string, v ...interface{}) {
 }
 
 func Warning(v ...interface{}) {
-	std.Output(2, LevelWarning, []byte(fmt.Sprintln(v...)))
+	std.Output(2, LevelWarning, []byte(fmt.Sprint(v...)))
 }
 
 func Warningf(format string, v ...interface{}) {
@@ -68,7 +68,7 @@ func Warningf(format string, v ...interface{}) {
 }
 
 func Error(v ...interface{}) {
-	std.Output(2, LevelError, []byte(fmt.Sprintln(v...)))
+	std.Output(2, LevelError, []byte(fmt.Sprint(v...)))
 }
 
 func Errorf(format string, v ...interface{}) {
@@ -76,7 +76,7 @@ func Errorf(format string, v ...interface{}) {
 }
 
 func Fatal(v ...interface{}) {
-	std.Output(2, LevelFatal, []byte(fmt.Sprintln(v...)))
+	std.Output(2, LevelFatal, []byte(fmt.Sprint(v...)))
 }
 
 func Fatalf(format string, v ...interface{}) {
