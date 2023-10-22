@@ -56,7 +56,7 @@ func (f *forwarder) delConn(accepted net.Conn, dialed net.Conn) {
 func (f *forwarder) connCopy(dst net.Conn, src net.Conn) {
 	defer func() {
 		if err := recover(); err != nil {
-			slog.Error("panic:", err)
+			slog.Error("panic: ", err)
 		}
 	}()
 	_, err := io.Copy(dst, src)

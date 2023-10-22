@@ -131,7 +131,7 @@ func (s *Server) Stats() (stats ServerStats) {
 }
 
 func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) {
-	slog.Verbose("forward to:", addr)
+	slog.Verbose("forward to: ", addr)
 	dialed, err := s.dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
@@ -172,10 +172,10 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 func (s *Server) Listen(addr string) (net.Listener, error) {
 	listener, err := net.Listen(network, addr)
 	if err != nil {
-		slog.Error("listen", addr, ":", err)
+		slog.Error("listen ", addr, ": ", err)
 		return listener, err
 	}
-	slog.Info("listen:", listener.Addr())
+	slog.Info("listen: ", listener.Addr())
 	s.listeners[addr] = listener
 	return listener, err
 }
@@ -226,7 +226,7 @@ func (s *Server) Start() error {
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
 	for addr, listener := range s.listeners {
-		slog.Info("listener close:", listener.Addr())
+		slog.Info("listener close: ", listener.Addr())
 		_ = listener.Close()
 		delete(s.listeners, addr)
 	}
