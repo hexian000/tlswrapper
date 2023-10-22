@@ -58,7 +58,7 @@ type Config struct {
 	MaxConn int `json:"maxconn"`
 	// (optional) max concurrent sessions, default to 128
 	MaxSessions int `json:"maxsessions"`
-	// (optional) mux accept backlog, default to 16, you may not want to change this
+	// (optional) mux accept backlog, default to 256, you may not want to change this
 	AcceptBacklog int `json:"backlog"`
 	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
 	StreamWindow uint32 `json:"window"`
@@ -82,7 +82,7 @@ var DefaultConfig = Config{
 	StartupLimitFull:  60,
 	MaxConn:           4096,
 	MaxSessions:       128,
-	AcceptBacklog:     16,
+	AcceptBacklog:     256,
 	StreamWindow:      256 * 1024, // 256 KiB
 	RequestTimeout:    30,
 	WriteTimeout:      15,
