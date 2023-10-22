@@ -26,7 +26,7 @@ Status: **Stable**
 
 - Multiplexed: All traffic goes over one TCP connection.
 - Secured: All traffic is optionally protected by mutual authenticated TLS.
-- Mutual Forwarded: Each peer can listen and connect to the other peer simultaneously over the same underlying connection.
+- Mutual Forwarded: Each peer can listen from and connect to the other peer simultaneously over the same underlying connection.
 
 *In terms of performance, creating multiplexed TCP tunnels is generally not a good idea, see [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking). Make sure you have a good reason to do so.*
 
@@ -59,7 +59,7 @@ Status: **Stable**
 
 Like SSH, each peer should have a key pair (certificate + private key) and an authorized list. Only certificates in the authorized list can communicate with the peer.
 
-This behavior is based on golang's TLS 1.3 implementation.
+This behavior is based on TLS 1.3 implemented by "crypto/tls" library in Go.
 
 By default, all certificates are self-signed. This will not reduce security. 
 
@@ -122,7 +122,7 @@ See [gencerts.sh](gencerts.sh).
 - "key": peer private key
 - "authcerts": peer authorized certificates list, bundles are supported
 
-See [source code](config.go) for complete list of all available options.
+See [source code](config.go) for a complete list of all available options.
 
 See [config.json](config.json) for example config file.
 
