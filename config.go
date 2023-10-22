@@ -54,7 +54,7 @@ type Config struct {
 	StartupLimitRate int `json:"startuplimitrate"`
 	// (optional) hard limit of concurrent unauthenticated connections, default to 60
 	StartupLimitFull int `json:"startuplimitfull"`
-	// (optional) max concurrent streams, default to 4096
+	// (optional) max concurrent streams, default to 16384
 	MaxConn int `json:"maxconn"`
 	// (optional) max concurrent sessions, default to 128
 	MaxSessions int `json:"maxsessions"`
@@ -80,7 +80,7 @@ var DefaultConfig = Config{
 	StartupLimitStart: 10,
 	StartupLimitRate:  30,
 	StartupLimitFull:  60,
-	MaxConn:           4096,
+	MaxConn:           16384,
 	MaxSessions:       128,
 	AcceptBacklog:     256,
 	StreamWindow:      256 * 1024, // 256 KiB
