@@ -20,7 +20,7 @@ jobs:
           (cd v2 && go mod vendor)
 
       - name: Build
-        run: go build -v ./v2/...
+        run: (cd v2 && go build -v ./...)
 
       - name: Test
-        run: go test -v ./v2/...
+        run: (cd v2 && go test -v ./...)
