@@ -17,10 +17,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          go mod vendor
+          (cd v2 && go mod vendor)
 
       - name: Build
-        run: go build -v ./...
+        run: go build -v ./v2/...
 
       - name: Test
-        run: go test -v ./...
+        run: go test -v ./v2/...
