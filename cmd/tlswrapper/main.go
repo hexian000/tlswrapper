@@ -37,6 +37,10 @@ func readConfig(path string) (*tlswrapper.Config, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return nil, err
 	}
+	slog.Default().SetLevel(cfg.LogLevel)
+	if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
 }
 
@@ -47,13 +51,7 @@ func main() {
 		slog.Fatal("read config: ", err)
 		os.Exit(1)
 	}
-	slog.Default().SetLevel(cfg.LogLevel)
-	if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
-		slog.Fatal("logging: ", err)
-		os.Exit(1)
-	}
 	slog.Debugf("runtime: %s", runtime.Version())
-	slog.Info("config: ", path)
 	server := tlswrapper.NewServer(cfg)
 	if err := server.LoadConfig(cfg); err != nil {
 		slog.Fatal("load config: ", err)
@@ -63,13 +61,13 @@ func main() {
 		slog.Fatal("server start: ", err)
 		os.Exit(1)
 	}
-	_, _ = daemon.Notify(daemon.Ready)
-	slog.Info("server is ready")
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	for {
-		sig := <-ch
+	signal.Ignore(syscall.SIGPIPE)
+	slog.Info("server start")
+	_, _ = daemon.Notify(daemon.Ready)
+	for sig := range ch {
 		slog.Verbose("got signal: ", sig)
 		if sig != syscall.SIGHUP {
 			_, _ = daemon.Notify(daemon.Stopping)
@@ -82,11 +80,6 @@ func main() {
 			slog.Error("read config: ", err)
 			continue
 		}
-		slog.Default().SetLevel(cfg.LogLevel)
-		if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
-			slog.Error("logging: ", err)
-			continue
-		}
 		if err := server.LoadConfig(cfg); err != nil {
 			slog.Error("load config: ", err)
 			continue
@@ -95,9 +88,11 @@ func main() {
 		slog.Info("config successfully reloaded")
 	}
 
+	slog.Info("server stop")
 	if err := server.Shutdown(); err != nil {
 		slog.Fatal("server shutdown: ", err)
 		os.Exit(1)
 	}
-	slog.Info("server stopped gracefully")
+
+	slog.Info("program terminated normally.")
 }
