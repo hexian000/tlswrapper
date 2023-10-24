@@ -86,7 +86,7 @@ var DefaultConfig = Config{
 	StreamWindow:      256 * 1024, // 256 KiB
 	RequestTimeout:    30,
 	WriteTimeout:      15,
-	Log:               "stderr",
+	Log:               "stdout",
 	LogLevel:          slog.LevelInfo,
 }
 
@@ -143,7 +143,7 @@ type logWrapper struct {
 
 func (w *logWrapper) Write(p []byte) (n int, err error) {
 	const calldepth = 4
-	raw := string(p)
+	raw := strings.TrimSuffix(string(p), "\n")
 	if msg := strings.TrimPrefix(raw, "[ERR] "); len(msg) != len(raw) {
 		w.Output(calldepth, slog.LevelError, []byte(msg))
 	} else if msg := strings.TrimPrefix(raw, "[WARN] "); len(msg) != len(raw) {
