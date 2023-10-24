@@ -145,7 +145,7 @@ cd tlswrapper
 ```
 or
 ```sh
-go install github.com/hexian000/tlswrapper@latest
+go install github.com/hexian000/tlswrapper/v2/cmd/tlswrapper@latest
 ```
 
 ## Credits

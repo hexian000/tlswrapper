@@ -1,4 +1,4 @@
-module github.com/hexian000/tlswrapper
+module github.com/hexian000/tlswrapper/v2
 
 go 1.19
 

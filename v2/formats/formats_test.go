@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hexian000/tlswrapper/formats"
+	"github.com/hexian000/tlswrapper/v2/formats"
 )
 
 func TestSIPrefix(t *testing.T) {

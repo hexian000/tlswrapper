@@ -9,9 +9,9 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/hexian000/tlswrapper"
-	"github.com/hexian000/tlswrapper/daemon"
-	"github.com/hexian000/tlswrapper/slog"
+	"github.com/hexian000/tlswrapper/v2"
+	"github.com/hexian000/tlswrapper/v2/daemon"
+	"github.com/hexian000/tlswrapper/v2/slog"
 )
 
 func parseFlags() string {

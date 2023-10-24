@@ -19,7 +19,7 @@ set -e
 PACKAGE="./cmd/tlswrapper"
 OUT="./build/tlswrapper"
 GOFLAGS="-trimpath -mod vendor"
-LDFLAGS="-X github.com/hexian000/tlswrapper.Version=${VERSION}"
+LDFLAGS="-X github.com/hexian000/tlswrapper/v2.Version=${VERSION}"
 
 export CGO_ENABLED=0
 

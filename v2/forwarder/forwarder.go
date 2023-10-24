@@ -8,8 +8,8 @@ import (
 	"syscall"
 
 	"github.com/hashicorp/yamux"
-	"github.com/hexian000/tlswrapper/routines"
-	"github.com/hexian000/tlswrapper/slog"
+	"github.com/hexian000/tlswrapper/v2/routines"
+	"github.com/hexian000/tlswrapper/v2/slog"
 )
 
 var ErrConnLimit = errors.New("connection limit is exceeded")

@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/hexian000/tlswrapper/formats"
-	"github.com/hexian000/tlswrapper/hlistener"
-	"github.com/hexian000/tlswrapper/meter"
-	"github.com/hexian000/tlswrapper/proto"
-	"github.com/hexian000/tlswrapper/slog"
+	"github.com/hexian000/tlswrapper/v2/formats"
+	"github.com/hexian000/tlswrapper/v2/hlistener"
+	"github.com/hexian000/tlswrapper/v2/meter"
+	"github.com/hexian000/tlswrapper/v2/proto"
+	"github.com/hexian000/tlswrapper/v2/slog"
 )
 
 type Handler interface {

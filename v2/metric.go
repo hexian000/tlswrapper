@@ -11,8 +11,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/hexian000/tlswrapper/formats"
-	"github.com/hexian000/tlswrapper/slog"
+	"github.com/hexian000/tlswrapper/v2/formats"
+	"github.com/hexian000/tlswrapper/v2/slog"
 )
 
 func fprintf(w io.Writer, format string, v ...interface{}) {

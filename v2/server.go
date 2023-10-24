@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/hexian000/tlswrapper/forwarder"
-	"github.com/hexian000/tlswrapper/meter"
-	"github.com/hexian000/tlswrapper/routines"
-	"github.com/hexian000/tlswrapper/slog"
+	"github.com/hexian000/tlswrapper/v2/forwarder"
+	"github.com/hexian000/tlswrapper/v2/meter"
+	"github.com/hexian000/tlswrapper/v2/routines"
+	"github.com/hexian000/tlswrapper/v2/slog"
 )
 
 const network = "tcp"
