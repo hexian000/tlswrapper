@@ -6,6 +6,10 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+
+    env:
+      working-directory v2
+
     steps:
       - uses: actions/checkout@v3
 
@@ -17,10 +21,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          (cd v2 && go mod vendor)
+          go mod vendor
 
       - name: Build
-        run: (cd v2 && go build -v ./...)
+        run: go build -v ./...
 
       - name: Test
-        run: (cd v2 && go test -v ./...)
+        run: go test -v ./...
