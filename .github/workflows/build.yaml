@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      working-directory: v2
+      working-directory: ./v2
 
     steps:
       - uses: actions/checkout@v3
@@ -22,9 +22,12 @@ jobs:
       - name: Install dependencies
         run: |
           go mod vendor
+        working-directory: ${{env.working-directory}}
 
       - name: Build
         run: go build -v ./...
+        working-directory: ${{env.working-directory}}
 
       - name: Test
         run: go test -v ./...
+        working-directory: ${{env.working-directory}}
