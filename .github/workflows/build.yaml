@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      working-directory v2
+      working-directory: v2
 
     steps:
       - uses: actions/checkout@v3
