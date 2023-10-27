@@ -25,8 +25,9 @@ Status: **Stable**
 ## Features
 
 - Multiplexed: All traffic goes over one TCP connection.
-- Secured: All traffic is optionally protected by mutual authenticated TLS.
 - Mutual Forwarded: Each peer can listen from and connect to the other peer simultaneously over the same underlying connection.
+- Secured: All traffic is optionally protected by [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS).
+- Incompatible: Always enforce the latest TLS version.
 
 *In terms of performance, creating multiplexed TCP tunnels is generally not a good idea, see [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking). Make sure you have a good reason to do so.*
 
