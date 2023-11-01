@@ -12,7 +12,6 @@ var (
 
 type Group interface {
 	Go(func()) error
-	Count() int
 	Close()
 	CloseC() <-chan struct{}
 	Wait()
@@ -25,27 +24,40 @@ type group struct {
 }
 
 func NewGroup(limit uint32) Group {
-	return &group{
-		routineCh: make(chan struct{}, limit),
-		closeCh:   make(chan struct{}),
+	g := &group{
+		closeCh: make(chan struct{}),
 	}
+	if limit > 0 {
+		g.routineCh = make(chan struct{}, limit)
+	}
+	return g
 }
 
 func (g *group) wrapper(f func()) {
 	defer func() {
-		<-g.routineCh
+		if g.routineCh != nil {
+			<-g.routineCh
+		}
 		g.wg.Done()
 	}()
 	f()
 }
 
 func (g *group) Go(f func()) error {
-	select {
-	case <-g.closeCh:
-		return ErrStopping
-	case g.routineCh <- struct{}{}:
-	default:
-		return ErrConcurrencyLimit
+	if g.routineCh != nil {
+		select {
+		case <-g.closeCh:
+			return ErrStopping
+		case g.routineCh <- struct{}{}:
+		default:
+			return ErrConcurrencyLimit
+		}
+	} else {
+		select {
+		case <-g.closeCh:
+			return ErrStopping
+		default:
+		}
 	}
 	g.wg.Add(1)
 	go g.wrapper(f)
@@ -58,10 +70,6 @@ func (g *group) Close() {
 
 func (g *group) CloseC() <-chan struct{} {
 	return g.closeCh
-}
-
-func (g *group) Count() int {
-	return len(g.routineCh)
 }
 
 func (g *group) Wait() {

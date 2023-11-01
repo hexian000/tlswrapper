@@ -55,7 +55,7 @@ type Server struct {
 
 // NewServer creates a server object
 func NewServer(cfg *Config) *Server {
-	g := routines.NewGroup(65536)
+	g := routines.NewGroup(0)
 	return &Server{
 		listeners: make(map[string]net.Listener),
 		tunnels:   make(map[string]*Tunnel),
