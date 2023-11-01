@@ -144,10 +144,6 @@ cd tlswrapper
 # build an executable for local system
 ./make.sh
 ```
-or
-```sh
-go install github.com/hexian000/tlswrapper/v2/cmd/tlswrapper@latest
-```
 
 ## Credits
 
