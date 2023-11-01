@@ -16,12 +16,14 @@ fi
 echo "+ version: ${VERSION}"
 
 set -e
+MODROOT="./v2"
 PACKAGE="./cmd/tlswrapper"
-OUT="./build/tlswrapper"
+OUT="$(realpath ./build)/tlswrapper"
 GOFLAGS="-trimpath -mod vendor"
 LDFLAGS="-X github.com/hexian000/tlswrapper/v2.Version=${VERSION}"
 
 export CGO_ENABLED=0
+cd "${MODROOT}"
 
 case "$1" in
 "x")
