@@ -3,6 +3,7 @@ package tlswrapper
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"sync/atomic"
 	"time"
@@ -116,7 +117,11 @@ type TunnelHandler struct {
 func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.t.MuxDial(ctx)
 	if err != nil {
-		slog.Errorf("tunnel %q: (%T) %v", h.t.name, err, err)
+		if errors.Is(err, ErrNoSession) {
+			slog.Debugf("tunnel %q: (%T) %v", h.t.name, err, err)
+		} else {
+			slog.Errorf("tunnel %q: (%T) %v", h.t.name, err, err)
+		}
 		_ = accepted.Close()
 		return
 	}
