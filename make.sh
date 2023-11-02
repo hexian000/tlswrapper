@@ -20,31 +20,65 @@ MODROOT="./v2"
 PACKAGE="./cmd/tlswrapper"
 OUT="$(realpath ./build)/tlswrapper"
 GOFLAGS="-trimpath -mod vendor"
+GCFLAGS=""
 LDFLAGS="-X github.com/hexian000/tlswrapper/v2.Version=${VERSION}"
 
-export CGO_ENABLED=0
 cd "${MODROOT}"
-
 case "$1" in
 "x")
     # cross build for all supported targets
     # not listed targets are likely to work
-    LDFLAGS="-s -w ${LDFLAGS}"
+    LDFLAGS="${LDFLAGS} -s -w"
     set -x
-    GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
-        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-mipsle" "${PACKAGE}"
-    GOOS="linux" GOARCH="arm" GOARM=7 \
-        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-armv7" "${PACKAGE}"
-    GOOS="linux" GOARCH="arm64" \
-        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-arm64" "${PACKAGE}"
-    GOOS="linux" GOARCH="amd64" \
-        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.linux-amd64" "${PACKAGE}"
-    GOOS="windows" GOARCH="amd64" \
-        nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
+    CGO_ENABLED=0 GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-mipsle" "${PACKAGE}"
+    CGO_ENABLED=0 GOOS="linux" GOARCH="arm" GOARM=7 \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-armv7" "${PACKAGE}"
+    CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-arm64" "${PACKAGE}"
+    CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-amd64" "${PACKAGE}"
+    CGO_ENABLED=0 GOOS="windows" GOARCH="amd64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
+    ;;
+race)
+    GOFLAGS="${GOFLAGS} -race"
+    GCFLAGS="${GCFLAGS} -N -l"
+    set -x
+    CGO_ENABLED=1 \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}" "${PACKAGE}"
+    ls -lh "${OUT}"
+    ;;
+asan)
+    GOFLAGS="${GOFLAGS} -asan"
+    GCFLAGS="${GCFLAGS} -N -l"
+    set -x
+    CGO_ENABLED=1 \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}" "${PACKAGE}"
+    ls -lh "${OUT}"
+    ;;
+msan)
+    GOFLAGS="${GOFLAGS} -msan"
+    GCFLAGS="${GCFLAGS} -N -l"
+    set -x
+    CGO_ENABLED=1 CC=clang \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}" "${PACKAGE}"
+    ls -lh "${OUT}"
     ;;
 *)
-    # debug build for native system only
+    GCFLAGS="${GCFLAGS} -N -l"
     set -x
-    nice go build ${GOFLAGS} -ldflags "${LDFLAGS}" -o "${OUT}" "${PACKAGE}"
+    CGO_ENABLED=0 \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}" "${PACKAGE}"
+    ls -lh "${OUT}"
     ;;
 esac
