@@ -74,7 +74,6 @@ msan)
     ls -lh "${OUT}"
     ;;
 *)
-    GCFLAGS="${GCFLAGS} -N -l"
     set -x
     CGO_ENABLED=0 \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
