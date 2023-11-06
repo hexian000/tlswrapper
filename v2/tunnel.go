@@ -116,7 +116,9 @@ func (t *Tunnel) run() {
 		t.mu.Lock()
 		defer t.mu.Unlock()
 		for mux := range t.mux {
-			_ = mux.Close()
+			if err := mux.Close(); err != nil {
+				slog.Warningf("close: (%T) %v", err, err)
+			}
 			delete(t.mux, mux)
 		}
 	}()
@@ -241,7 +243,9 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err := t.s.g.Go(func() {
 		tun.Serve(mux)
 	}); err != nil {
-		_ = mux.Close()
+		if err := mux.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
 		return nil, err
 	}
 	slog.Infof("tunnel %q: dial %v, setup: %v", t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))

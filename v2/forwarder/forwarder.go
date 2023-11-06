@@ -45,8 +45,12 @@ func (f *forwarder) addConn(accepted net.Conn, dialed net.Conn) {
 }
 
 func (f *forwarder) delConn(accepted net.Conn, dialed net.Conn) {
-	_ = accepted.Close()
-	_ = dialed.Close()
+	if err := accepted.Close(); err != nil {
+		slog.Warningf("close: (%T) %v", err, err)
+	}
+	if err := dialed.Close(); err != nil {
+		slog.Warningf("close: (%T) %v", err, err)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.conn, accepted)
@@ -111,6 +115,8 @@ func (f *forwarder) Close() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for conn := range f.conn {
-		_ = conn.Close()
+		if err := conn.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
 	}
 }

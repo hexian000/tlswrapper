@@ -227,7 +227,9 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown() error {
 	for addr, listener := range s.listeners {
 		slog.Info("listener close: ", listener.Addr())
-		_ = listener.Close()
+		if err := listener.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
 		delete(s.listeners, addr)
 	}
 	s.ctx.close()

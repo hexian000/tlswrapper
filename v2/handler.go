@@ -79,7 +79,9 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		tun.Serve(mux)
 	}); err != nil {
 		slog.Errorf("tunnel %q: accept %v, (%T) %v", tun.name, conn.RemoteAddr(), err, err)
-		_ = mux.Close()
+		if err := mux.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
 		return
 	}
 	slog.Infof("tunnel %q: accept %v, setup %v", tun.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
@@ -95,14 +97,20 @@ func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 	h.s.stats.request.Add(1)
 	dialed, err := h.s.dialDirect(ctx, h.dial)
 	if err != nil {
-		_ = accepted.Close()
 		slog.Errorf("forward [%s]: %v", h.dial, err)
+		if err := accepted.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
 		return
 	}
 	if err := h.s.f.Forward(accepted, dialed); err != nil {
 		slog.Errorf("forward [%s]: %v", h.dial, err)
-		_ = accepted.Close()
-		_ = dialed.Close()
+		if err := accepted.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
+		if err := dialed.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
 		return
 	}
 	h.s.stats.success.Add(1)
@@ -118,17 +126,23 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.t.MuxDial(ctx)
 	if err != nil {
 		if errors.Is(err, ErrNoSession) {
-			slog.Debugf("tunnel %q: (%T) %v", h.t.name, err, err)
+			slog.Debugf("tunnel %q: %v", h.t.name, err)
 		} else {
 			slog.Errorf("tunnel %q: (%T) %v", h.t.name, err, err)
 		}
-		_ = accepted.Close()
+		if err := accepted.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
 		return
 	}
 	if err := h.s.f.Forward(accepted, dialed); err != nil {
 		slog.Errorf("tunnel %q: (%T) %v", h.t.name, err, err)
-		_ = accepted.Close()
-		_ = dialed.Close()
+		if err := accepted.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
+		if err := dialed.Close(); err != nil {
+			slog.Warningf("close: (%T) %v", err, err)
+		}
 		return
 	}
 }
@@ -137,5 +151,7 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 type EmptyHandler struct{}
 
 func (h *EmptyHandler) Serve(_ context.Context, accepted net.Conn) {
-	_ = accepted.Close()
+	if err := accepted.Close(); err != nil {
+		slog.Warningf("close: (%T) %v", err, err)
+	}
 }

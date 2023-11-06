@@ -4,6 +4,8 @@ import (
 	"math/rand"
 	"net"
 	"sync/atomic"
+
+	"github.com/hexian000/tlswrapper/v2/slog"
 )
 
 type ServerStats struct {
@@ -49,7 +51,9 @@ func (l *Listener) Accept() (net.Conn, error) {
 		}
 		l.stats.Accepted.Add(1)
 		if l.isLimited() {
-			_ = conn.Close()
+			if err := conn.Close(); err != nil {
+				slog.Warningf("close: (%T) %v", err, err)
+			}
 			continue
 		}
 		l.stats.Served.Add(1)
