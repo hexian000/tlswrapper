@@ -17,7 +17,7 @@ type syslogOutput struct {
 
 func init() {
 	builtinOutput["syslog"] = func(tag string) (logOutput, error) {
-		w, err := syslog.New(syslog.LOG_DAEMON|syslog.LOG_NOTICE, tag)
+		w, err := syslog.New(syslog.LOG_USER|syslog.LOG_NOTICE, tag)
 		if err != nil {
 			return nil, err
 		}
