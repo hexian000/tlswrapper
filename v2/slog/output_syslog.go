@@ -28,6 +28,16 @@ func init() {
 	}
 }
 
+var priMap = [...]func(*syslog.Writer, string) error{
+	(*syslog.Writer).Emerg,
+	(*syslog.Writer).Crit,
+	(*syslog.Writer).Err,
+	(*syslog.Writer).Warning,
+	(*syslog.Writer).Info,
+	(*syslog.Writer).Debug,
+	(*syslog.Writer).Debug,
+}
+
 func (s *syslogOutput) Write(m logMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -39,5 +49,5 @@ func (s *syslogOutput) Write(m logMessage) {
 	buf = append(buf, ' ')
 	buf = append(buf, m.msg...)
 	s.buf = buf
-	s.out.Write(buf)
+	_ = priMap[m.level](s.out, string(buf))
 }
