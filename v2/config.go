@@ -68,7 +68,7 @@ type Config struct {
 	WriteTimeout int `json:"writetimeout"`
 	// (optional) log output, default to stderr
 	Log string `json:"log"`
-	// (optional) log output, default to 4 (info)
+	// (optional) log output, default to 4 (notice)
 	LogLevel int `json:"loglevel"`
 }
 
@@ -87,7 +87,7 @@ var DefaultConfig = Config{
 	RequestTimeout:    30,
 	WriteTimeout:      15,
 	Log:               "stdout",
-	LogLevel:          slog.LevelInfo,
+	LogLevel:          slog.LevelNotice,
 }
 
 // SetConnParams sets TCP params

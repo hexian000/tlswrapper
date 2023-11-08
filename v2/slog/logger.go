@@ -67,6 +67,12 @@ func (l *Logger) SetLevel(level int) {
 	l.level = level
 }
 
+func (l *Logger) CheckLevel(level int) bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return level <= l.level
+}
+
 func (l *Logger) setOutput(out logOutput) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

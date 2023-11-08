@@ -28,11 +28,12 @@ func init() {
 	}
 }
 
-var priMap = [...]func(*syslog.Writer, string) error{
-	(*syslog.Writer).Emerg,
+var priorityMap = [...]func(*syslog.Writer, string) error{
+	(*syslog.Writer).Alert,
 	(*syslog.Writer).Crit,
 	(*syslog.Writer).Err,
 	(*syslog.Writer).Warning,
+	(*syslog.Writer).Notice,
 	(*syslog.Writer).Info,
 	(*syslog.Writer).Debug,
 	(*syslog.Writer).Debug,
@@ -49,5 +50,5 @@ func (s *syslogOutput) Write(m logMessage) {
 	buf = append(buf, ' ')
 	buf = append(buf, m.msg...)
 	s.buf = buf
-	_ = priMap[m.level](s.out, string(buf))
+	_ = priorityMap[m.level](s.out, string(buf))
 }

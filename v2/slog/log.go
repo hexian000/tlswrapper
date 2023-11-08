@@ -11,13 +11,14 @@ const (
 	LevelFatal
 	LevelError
 	LevelWarning
+	LevelNotice
 	LevelInfo
 	LevelDebug
 	LevelVerbose
 )
 
 var levelChar = [...]byte{
-	' ', 'F', 'E', 'W', 'I', 'D', 'V',
+	'-', 'F', 'E', 'W', 'N', 'I', 'D', 'V',
 }
 
 type Logger struct {
@@ -49,6 +50,14 @@ func Debug(v ...interface{}) {
 
 func Debugf(format string, v ...interface{}) {
 	std.Output(2, LevelDebug, []byte(fmt.Sprintf(format, v...)))
+}
+
+func Notice(v ...interface{}) {
+	std.Output(2, LevelNotice, []byte(fmt.Sprint(v...)))
+}
+
+func Noticef(format string, v ...interface{}) {
+	std.Output(2, LevelNotice, []byte(fmt.Sprintf(format, v...)))
 }
 
 func Info(v ...interface{}) {
