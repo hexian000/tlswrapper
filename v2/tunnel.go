@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/hexian000/tlswrapper/v2/formats"
-	"github.com/hexian000/tlswrapper/v2/hlistener"
-	"github.com/hexian000/tlswrapper/v2/meter"
+	"github.com/hexian000/gosnippets/formats"
+	"github.com/hexian000/gosnippets/net/hlistener"
+	"github.com/hexian000/gosnippets/net/meter"
+	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v2/proto"
-	"github.com/hexian000/tlswrapper/v2/slog"
 )
 
 type Tunnel struct {

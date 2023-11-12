@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/hexian000/tlswrapper/v2/slog"
+	"github.com/hexian000/gosnippets/slog"
 )
 
 type TunnelConfig struct {
