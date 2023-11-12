@@ -65,10 +65,10 @@ func main() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	signal.Ignore(syscall.SIGPIPE)
-	slog.Info("server start")
+	slog.Notice("server start")
 	_, _ = daemon.Notify(daemon.Ready)
 	for sig := range ch {
-		slog.Verbose("got signal: ", sig)
+		slog.Debug("got signal: ", sig)
 		if sig != syscall.SIGHUP {
 			_, _ = daemon.Notify(daemon.Stopping)
 			break
@@ -85,10 +85,10 @@ func main() {
 			continue
 		}
 		_, _ = daemon.Notify(daemon.Ready)
-		slog.Info("config successfully reloaded")
+		slog.Notice("config successfully reloaded")
 	}
 
-	slog.Info("server stop")
+	slog.Notice("server stop")
 	if err := server.Shutdown(); err != nil {
 		slog.Fatal("server shutdown: ", err)
 		os.Exit(1)
