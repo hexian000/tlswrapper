@@ -46,7 +46,22 @@ case "$1" in
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
     ;;
-race)
+"r")
+    LDFLAGS="${LDFLAGS} -s -w"
+    set -x
+    CGO_ENABLED=0 \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}" "${PACKAGE}"
+    ls -lh "${OUT}"
+    ;;
+"p")
+    set -x
+    CGO_ENABLED=0 \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}" "${PACKAGE}"
+    ls -lh "${OUT}"
+    ;;
+"race")
     GOFLAGS="${GOFLAGS} -race"
     GCFLAGS="${GCFLAGS} -N -l"
     set -x
@@ -55,7 +70,7 @@ race)
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
-asan)
+"asan")
     GOFLAGS="${GOFLAGS} -asan"
     GCFLAGS="${GCFLAGS} -N -l"
     set -x
@@ -64,7 +79,7 @@ asan)
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
-msan)
+"msan")
     GOFLAGS="${GOFLAGS} -msan"
     GCFLAGS="${GCFLAGS} -N -l"
     set -x
@@ -74,6 +89,7 @@ msan)
     ls -lh "${OUT}"
     ;;
 *)
+    GCFLAGS="${GCFLAGS} -N -l"
     set -x
     CGO_ENABLED=0 \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
