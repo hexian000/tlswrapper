@@ -39,6 +39,9 @@ case "$1" in
     CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.linux-arm64" "${PACKAGE}"
+    CGO_ENABLED=0 GOOS="android" GOARCH="arm64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.android-arm64" "${PACKAGE}"
     CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.linux-amd64" "${PACKAGE}"
