@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/net/meter"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
@@ -188,9 +189,12 @@ func (s *Server) Start() error {
 			return err
 		}
 		if err := s.g.Go(func() {
-			err := RunHTTPServer(l, s)
-			if err != nil {
-				slog.Errorf("(%T) %v", err, err)
+			if err := RunHTTPServer(l, s); err != nil {
+				select {
+				case <-s.g.CloseC():
+				default:
+					slog.Error(formats.Error(err))
+				}
 			}
 		}); err != nil {
 			return err
