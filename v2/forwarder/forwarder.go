@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
 )
@@ -46,10 +47,10 @@ func (f *forwarder) addConn(accepted net.Conn, dialed net.Conn) {
 
 func (f *forwarder) delConn(accepted net.Conn, dialed net.Conn) {
 	if err := accepted.Close(); err != nil {
-		slog.Warningf("close: (%T) %v", err, err)
+		slog.Warningf("close: %s", formats.Error(err))
 	}
 	if err := dialed.Close(); err != nil {
-		slog.Warningf("close: (%T) %v", err, err)
+		slog.Warningf("close: %s", formats.Error(err))
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -116,7 +117,7 @@ func (f *forwarder) Close() {
 	defer f.mu.Unlock()
 	for conn := range f.conn {
 		if err := conn.Close(); err != nil {
-			slog.Warningf("close: (%T) %v", err, err)
+			slog.Warningf("close: %s", formats.Error(err))
 		}
 	}
 }

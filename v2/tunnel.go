@@ -116,9 +116,7 @@ func (t *Tunnel) run() {
 		t.mu.Lock()
 		defer t.mu.Unlock()
 		for mux := range t.mux {
-			if err := mux.Close(); err != nil {
-				slog.Warningf("close: (%T) %v", err, err)
-			}
+			ioClose(mux)
 			delete(t.mux, mux)
 		}
 	}()
@@ -181,8 +179,7 @@ func (t *Tunnel) Serve(mux *yamux.Session) {
 	var h Handler
 	if t.c.Dial != "" {
 		h = &ForwardHandler{
-			t.s,
-			t.c.Dial,
+			t.s, t.name, t.c.Dial,
 		}
 	} else {
 		h = &EmptyHandler{}
@@ -219,7 +216,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if tlscfg := t.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
 	} else {
-		slog.Warningf("tunnel %q: connection is not encrypted", t.name)
+		slog.Warningf("%q => %v: connection is not encrypted", t.name, conn.RemoteAddr())
 	}
 	handshake := &proto.Handshake{
 		Identity: c.Identity,
@@ -237,18 +234,16 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 		if found := t.s.findTunnel(handshake.Identity); found != nil {
 			tun = found
 		} else {
-			slog.Warningf("unknown remote identity %q", handshake.Identity)
+			slog.Warningf("%q => %v: unknown identity %q", t.name, conn.RemoteAddr(), handshake.Identity)
 		}
 	}
 	if err := t.s.g.Go(func() {
 		tun.Serve(mux)
 	}); err != nil {
-		if err := mux.Close(); err != nil {
-			slog.Warningf("close: (%T) %v", err, err)
-		}
+		ioClose(mux)
 		return nil, err
 	}
-	slog.Infof("tunnel %q: dial %v, setup: %v", t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	slog.Infof("%q => %v: setup %v", t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
 	return mux, nil
 }
 

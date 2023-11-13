@@ -41,7 +41,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	start := time.Now()
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
-			slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
+			slog.Errorf("%q <= %v: %s", h.t.name, conn.RemoteAddr(), formats.Error(err))
 			return
 		}
 	}
@@ -51,19 +51,19 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	if tlscfg := h.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
 	} else {
-		slog.Warningf("tunnel %q: connection is not encrypted", h.t.name)
+		slog.Warningf("%q <= %v: connection is not encrypted", h.t.name, conn.RemoteAddr())
 	}
 	handshake := &proto.Handshake{
 		Identity: c.Identity,
 	}
 	if err := proto.RunHandshake(conn, handshake); err != nil {
-		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
+		slog.Errorf("%q <= %v: %s", h.t.name, conn.RemoteAddr(), formats.Error(err))
 		return
 	}
 	_ = conn.SetDeadline(time.Time{})
 	mux, err := yamux.Server(conn, h.s.getMuxConfig(true))
 	if err != nil {
-		slog.Errorf("tunnel %q: accept %v, (%T) %v", h.t.name, conn.RemoteAddr(), err, err)
+		slog.Errorf("%q <= %v: %s", h.t.name, conn.RemoteAddr(), formats.Error(err))
 		return
 	}
 	h.s.stats.authorized.Add(1)
@@ -72,24 +72,23 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		if t := h.s.findTunnel(handshake.Identity); t != nil {
 			tun = t
 		} else {
-			slog.Warningf("unknown remote identity %q", handshake.Identity)
+			slog.Warningf("%q <= %v: unknown identity %q", tun.name, conn.RemoteAddr(), handshake.Identity)
 		}
 	}
 	if err := h.s.g.Go(func() {
 		tun.Serve(mux)
 	}); err != nil {
-		slog.Errorf("tunnel %q: accept %v, (%T) %v", tun.name, conn.RemoteAddr(), err, err)
-		if err := mux.Close(); err != nil {
-			slog.Warningf("close: (%T) %v", err, err)
-		}
+		slog.Errorf("%q <= %v: %s", tun.name, conn.RemoteAddr(), formats.Error(err))
+		ioClose(mux)
 		return
 	}
-	slog.Infof("tunnel %q: accept %v, setup %v", tun.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	slog.Infof("%q <= %v: setup %v", tun.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
 }
 
 // ForwardHandler forwards connections to another plain address
 type ForwardHandler struct {
 	s    *Server
+	name string
 	dial string
 }
 
@@ -97,20 +96,14 @@ func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 	h.s.stats.request.Add(1)
 	dialed, err := h.s.dialDirect(ctx, h.dial)
 	if err != nil {
-		slog.Errorf("forward [%s]: %v", h.dial, err)
-		if err := accepted.Close(); err != nil {
-			slog.Warningf("close: (%T) %v", err, err)
-		}
+		slog.Errorf("%q -> %s: %v", h.name, h.dial, err)
+		ioClose(accepted)
 		return
 	}
 	if err := h.s.f.Forward(accepted, dialed); err != nil {
-		slog.Errorf("forward [%s]: %v", h.dial, err)
-		if err := accepted.Close(); err != nil {
-			slog.Warningf("close: (%T) %v", err, err)
-		}
-		if err := dialed.Close(); err != nil {
-			slog.Warningf("close: (%T) %v", err, err)
-		}
+		slog.Errorf("%q -> %s: %v", h.name, h.dial, err)
+		ioClose(accepted)
+		ioClose(dialed)
 		return
 	}
 	h.s.stats.success.Add(1)
@@ -126,23 +119,17 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.t.MuxDial(ctx)
 	if err != nil {
 		if errors.Is(err, ErrNoSession) {
-			slog.Debugf("tunnel %q: %v", h.t.name, err)
+			slog.Debugf("%v -> %q: %s", accepted.RemoteAddr(), h.t.name, formats.Error(err))
 		} else {
-			slog.Errorf("tunnel %q: (%T) %v", h.t.name, err, err)
+			slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.t.name, formats.Error(err))
 		}
-		if err := accepted.Close(); err != nil {
-			slog.Warningf("close: (%T) %v", err, err)
-		}
+		ioClose(accepted)
 		return
 	}
 	if err := h.s.f.Forward(accepted, dialed); err != nil {
-		slog.Errorf("tunnel %q: (%T) %v", h.t.name, err, err)
-		if err := accepted.Close(); err != nil {
-			slog.Warningf("close: (%T) %v", err, err)
-		}
-		if err := dialed.Close(); err != nil {
-			slog.Warningf("close: (%T) %v", err, err)
-		}
+		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.t.name, formats.Error(err))
+		ioClose(accepted)
+		ioClose(dialed)
 		return
 	}
 }
@@ -151,7 +138,5 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 type EmptyHandler struct{}
 
 func (h *EmptyHandler) Serve(_ context.Context, accepted net.Conn) {
-	if err := accepted.Close(); err != nil {
-		slog.Warningf("close: (%T) %v", err, err)
-	}
+	ioClose(accepted)
 }
