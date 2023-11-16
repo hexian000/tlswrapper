@@ -19,11 +19,11 @@ set -e
 MODROOT="./v2"
 PACKAGE="./cmd/tlswrapper"
 OUT="$(realpath ./build)/tlswrapper"
-GOFLAGS="-trimpath -mod vendor"
+GOFLAGS="-trimpath"
 GCFLAGS=""
 LDFLAGS="-X github.com/hexian000/tlswrapper/v2.Version=${VERSION}"
 
-cd "${MODROOT}"
+cd "${MODROOT}" && go mod vendor
 case "$1" in
 "x")
     # cross build for all supported targets
