@@ -3,7 +3,9 @@ package tlswrapper
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"log"
+	"math"
 	"net"
 	"os"
 	"strings"
@@ -56,7 +58,7 @@ type Config struct {
 	StartupLimitFull int `json:"startuplimitfull"`
 	// (optional) max concurrent streams, default to 16384
 	MaxConn int `json:"maxconn"`
-	// (optional) max concurrent sessions, default to 128
+	// (optional) max concurrent incoming sessions, default to 128
 	MaxSessions int `json:"maxsessions"`
 	// (optional) mux accept backlog, default to 256, you may not want to change this
 	AcceptBacklog int `json:"backlog"`
@@ -88,6 +90,38 @@ var DefaultConfig = Config{
 	WriteTimeout:      15,
 	Log:               "stdout",
 	LogLevel:          slog.LevelNotice,
+}
+
+func rangeCheckInt(key string, value int, min int, max int) error {
+	if !(min <= value && value <= max) {
+		return fmt.Errorf("%s is out of range (%d - %d)", key, min, max)
+	}
+	return nil
+}
+
+func (c *Config) Validate() error {
+	if err := rangeCheckInt("keepalive", c.KeepAlive, 0, 86400); err != nil {
+		return err
+	}
+	if err := rangeCheckInt("serverkeepalive", c.ServerKeepAlive, 0, 86400); err != nil {
+		return err
+	}
+	if err := rangeCheckInt("startuplimitstart", c.StartupLimitStart, 1, math.MaxInt); err != nil {
+		return err
+	}
+	if err := rangeCheckInt("startuplimitrate", c.StartupLimitRate, 0, 100); err != nil {
+		return err
+	}
+	if err := rangeCheckInt("startuplimitfull", c.StartupLimitFull, 1, math.MaxInt); err != nil {
+		return err
+	}
+	if err := rangeCheckInt("maxconn", c.MaxConn, 1, math.MaxInt); err != nil {
+		return err
+	}
+	if err := rangeCheckInt("maxsessions", c.MaxSessions, 1, math.MaxInt); err != nil {
+		return err
+	}
+	return nil
 }
 
 // SetConnParams sets TCP params
