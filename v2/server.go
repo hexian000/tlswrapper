@@ -190,12 +190,8 @@ func (s *Server) Start() error {
 			return err
 		}
 		if err := s.g.Go(func() {
-			if err := RunHTTPServer(l, s); err != nil {
-				select {
-				case <-s.g.CloseC():
-				default:
-					slog.Error(formats.Error(err))
-				}
+			if err := RunHTTPServer(l, s); err != nil && !errors.Is(err, net.ErrClosed) {
+				slog.Error(formats.Error(err))
 			}
 		}); err != nil {
 			return err
