@@ -48,10 +48,11 @@ func (t *Tunnel) Start() error {
 		h := &TLSHandler{s: t.s, t: t}
 		c := t.s.getConfig()
 		t.l = hlistener.Wrap(l, &hlistener.Config{
-			Start: uint32(c.StartupLimitStart),
-			Full:  uint32(c.StartupLimitFull),
-			Rate:  c.StartupLimitRate,
-			Stats: h.Stats,
+			Start:       uint32(c.StartupLimitStart),
+			Full:        uint32(c.StartupLimitFull),
+			Rate:        c.StartupLimitRate,
+			MaxSessions: uint32(c.MaxSessions),
+			Stats:       h.Stats,
 		})
 		l = t.l
 		if err := t.s.g.Go(func() {
