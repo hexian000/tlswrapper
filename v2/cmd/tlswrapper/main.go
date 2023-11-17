@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/hexian000/gosnippets/daemon"
 	"github.com/hexian000/gosnippets/slog"
+	sd "github.com/hexian000/gosnippets/systemd"
 	"github.com/hexian000/tlswrapper/v2"
 )
 
@@ -35,6 +35,9 @@ func readConfig(path string) (*tlswrapper.Config, error) {
 	}
 	cfg := tlswrapper.DefaultConfig
 	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	slog.Default().SetLevel(cfg.LogLevel)
@@ -66,15 +69,15 @@ func main() {
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	signal.Ignore(syscall.SIGPIPE)
 	slog.Notice("server start")
-	_, _ = daemon.Notify(daemon.Ready)
+	_, _ = sd.Notify(sd.Ready)
 	for sig := range ch {
 		slog.Debug("got signal: ", sig)
 		if sig != syscall.SIGHUP {
-			_, _ = daemon.Notify(daemon.Stopping)
+			_, _ = sd.Notify(sd.Stopping)
 			break
 		}
 		// reload
-		_, _ = daemon.Notify(daemon.Reloading)
+		_, _ = sd.Notify(sd.Reloading)
 		cfg, err := readConfig(path)
 		if err != nil {
 			slog.Error("read config: ", err)
@@ -84,7 +87,7 @@ func main() {
 			slog.Error("load config: ", err)
 			continue
 		}
-		_, _ = daemon.Notify(daemon.Ready)
+		_, _ = sd.Notify(sd.Ready)
 		slog.Notice("config successfully reloaded")
 	}
 

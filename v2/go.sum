@@ -1,4 +1,4 @@
 github.com/hashicorp/yamux v0.1.1 h1:yrQxtgseBDrq9Y652vSRDvsKCJKOUD+GzTS4Y0Y8pvE=
 github.com/hashicorp/yamux v0.1.1/go.mod h1:CtWFDAQgb7dxtzFs4tWbplKIe2jSi3+5vKbgIO0SLnQ=
-github.com/hexian000/gosnippets v0.0.0-20231117051023-90fb50128478 h1:s/3QQCadlRKASaELKlnvl+srDY91h+LW9plf/1GGZg0=
-github.com/hexian000/gosnippets v0.0.0-20231117051023-90fb50128478/go.mod h1:SItpHKzoWxn8Lj2kJiw1ridZGDunCyUIbpL1N/7j6FQ=
+github.com/hexian000/gosnippets v0.0.0-20231117080430-a4acb9b3a8fb h1:4G+ckJgjasXC4eeQuPQB+Wh818zrGNDq42GuHSEYCl0=
+github.com/hexian000/gosnippets v0.0.0-20231117080430-a4acb9b3a8fb/go.mod h1:SItpHKzoWxn8Lj2kJiw1ridZGDunCyUIbpL1N/7j6FQ=

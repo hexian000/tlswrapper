@@ -77,7 +77,7 @@ func (f *forwarder) connCopy(dst net.Conn, src net.Conn) {
 func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 	select {
 	case <-f.closeCh:
-		return routines.ErrStopping
+		return routines.ErrClosed
 	case f.counter <- struct{}{}:
 	default:
 		return ErrConnLimit

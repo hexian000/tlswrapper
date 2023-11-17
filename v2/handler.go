@@ -10,8 +10,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
-	"github.com/hexian000/gosnippets/net/hlistener"
-	"github.com/hexian000/gosnippets/net/meter"
+	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v2/proto"
 )
@@ -28,11 +27,8 @@ type TLSHandler struct {
 	unauthorized atomic.Uint32
 }
 
-func (h *TLSHandler) Stats() hlistener.ServerStats {
-	return hlistener.ServerStats{
-		Sessions: uint32(h.s.NumSessions()),
-		HalfOpen: h.unauthorized.Load(),
-	}
+func (h *TLSHandler) Stats() (numSessions uint32, numHalfOpen uint32) {
+	return uint32(h.s.NumSessions()), h.unauthorized.Load()
 }
 
 func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
@@ -47,7 +43,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	}
 	c := h.s.getConfig()
 	c.SetConnParams(conn)
-	conn = meter.Conn(conn, h.s.meter)
+	conn = snet.FlowMeter(conn, h.s.flowStats)
 	if tlscfg := h.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
 	} else {

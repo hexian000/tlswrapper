@@ -14,7 +14,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
-	"github.com/hexian000/gosnippets/net/meter"
+	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v2/forwarder"
@@ -34,8 +34,9 @@ type Server struct {
 	servermuxcfg *yamux.Config
 	cfgMu        sync.RWMutex
 
-	f     forwarder.Forwarder
-	meter *meter.ConnMetrics
+	f forwarder.Forwarder
+
+	flowStats *snet.FlowStats
 
 	listeners map[string]net.Listener
 	tunnels   map[string]*Tunnel // map[identity]tunnel
@@ -64,10 +65,10 @@ func NewServer(cfg *Config) *Server {
 			timeout:  cfg.Timeout,
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
-		f:     forwarder.New(cfg.MaxConn, g),
-		meter: &meter.ConnMetrics{},
-		g:     g,
-		c:     cfg,
+		f:         forwarder.New(cfg.MaxConn, g),
+		flowStats: &snet.FlowStats{},
+		g:         g,
+		c:         cfg,
 	}
 }
 
@@ -125,7 +126,7 @@ func (s *Server) Stats() (stats ServerStats) {
 		}
 		stats.tunnels = append(stats.tunnels, tstats)
 	}
-	stats.Rx, stats.Tx = s.meter.Read.Load(), s.meter.Written.Load()
+	stats.Rx, stats.Tx = s.flowStats.Read.Load(), s.flowStats.Written.Load()
 	stats.Authorized = s.stats.authorized.Load()
 	stats.ReqTotal, stats.ReqSuccess = s.stats.request.Load(), s.stats.success.Load()
 	return

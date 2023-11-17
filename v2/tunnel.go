@@ -10,8 +10,8 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
+	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/net/hlistener"
-	"github.com/hexian000/gosnippets/net/meter"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v2/proto"
 )
@@ -20,7 +20,7 @@ type Tunnel struct {
 	name        string // used for logging
 	s           *Server
 	c           *TunnelConfig
-	l           *hlistener.Listener
+	l           hlistener.Listener
 	mu          sync.RWMutex
 	mux         map[*yamux.Session]struct{}
 	muxCloseSig chan *yamux.Session
@@ -50,7 +50,7 @@ func (t *Tunnel) Start() error {
 		t.l = hlistener.Wrap(l, &hlistener.Config{
 			Start: uint32(c.StartupLimitStart),
 			Full:  uint32(c.StartupLimitFull),
-			Rate:  float64(c.StartupLimitRate) / 100.0,
+			Rate:  c.StartupLimitRate,
 			Stats: h.Stats,
 		})
 		l = t.l
@@ -212,7 +212,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	}
 	c := t.s.getConfig()
 	c.SetConnParams(conn)
-	conn = meter.Conn(conn, t.s.meter)
+	conn = snet.FlowMeter(conn, t.s.flowStats)
 	if tlscfg := t.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
 	} else {
