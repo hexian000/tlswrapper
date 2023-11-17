@@ -69,7 +69,7 @@ func (f *forwarder) connCopy(dst net.Conn, src net.Conn) {
 		!errors.Is(err, net.ErrClosed) &&
 		!errors.Is(err, syscall.EPIPE) &&
 		!errors.Is(err, yamux.ErrStreamClosed) {
-		slog.Warningf("stream error: (%T) %v", err, err)
+		slog.Warningf("stream error: %s", formats.Error(err))
 		return
 	}
 }

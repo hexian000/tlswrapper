@@ -84,7 +84,7 @@ func (t *Tunnel) redial() {
 	_, err := t.dial(ctx)
 	if err != nil && !errors.Is(err, ErrNoSession) {
 		t.redialCount++
-		slog.Warningf("redial #%d: (%T) %v", t.redialCount, err, err)
+		slog.Warningf("redial #%d: %s", t.redialCount, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
