@@ -46,7 +46,8 @@ type Server struct {
 	dialer net.Dialer
 	g      routines.Group
 
-	started time.Time
+	numSessions atomic.Uint32
+	started     time.Time
 
 	stats struct {
 		authorized atomic.Uint64
@@ -108,12 +109,6 @@ type ServerStats struct {
 	tunnels     []TunnelStats
 }
 
-func (s *Server) NumSessions() (num int) {
-	for _, t := range s.getTunnels() {
-		num += t.NumSessions()
-	}
-	return
-}
 func (s *Server) Stats() (stats ServerStats) {
 	for _, t := range s.getTunnels() {
 		tstats := t.Stats()

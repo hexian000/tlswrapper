@@ -52,7 +52,7 @@ func (t *Tunnel) Start() error {
 			Full:        uint32(c.StartupLimitFull),
 			Rate:        float64(c.StartupLimitRate) / 100.0,
 			MaxSessions: uint32(c.MaxSessions),
-			Stats:       h.Stats,
+			Stats:       h.Stats4Listener,
 		})
 		l = t.l
 		if err := t.s.g.Go(func() {
@@ -137,21 +137,30 @@ func (t *Tunnel) run() {
 func (t *Tunnel) addMux(mux *yamux.Session) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	num := len(t.mux)
 	for mux := range t.mux {
 		if mux.IsClosed() {
 			delete(t.mux, mux)
 		}
 	}
 	t.mux[mux] = struct{}{}
+	t.s.numSessions.Add(uint32(len(t.mux) - num))
 	t.lastChanged = time.Now()
 }
 
-func (t *Tunnel) sigMuxClosed(mux *yamux.Session) {
+func (t *Tunnel) delMux(mux *yamux.Session) {
 	t.muxCloseSig <- mux
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.lastChanged = time.Now()
+	num := len(t.mux)
 	delete(t.mux, mux)
+	for mux := range t.mux {
+		if mux.IsClosed() {
+			delete(t.mux, mux)
+		}
+	}
+	t.s.numSessions.Add(uint32(len(t.mux) - num))
+	t.lastChanged = time.Now()
 }
 
 func (t *Tunnel) getMux() *yamux.Session {
@@ -165,15 +174,10 @@ func (t *Tunnel) getMux() *yamux.Session {
 	return nil
 }
 
-func (t *Tunnel) NumSessions() (num int) {
+func (t *Tunnel) NumSessions() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	for mux := range t.mux {
-		if !mux.IsClosed() {
-			num++
-		}
-	}
-	return
+	return len(t.mux)
 }
 
 func (t *Tunnel) Serve(mux *yamux.Session) {
@@ -186,7 +190,7 @@ func (t *Tunnel) Serve(mux *yamux.Session) {
 		h = &EmptyHandler{}
 	}
 	t.addMux(mux)
-	defer t.sigMuxClosed(mux)
+	defer t.delMux(mux)
 	t.s.Serve(mux, h)
 }
 

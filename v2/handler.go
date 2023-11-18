@@ -24,16 +24,18 @@ type TLSHandler struct {
 	s *Server
 	t *Tunnel
 
-	unauthorized atomic.Uint32
+	halfOpen atomic.Uint32
 }
 
-func (h *TLSHandler) Stats() (numSessions uint32, numHalfOpen uint32) {
-	return uint32(h.s.NumSessions()), h.unauthorized.Load()
+func (h *TLSHandler) Stats4Listener() (numSessions uint32, numHalfOpen uint32) {
+	numSessions = h.s.numSessions.Load()
+	numHalfOpen = h.halfOpen.Load()
+	return
 }
 
 func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
-	h.unauthorized.Add(1)
-	defer h.unauthorized.Add(^uint32(0))
+	h.halfOpen.Add(1)
+	defer h.halfOpen.Add(^uint32(0))
 	start := time.Now()
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
