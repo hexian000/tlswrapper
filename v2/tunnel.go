@@ -50,7 +50,7 @@ func (t *Tunnel) Start() error {
 		t.l = hlistener.Wrap(l, &hlistener.Config{
 			Start:       uint32(c.StartupLimitStart),
 			Full:        uint32(c.StartupLimitFull),
-			Rate:        c.StartupLimitRate,
+			Rate:        float64(c.StartupLimitRate) / 100.0,
 			MaxSessions: uint32(c.MaxSessions),
 			Stats:       h.Stats,
 		})
