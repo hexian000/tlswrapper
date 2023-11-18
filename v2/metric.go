@@ -148,10 +148,12 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			return stats.tunnels[i].Name < stats.tunnels[j].Name
 		})
 		for _, t := range stats.tunnels {
-			if t.NumSessions > 0 {
-				fprintf(w, "%-20q: %d (%d streams), online since %s\n", t.Name, t.NumSessions, t.NumStreams, t.LastChanged.Format(time.RFC3339))
-			} else if (t.LastChanged != time.Time{}) {
-				fprintf(w, "%-20q: offline since %s\n", t.Name, t.LastChanged.Format(time.RFC3339))
+			if (t.LastChanged != time.Time{}) {
+				s := "offline"
+				if t.NumSessions > 0 {
+					s = fmt.Sprintf("%d (%d streams)", t.NumSessions, t.NumStreams)
+				}
+				fprintf(w, "%-20q: %s, since %s\n", t.Name, s, t.LastChanged.Format(time.RFC3339))
 			} else {
 				fprintf(w, "%-20q: never seen\n", t.Name)
 			}
