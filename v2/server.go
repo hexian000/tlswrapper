@@ -159,7 +159,7 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 				errors.Is(err, yamux.ErrSessionShutdown) {
 				return
 			}
-			slog.Errorf("accept: %v", err)
+			slog.Errorf("serve: %s", formats.Error(err))
 			return
 		}
 		s.serveOne(conn, handler)
@@ -169,7 +169,7 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 func (s *Server) Listen(addr string) (net.Listener, error) {
 	listener, err := net.Listen(network, addr)
 	if err != nil {
-		slog.Error("listen ", addr, ": ", err)
+		slog.Error("listen ", addr, ": ", formats.Error(err))
 		return listener, err
 	}
 	slog.Info("listen: ", listener.Addr())
