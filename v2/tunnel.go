@@ -85,7 +85,7 @@ func (t *Tunnel) redial() {
 	_, err := t.dial(ctx)
 	if err != nil && !errors.Is(err, ErrNoSession) {
 		t.redialCount++
-		slog.Warningf("redial #%d: %s", t.redialCount, formats.Error(err))
+		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.name, t.redialCount, t.c.MuxDial, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
@@ -108,7 +108,7 @@ func (t *Tunnel) scheduleRedial() <-chan time.Time {
 	if n < len(waitTimeConst) {
 		waitTime = waitTimeConst[n]
 	}
-	slog.Debugf("redial: scheduled after %v", waitTime)
+	slog.Debugf("tunnel %q: redial scheduled after %v", t.name, waitTime)
 	return time.After(waitTime)
 }
 
