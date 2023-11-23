@@ -6,9 +6,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
@@ -94,6 +96,20 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		uri, err := url.ParseRequestURI(r.RequestURI)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			slog.Debugf("uri: %s", formats.Error(err))
+			return
+		}
+		query := uri.Query()
+		rt := false
+		if s := query.Get("runtime"); s != "" {
+			if b, err := strconv.ParseBool(s); err == nil {
+				rt = b
+			}
+		}
+
 		now := time.Now()
 		uptime := now.Sub(s.started)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -105,9 +121,11 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		fprintf(w, "tlswrapper %s\n  %s\n\n", Version, Homepage)
 		fprintf(w, "%-20s: %s\n", "Server Time", now.Format(time.RFC3339))
 		fprintf(w, "%-20s: %s\n", "Uptime", formats.Duration(uptime))
-		fprintf(w, "%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
-		fprintf(w, "%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
-		printMemStats(w, true)
+		if rt {
+			fprintf(w, "%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
+			fprintf(w, "%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
+			printMemStats(w, true)
+		}
 		stats := s.Stats()
 		fprintf(w, "%-20s: %d (%d streams)\n", "Num Sessions", stats.NumSessions, stats.NumStreams)
 		fprintf(w, "%-20s: Rx %s, Tx %s\n", "Traffic",
@@ -121,7 +139,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 			stats.Served, rejected)
 		fprintf(w, "%-20s: %d (%+d)\n", "Authorizations",
 			stats.Authorized, stats.Served-stats.Authorized)
-		fprintf(w, "%-20s: %d (%+d)\n", "Requests",
+		fprintf(w, "%-20s: %d (%+d)\n", "Stream Requests",
 			stats.ReqSuccess, stats.ReqTotal-stats.ReqSuccess)
 
 		if !stateless {
