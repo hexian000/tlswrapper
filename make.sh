@@ -39,9 +39,6 @@ case "$1" in
     CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.linux-arm64" "${PACKAGE}"
-    CGO_ENABLED=0 GOOS="android" GOARCH="arm64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.android-arm64" "${PACKAGE}"
     CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.linux-amd64" "${PACKAGE}"
@@ -63,6 +60,14 @@ case "$1" in
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
+    ;;
+"ndk")
+    # external toolchain, environment vars need to be set
+    LDFLAGS="${LDFLAGS} -s -w"
+    set -x
+    CGO_ENABLED=1 GOOS="android" GOARCH="arm64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.android-arm64" "${PACKAGE}"
     ;;
 "race")
     GOFLAGS="${GOFLAGS} -race"
