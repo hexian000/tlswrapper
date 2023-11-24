@@ -34,6 +34,8 @@ type Config struct {
 	Identity string `json:"identity"`
 	// tunnel configs
 	Tunnels []TunnelConfig `json:"tunnel"`
+	// (optional) keep tunnels connected
+	Redial bool `json:"redial"`
 	// (optional) health check and metrics, default to "" (disabled)
 	HTTPListen string `json:"httplisten"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
@@ -77,6 +79,7 @@ type Config struct {
 var DefaultConfig = Config{
 	ServerName:        "example.com",
 	NoDelay:           true,
+	Redial:            true,
 	KeepAlive:         25,  // every 25s
 	ServerKeepAlive:   300, // every 5min
 	StartupLimitStart: 10,

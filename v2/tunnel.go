@@ -112,6 +112,20 @@ func (t *Tunnel) scheduleRedial() <-chan time.Time {
 	return time.After(waitTime)
 }
 
+func (t *Tunnel) runWithRedial() {
+	for {
+		t.redial()
+		select {
+		case mux := <-t.muxCloseSig:
+			slog.Infof("tunnel %q: connection lost %v", t.name, mux.RemoteAddr())
+		case <-t.scheduleRedial():
+		case <-t.s.g.CloseC():
+			// server shutdown
+			return
+		}
+	}
+}
+
 func (t *Tunnel) run() {
 	defer func() {
 		t.mu.Lock()
@@ -121,12 +135,14 @@ func (t *Tunnel) run() {
 			delete(t.mux, mux)
 		}
 	}()
+	if t.s.c.Redial {
+		t.runWithRedial()
+		return
+	}
 	for {
-		t.redial()
 		select {
 		case mux := <-t.muxCloseSig:
 			slog.Infof("tunnel %q: connection lost %v", t.name, mux.RemoteAddr())
-		case <-t.scheduleRedial():
 		case <-t.s.g.CloseC():
 			// server shutdown
 			return
