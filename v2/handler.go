@@ -51,8 +51,12 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	} else {
 		slog.Warningf("%q <= %v: connection is not encrypted", h.t.name, conn.RemoteAddr())
 	}
+	tun := h.t
 	handshake := &proto.Handshake{
 		Identity: c.Identity,
+	}
+	if tun.c.LocalIdentity != "" {
+		handshake.Identity = tun.c.LocalIdentity
 	}
 	if err := proto.RunHandshake(conn, handshake); err != nil {
 		slog.Errorf("%q <= %v: %s", h.t.name, conn.RemoteAddr(), formats.Error(err))
@@ -65,7 +69,6 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		return
 	}
 	h.s.stats.authorized.Add(1)
-	tun := h.t
 	if handshake.Identity != "" {
 		if t := h.s.findTunnel(handshake.Identity); t != nil {
 			tun = t

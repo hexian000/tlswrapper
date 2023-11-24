@@ -242,6 +242,9 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	handshake := &proto.Handshake{
 		Identity: c.Identity,
 	}
+	if t.c.LocalIdentity != "" {
+		handshake.Identity = t.c.LocalIdentity
+	}
 	if err := proto.RunHandshake(conn, handshake); err != nil {
 		return nil, err
 	}

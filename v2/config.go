@@ -16,28 +16,30 @@ import (
 )
 
 type TunnelConfig struct {
-	// tunnel identity
-	Identity string `json:"identity"`
-	// tunnel listen address
-	MuxListen string `json:"muxlisten"`
-	// tunnel dial address
-	MuxDial string `json:"muxdial"`
-	// forwarding listen address
-	Listen string `json:"listen"`
-	// forwarding dial address
-	Dial string `json:"dial"`
+	// (optional) tunnel identity
+	Identity string `json:"identity,omitempty"`
+	// (optional) local identity
+	LocalIdentity string `json:"localidentity,omitempty"`
+	// (optional) tunnel listen address
+	MuxListen string `json:"muxlisten,omitempty"`
+	// (optional) tunnel dial address
+	MuxDial string `json:"muxdial,omitempty"`
+	// (optional) forwarding listen address
+	Listen string `json:"listen,omitempty"`
+	// (optional) forwarding dial address
+	Dial string `json:"dial,omitempty"`
 }
 
 // Config file
 type Config struct {
-	// local site identity
-	Identity string `json:"identity"`
+	// (optional) default local identity
+	Identity string `json:"identity,omitempty"`
 	// tunnel configs
 	Tunnels []TunnelConfig `json:"tunnel"`
 	// (optional) keep tunnels connected
 	Redial bool `json:"redial"`
 	// (optional) health check and metrics, default to "" (disabled)
-	HTTPListen string `json:"httplisten"`
+	HTTPListen string `json:"httplisten,omitempty"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
 	ServerName string `json:"sni"`
 	// TLS: local certificate
@@ -70,8 +72,8 @@ type Config struct {
 	RequestTimeout int `json:"timeout"`
 	// (optional) data write request timeout in seconds, default to 15, used to detect network failes early
 	WriteTimeout int `json:"writetimeout"`
-	// (optional) log output, default to stderr
-	Log string `json:"log"`
+	// (optional) log output, default to stdout
+	Log string `json:"log,omitempty"`
 	// (optional) log output, default to 4 (notice)
 	LogLevel int `json:"loglevel"`
 }
