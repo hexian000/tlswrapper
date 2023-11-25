@@ -73,7 +73,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		if t := h.s.findTunnel(handshake.Identity); t != nil {
 			tun = t
 		} else {
-			slog.Warningf("%q <= %v: unknown identity %q", tun.name, conn.RemoteAddr(), handshake.Identity)
+			slog.Infof("%q <= %v: unknown identity %q", tun.name, conn.RemoteAddr(), handshake.Identity)
 		}
 	}
 	if err := h.s.g.Go(func() {

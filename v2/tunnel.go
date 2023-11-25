@@ -258,7 +258,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 		if found := t.s.findTunnel(handshake.Identity); found != nil {
 			tun = found
 		} else {
-			slog.Warningf("%q => %v: unknown identity %q", t.name, conn.RemoteAddr(), handshake.Identity)
+			slog.Infof("%q => %v: unknown identity %q", t.name, conn.RemoteAddr(), handshake.Identity)
 		}
 	}
 	if err := t.s.g.Go(func() {
