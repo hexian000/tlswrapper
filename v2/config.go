@@ -3,6 +3,7 @@ package tlswrapper
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -95,6 +96,29 @@ var DefaultConfig = Config{
 	WriteTimeout:      15,
 	Log:               "stdout",
 	LogLevel:          slog.LevelNotice,
+}
+
+func parseConfig(b []byte) (*Config, error) {
+	cfg := DefaultConfig
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	slog.Default().SetLevel(cfg.LogLevel)
+	if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func ReadConfig(path string) (*Config, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return parseConfig(b)
 }
 
 func rangeCheckInt(key string, value int, min int, max int) error {

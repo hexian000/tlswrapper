@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -28,28 +27,9 @@ func parseFlags() string {
 	return flagConfig
 }
 
-func readConfig(path string) (*tlswrapper.Config, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	cfg := tlswrapper.DefaultConfig
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return nil, err
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-	slog.Default().SetLevel(cfg.LogLevel)
-	if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
-}
-
 func main() {
 	path := parseFlags()
-	cfg, err := readConfig(path)
+	cfg, err := tlswrapper.ReadConfig(path)
 	if err != nil {
 		slog.Fatal("read config: ", err)
 		os.Exit(1)
@@ -78,7 +58,7 @@ func main() {
 		}
 		// reload
 		_, _ = sd.Notify(sd.Reloading)
-		cfg, err := readConfig(path)
+		cfg, err := tlswrapper.ReadConfig(path)
 		if err != nil {
 			slog.Error("read config: ", err)
 			continue
