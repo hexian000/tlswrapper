@@ -69,8 +69,12 @@ type Config struct {
 	AcceptBacklog int `json:"backlog"`
 	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
 	StreamWindow uint32 `json:"window"`
-	// (optional) generic request timeout in seconds, default to 30
-	RequestTimeout int `json:"timeout"`
+	// (optional) tunnel connecting timeout in seconds, default to 15
+	ConnectTimeout int `json:"timeout"`
+	// (optional) stream open timeout in seconds, default to 30
+	StreamOpenTimeout int `json:"streamopentimeout"`
+	// (optional) stream close timeout in seconds, default to 120
+	StreamCloseTimeout int `json:"streamclosetimeout"`
 	// (optional) data write request timeout in seconds, default to 15, used to detect network failes early
 	WriteTimeout int `json:"writetimeout"`
 	// (optional) log output, default to stdout
@@ -80,22 +84,24 @@ type Config struct {
 }
 
 var DefaultConfig = Config{
-	ServerName:        "example.com",
-	NoDelay:           true,
-	Redial:            true,
-	KeepAlive:         25,  // every 25s
-	ServerKeepAlive:   300, // every 5min
-	StartupLimitStart: 10,
-	StartupLimitRate:  30,
-	StartupLimitFull:  60,
-	MaxConn:           16384,
-	MaxSessions:       128,
-	AcceptBacklog:     256,
-	StreamWindow:      256 * 1024, // 256 KiB
-	RequestTimeout:    30,
-	WriteTimeout:      15,
-	Log:               "stdout",
-	LogLevel:          slog.LevelNotice,
+	ServerName:         "example.com",
+	NoDelay:            true,
+	Redial:             true,
+	KeepAlive:          25,  // every 25s
+	ServerKeepAlive:    300, // every 5min
+	StartupLimitStart:  10,
+	StartupLimitRate:   30,
+	StartupLimitFull:   60,
+	MaxConn:            16384,
+	MaxSessions:        128,
+	AcceptBacklog:      256,
+	StreamWindow:       256 * 1024, // 256 KiB
+	ConnectTimeout:     15,
+	StreamOpenTimeout:  30,
+	StreamCloseTimeout: 120,
+	WriteTimeout:       15,
+	Log:                "stdout",
+	LogLevel:           slog.LevelNotice,
 }
 
 func parseConfig(b []byte) (*Config, error) {
@@ -197,7 +203,7 @@ func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
 
 // Timeout gets the generic request timeout
 func (c *Config) Timeout() time.Duration {
-	return time.Duration(c.RequestTimeout) * time.Second
+	return time.Duration(c.ConnectTimeout) * time.Second
 }
 
 type logWrapper struct {
@@ -233,8 +239,8 @@ func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
 		KeepAliveInterval:      keepAliveInterval,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
 		MaxStreamWindowSize:    c.StreamWindow,
-		StreamOpenTimeout:      c.Timeout(),
-		StreamCloseTimeout:     c.Timeout(),
+		StreamOpenTimeout:      time.Duration(c.StreamOpenTimeout) * time.Second,
+		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
 		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
 	}
 }
