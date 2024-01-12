@@ -69,6 +69,14 @@ case "$1" in
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.android-arm64" "${PACKAGE}"
     ;;
+"d")
+    set -x
+    go fmt ./...
+    CGO_ENABLED=0 \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}" "${PACKAGE}"
+    ls -lh "${OUT}"
+    ;;
 "race")
     GOFLAGS="${GOFLAGS} -race"
     GCFLAGS="${GCFLAGS} -N -l"
