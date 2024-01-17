@@ -4,5 +4,5 @@ go 1.20
 
 require (
 	github.com/hashicorp/yamux v0.1.1
-	github.com/hexian000/gosnippets v0.0.0-20231118040836-0cf2fe6a912d
+	github.com/hexian000/gosnippets v0.0.0-20231124140902-d2fe8bf2355d
 )
