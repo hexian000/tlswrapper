@@ -143,7 +143,7 @@ You may also found the systemd user unit [tlswrapper.service](tlswrapper.service
 git clone https://github.com/hexian000/tlswrapper.git
 cd tlswrapper
 # build an executable for local system
-./make.sh
+./make.sh r
 ```
 
 ## Credits
