@@ -83,25 +83,23 @@ func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 		return ErrConnLimit
 	}
 	f.addConn(accepted, dialed)
-	cleanupOnce := &sync.Once{}
 	cleanup := func() {
-		cleanupOnce.Do(func() {
-			f.delConn(accepted, dialed)
-			<-f.counter
-		})
+		f.delConn(accepted, dialed)
+		<-f.counter
 	}
+	cleanupOnce := &sync.Once{}
 	if err := f.g.Go(func() {
-		defer cleanup()
+		defer cleanupOnce.Do(cleanup)
 		f.connCopy(accepted, dialed)
 	}); err != nil {
-		cleanup()
+		cleanupOnce.Do(cleanup)
 		return err
 	}
 	if err := f.g.Go(func() {
-		defer cleanup()
+		defer cleanupOnce.Do(cleanup)
 		f.connCopy(dialed, accepted)
 	}); err != nil {
-		cleanup()
+		cleanupOnce.Do(cleanup)
 		return err
 	}
 	return nil

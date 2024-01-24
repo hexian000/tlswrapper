@@ -1,6 +1,7 @@
 package tlswrapper
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/hexian000/gosnippets/formats"
@@ -14,6 +15,7 @@ var (
 
 func ioClose(c io.Closer) {
 	if err := c.Close(); err != nil {
-		slog.Warningf("close: %s", formats.Error(err))
+		msg := fmt.Sprintf("close: %s", formats.Error(err))
+		slog.Output(2, slog.LevelWarning, []byte(msg))
 	}
 }
