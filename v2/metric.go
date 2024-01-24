@@ -219,6 +219,9 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fprintf(w, "%-20q: never seen\n", t.Name)
 		}
 	}
+
+	fprintf(w, "\n> Recent Events\n")
+	h.s.events.Format(w)
 }
 
 func RunHTTPServer(l net.Listener, s *Server) error {

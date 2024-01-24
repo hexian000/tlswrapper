@@ -17,6 +17,7 @@ import (
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
+	"github.com/hexian000/tlswrapper/v2/eventlog"
 	"github.com/hexian000/tlswrapper/v2/forwarder"
 )
 
@@ -37,6 +38,7 @@ type Server struct {
 	f forwarder.Forwarder
 
 	flowStats *snet.FlowStats
+	events    eventlog.Recent
 
 	listeners map[string]net.Listener
 	tunnels   map[string]*Tunnel // map[identity]tunnel
@@ -58,7 +60,7 @@ type Server struct {
 
 // NewServer creates a server object
 func NewServer(cfg *Config) *Server {
-	g := routines.NewGroup(0)
+	g := routines.NewGroup()
 	return &Server{
 		listeners: make(map[string]net.Listener),
 		tunnels:   make(map[string]*Tunnel),
@@ -68,6 +70,7 @@ func NewServer(cfg *Config) *Server {
 		},
 		f:         forwarder.New(cfg.MaxConn, g),
 		flowStats: &snet.FlowStats{},
+		events:    eventlog.NewRecent(16),
 		g:         g,
 		c:         cfg,
 	}

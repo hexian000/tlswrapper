@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"sync/atomic"
 	"time"
@@ -51,12 +52,12 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	} else {
 		slog.Warningf("%q <= %v: connection is not encrypted", h.t.name, conn.RemoteAddr())
 	}
-	tun := h.t
+	t := h.t
 	handshake := &proto.Handshake{
 		Identity: c.Identity,
 	}
-	if tun.c.LocalIdentity != "" {
-		handshake.Identity = tun.c.LocalIdentity
+	if t.c.LocalIdentity != "" {
+		handshake.Identity = t.c.LocalIdentity
 	}
 	if err := proto.RunHandshake(conn, handshake); err != nil {
 		slog.Errorf("%q <= %v: %s", h.t.name, conn.RemoteAddr(), formats.Error(err))
@@ -70,20 +71,21 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	}
 	h.s.stats.authorized.Add(1)
 	if handshake.Identity != "" {
-		if t := h.s.findTunnel(handshake.Identity); t != nil {
-			tun = t
+		if tun := h.s.findTunnel(handshake.Identity); tun != nil {
+			t = tun
 		} else {
-			slog.Infof("%q <= %v: unknown identity %q", tun.name, conn.RemoteAddr(), handshake.Identity)
+			slog.Infof("%q <= %v: unknown identity %q", t.name, conn.RemoteAddr(), handshake.Identity)
 		}
 	}
 	if err := h.s.g.Go(func() {
-		tun.Serve(mux)
+		t.Serve(mux)
 	}); err != nil {
-		slog.Errorf("%q <= %v: %s", tun.name, conn.RemoteAddr(), formats.Error(err))
+		slog.Errorf("%q <= %v: %s", t.name, conn.RemoteAddr(), formats.Error(err))
 		ioClose(mux)
 		return
 	}
-	slog.Infof("%q <= %v: setup %v", tun.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	slog.Infof("%q <= %v: setup %v", t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	h.s.events.Add(time.Now(), fmt.Sprintf("%q <= %v: established", t.name, mux.RemoteAddr()))
 }
 
 // ForwardHandler forwards connections to another plain address

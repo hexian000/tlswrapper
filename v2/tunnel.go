@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -118,6 +119,7 @@ func (t *Tunnel) runWithRedial() {
 		select {
 		case mux := <-t.muxCloseSig:
 			slog.Infof("tunnel %q: connection lost %v", t.name, mux.RemoteAddr())
+			t.s.events.Add(time.Now(), fmt.Sprintf("%q => %v: connection lost", t.name, mux.RemoteAddr()))
 		case <-t.scheduleRedial():
 		case <-t.s.g.CloseC():
 			// server shutdown
@@ -143,6 +145,7 @@ func (t *Tunnel) run() {
 		select {
 		case mux := <-t.muxCloseSig:
 			slog.Infof("tunnel %q: connection lost %v", t.name, mux.RemoteAddr())
+			t.s.events.Add(time.Now(), fmt.Sprintf("%q => %v: connection lost", t.name, mux.RemoteAddr()))
 		case <-t.s.g.CloseC():
 			// server shutdown
 			return
@@ -268,6 +271,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 		return nil, err
 	}
 	slog.Infof("%q => %v: setup %v", t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	t.s.events.Add(time.Now(), fmt.Sprintf("%q => %v: established", t.name, mux.RemoteAddr()))
 	return mux, nil
 }
 
