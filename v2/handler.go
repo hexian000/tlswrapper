@@ -85,7 +85,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		return
 	}
 	slog.Infof("%q <= %v: setup %v", t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
-	h.s.events.Add(time.Now(), fmt.Sprintf("%q <= %v: established", t.name, mux.RemoteAddr()))
+	h.s.recentEvents.Add(time.Now(), fmt.Sprintf("%q <= %v: established", t.name, mux.RemoteAddr()))
 }
 
 // ForwardHandler forwards connections to another plain address

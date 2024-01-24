@@ -37,8 +37,8 @@ type Server struct {
 
 	f forwarder.Forwarder
 
-	flowStats *snet.FlowStats
-	events    eventlog.Recent
+	flowStats    *snet.FlowStats
+	recentEvents eventlog.Recent
 
 	listeners map[string]net.Listener
 	tunnels   map[string]*Tunnel // map[identity]tunnel
@@ -68,11 +68,11 @@ func NewServer(cfg *Config) *Server {
 			timeout:  cfg.Timeout,
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
-		f:         forwarder.New(cfg.MaxConn, g),
-		flowStats: &snet.FlowStats{},
-		events:    eventlog.NewRecent(16),
-		g:         g,
-		c:         cfg,
+		f:            forwarder.New(cfg.MaxConn, g),
+		flowStats:    &snet.FlowStats{},
+		recentEvents: eventlog.NewRecent(16),
+		g:            g,
+		c:            cfg,
 	}
 }
 
@@ -187,6 +187,7 @@ func (s *Server) Start() error {
 		if err != nil {
 			return err
 		}
+		slog.Noticef("http listen: %v", l.Addr())
 		if err := s.g.Go(func() {
 			if err := RunHTTPServer(l, s); err != nil && !errors.Is(err, net.ErrClosed) {
 				slog.Error(formats.Error(err))

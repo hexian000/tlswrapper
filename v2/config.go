@@ -67,7 +67,7 @@ type Config struct {
 	MaxSessions int `json:"maxsessions"`
 	// (optional) mux accept backlog, default to 256, you may not want to change this
 	AcceptBacklog int `json:"backlog"`
-	// (optional) stream window size in bytes, default to 256KiB, increase this on long fat networks
+	// (optional) stream window size in bytes, default to 256 KiB, increase this on long fat networks
 	StreamWindow uint32 `json:"window"`
 	// (optional) tunnel connecting timeout in seconds, default to 15
 	ConnectTimeout int `json:"timeout"`

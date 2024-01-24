@@ -46,6 +46,7 @@ func (t *Tunnel) Start() error {
 		if err != nil {
 			return err
 		}
+		slog.Noticef("mux listen: %v", l.Addr())
 		h := &TLSHandler{s: t.s, t: t}
 		c := t.s.getConfig()
 		t.l = hlistener.Wrap(l, &hlistener.Config{
@@ -67,6 +68,7 @@ func (t *Tunnel) Start() error {
 		if err != nil {
 			return err
 		}
+		slog.Noticef("forward listen: %v", l.Addr())
 		h := &TunnelHandler{s: t.s, t: t}
 		if err := t.s.g.Go(func() {
 			t.s.Serve(l, h)
@@ -119,7 +121,7 @@ func (t *Tunnel) runWithRedial() {
 		select {
 		case mux := <-t.muxCloseSig:
 			slog.Infof("tunnel %q: connection lost %v", t.name, mux.RemoteAddr())
-			t.s.events.Add(time.Now(), fmt.Sprintf("%q => %v: connection lost", t.name, mux.RemoteAddr()))
+			t.s.recentEvents.Add(time.Now(), fmt.Sprintf("%q => %v: connection lost", t.name, mux.RemoteAddr()))
 		case <-t.scheduleRedial():
 		case <-t.s.g.CloseC():
 			// server shutdown
@@ -145,7 +147,7 @@ func (t *Tunnel) run() {
 		select {
 		case mux := <-t.muxCloseSig:
 			slog.Infof("tunnel %q: connection lost %v", t.name, mux.RemoteAddr())
-			t.s.events.Add(time.Now(), fmt.Sprintf("%q => %v: connection lost", t.name, mux.RemoteAddr()))
+			t.s.recentEvents.Add(time.Now(), fmt.Sprintf("%q => %v: connection lost", t.name, mux.RemoteAddr()))
 		case <-t.s.g.CloseC():
 			// server shutdown
 			return
@@ -271,7 +273,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 		return nil, err
 	}
 	slog.Infof("%q => %v: setup %v", t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
-	t.s.events.Add(time.Now(), fmt.Sprintf("%q => %v: established", t.name, mux.RemoteAddr()))
+	t.s.recentEvents.Add(time.Now(), fmt.Sprintf("%q => %v: established", t.name, mux.RemoteAddr()))
 	return mux, nil
 }
 
