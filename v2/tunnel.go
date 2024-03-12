@@ -86,7 +86,7 @@ func (t *Tunnel) redial() {
 	}
 	defer t.s.ctx.cancel(ctx)
 	_, err := t.dial(ctx)
-	if err != nil && !errors.Is(err, ErrNoSession) {
+	if err != nil && !errors.Is(err, ErrNoDialAddress) && !errors.Is(err, ErrDialInProgress) {
 		t.redialCount++
 		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.name, t.redialCount, t.c.MuxDial, formats.Error(err))
 		return
@@ -210,22 +210,21 @@ func (t *Tunnel) Serve(mux *yamux.Session) {
 	} else {
 		h = &EmptyHandler{}
 	}
-	t.addMux(mux)
-	defer t.delMux(mux)
 	t.s.Serve(mux, h)
 }
 
 func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
+	if !t.dialMu.TryLock() {
+		return nil, ErrDialInProgress
+	}
+	defer t.dialMu.Unlock()
+	// try again with dialMu acquired
 	if mux := t.getMux(); mux != nil {
 		return mux, nil
 	}
 	if t.c.MuxDial == "" {
-		return nil, ErrNoSession
+		return nil, ErrNoDialAddress
 	}
-	if !t.dialMu.TryLock() {
-		return nil, ErrNoSession
-	}
-	defer t.dialMu.Unlock()
 	start := time.Now()
 	conn, err := t.s.dialer.DialContext(ctx, network, t.c.MuxDial)
 	if err != nil {
@@ -266,7 +265,9 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 			slog.Infof("%q => %v: unknown identity %q", t.name, conn.RemoteAddr(), handshake.Identity)
 		}
 	}
+	t.addMux(mux)
 	if err := t.s.g.Go(func() {
+		defer t.delMux(mux)
 		tun.Serve(mux)
 	}); err != nil {
 		ioClose(mux)
@@ -278,9 +279,12 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 }
 
 func (t *Tunnel) MuxDial(ctx context.Context) (net.Conn, error) {
-	mux, err := t.dial(ctx)
-	if err != nil {
-		return nil, err
+	mux := t.getMux()
+	if mux == nil {
+		var err error
+		if mux, err = t.dial(ctx); err != nil {
+			return nil, err
+		}
 	}
 	stream, err := mux.OpenStream()
 	if err != nil {

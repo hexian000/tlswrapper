@@ -24,7 +24,8 @@ import (
 const network = "tcp"
 
 var (
-	ErrNoSession = errors.New("no session available")
+	ErrNoDialAddress  = errors.New("no dial address is configured")
+	ErrDialInProgress = errors.New("another dial is in progress")
 )
 
 // Server object

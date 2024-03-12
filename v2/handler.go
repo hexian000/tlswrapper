@@ -77,7 +77,9 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 			slog.Infof("%q <= %v: unknown identity %q", t.name, conn.RemoteAddr(), handshake.Identity)
 		}
 	}
+	t.addMux(mux)
 	if err := h.s.g.Go(func() {
+		defer t.delMux(mux)
 		t.Serve(mux)
 	}); err != nil {
 		slog.Errorf("%q <= %v: %s", t.name, conn.RemoteAddr(), formats.Error(err))
@@ -121,7 +123,7 @@ type TunnelHandler struct {
 func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.t.MuxDial(ctx)
 	if err != nil {
-		if errors.Is(err, ErrNoSession) {
+		if errors.Is(err, ErrDialInProgress) {
 			slog.Debugf("%v -> %q: %s", accepted.RemoteAddr(), h.t.name, formats.Error(err))
 		} else {
 			slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.t.name, formats.Error(err))
