@@ -19,15 +19,15 @@ type entry struct {
 }
 
 type recent struct {
-	mu        sync.Mutex
-	elements  []entry
-	sizelimit int
+	mu       sync.Mutex
+	elements []entry
+	lastpos  int
 }
 
 func NewRecent(sizelimit int) Recent {
 	return &recent{
-		elements:  []entry{},
-		sizelimit: sizelimit,
+		elements: make([]entry, 0, sizelimit),
+		lastpos:  0,
 	}
 }
 
@@ -42,19 +42,24 @@ func (p *recent) Add(timestamp time.Time, message string) {
 			return
 		}
 	}
-	p.elements = append(p.elements, entry{timestamp, message, 1})
-	if len(p.elements) >= 2*p.sizelimit {
-		copy(p.elements, p.elements[len(p.elements)-p.sizelimit:])
-		p.elements = p.elements[:p.sizelimit]
+	if len(p.elements) < cap(p.elements) {
+		p.elements = append(p.elements, entry{timestamp, message, 1})
+		p.lastpos = len(p.elements)
+		return
 	}
+	p.elements[p.lastpos] = entry{timestamp, message, 1}
+	p.lastpos = (p.lastpos + 1) % len(p.elements)
 }
 
 func (p *recent) Format(w io.Writer) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	n := max(0, len(p.elements)-p.sizelimit)
-	for i := len(p.elements) - 1; i >= n; i-- {
-		entry := p.elements[i]
+	pos := p.lastpos
+	for i := 0; i < len(p.elements); i++ {
+		if pos--; pos < 0 {
+			pos = len(p.elements) - 1
+		}
+		entry := p.elements[pos]
 		var s string
 		if entry.count == 1 {
 			s = fmt.Sprintf("%s %s\n", entry.tstamp.Format(time.RFC3339), entry.message)
