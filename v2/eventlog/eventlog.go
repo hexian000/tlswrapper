@@ -44,7 +44,7 @@ func (p *recent) Add(timestamp time.Time, message string) {
 	}
 	if len(p.elements) < cap(p.elements) {
 		p.elements = append(p.elements, entry{timestamp, message, 1})
-		p.lastpos = len(p.elements)
+		p.lastpos = (p.lastpos + 1) % cap(p.elements)
 		return
 	}
 	p.elements[p.lastpos] = entry{timestamp, message, 1}
