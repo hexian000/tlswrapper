@@ -61,13 +61,13 @@ case "$1" in
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
-"ndk")
+"sdk")
     # external toolchain, environment vars need to be set
     LDFLAGS="${LDFLAGS} -s -w"
     set -x
-    CGO_ENABLED=1 GOOS="android" GOARCH="arm64" \
+    CGO_ENABLED=1 \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.android-arm64" "${PACKAGE}"
+        -o "${OUT}.${OUTEXT}" "${PACKAGE}"
     ;;
 "d")
     set -x
