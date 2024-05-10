@@ -35,19 +35,24 @@ func (p *recent) Add(timestamp time.Time, message string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(p.elements) > 0 {
-		last := &p.elements[len(p.elements)-1]
+		pos := p.lastpos
+		if pos--; pos < 0 {
+			pos = len(p.elements) - 1
+		}
+		last := &p.elements[pos]
 		if last.message == message {
 			last.tstamp = timestamp
 			last.count++
 			return
 		}
 	}
+	element := entry{timestamp, message, 1}
 	if len(p.elements) < cap(p.elements) {
-		p.elements = append(p.elements, entry{timestamp, message, 1})
+		p.elements = append(p.elements, element)
 		p.lastpos = (p.lastpos + 1) % cap(p.elements)
 		return
 	}
-	p.elements[p.lastpos] = entry{timestamp, message, 1}
+	p.elements[p.lastpos] = element
 	p.lastpos = (p.lastpos + 1) % len(p.elements)
 }
 
