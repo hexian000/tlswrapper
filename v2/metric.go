@@ -105,6 +105,8 @@ func printMemStats(w io.Writer, lastGC bool) {
 	fprintf(w, "%-20s: %s (+%s)\n", "Total Allocated",
 		formats.IECBytes(float64(memstats.Sys-memstats.HeapReleased)),
 		formats.IECBytes(float64(memstats.HeapReleased)))
+	fprintf(w, "%-20s: %.07f%%\n", "GC CPU Fraction",
+		memstats.GCCPUFraction*100.0/float64(runtime.GOMAXPROCS(0)))
 	if !lastGC {
 		return
 	}
