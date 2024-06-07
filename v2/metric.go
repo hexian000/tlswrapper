@@ -221,7 +221,9 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fprintf(w, "\n> Recent Events\n")
-	h.s.recentEvents.Format(w)
+	if err := h.s.recentEvents.Format(w); err != nil {
+		panic(err)
+	}
 }
 
 func RunHTTPServer(l net.Listener, s *Server) error {
