@@ -158,6 +158,12 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rt = b
 		}
 	}
+	evlog := 10
+	if s := query.Get("eventlog"); s != "" {
+		if i, err := strconv.ParseInt(s, 10, 0); err == nil {
+			evlog = int(i)
+		}
+	}
 
 	now := time.Now()
 	uptime := now.Sub(h.s.started)
@@ -222,9 +228,11 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fprintf(w, "\n> Recent Events\n")
-	if err := h.s.recentEvents.Format(w); err != nil {
-		panic(err)
+	if evlog > 0 {
+		fprintf(w, "\n> Recent Events\n")
+		if err := h.s.recentEvents.Format(w, evlog); err != nil {
+			panic(err)
+		}
 	}
 }
 

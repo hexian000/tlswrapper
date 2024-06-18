@@ -9,7 +9,7 @@ import (
 
 type Recent interface {
 	Add(timestamp time.Time, message string)
-	Format(w io.Writer) error
+	Format(w io.Writer, n int) error
 }
 
 type entry struct {
@@ -56,11 +56,14 @@ func (p *recent) Add(timestamp time.Time, message string) {
 	p.lastpos = (p.lastpos + 1) % len(p.elements)
 }
 
-func (p *recent) Format(w io.Writer) error {
+func (p *recent) Format(w io.Writer, n int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	pos := p.lastpos
-	for i := 0; i < len(p.elements); i++ {
+	if n > len(p.elements) {
+		n = len(p.elements)
+	}
+	for i := 0; i < n; i++ {
 		if pos--; pos < 0 {
 			pos = len(p.elements) - 1
 		}

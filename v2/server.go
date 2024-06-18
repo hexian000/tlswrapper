@@ -71,7 +71,7 @@ func NewServer(cfg *Config) *Server {
 		},
 		f:            forwarder.New(cfg.MaxConn, g),
 		flowStats:    &snet.FlowStats{},
-		recentEvents: eventlog.NewRecent(16),
+		recentEvents: eventlog.NewRecent(100),
 		g:            g,
 		c:            cfg,
 	}
