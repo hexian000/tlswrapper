@@ -151,7 +151,12 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Debugf("uri: %s", formats.Error(err))
 		return
 	}
-	query := uri.Query()
+	query, err := url.ParseQuery(uri.RawQuery)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		slog.Debugf("uri: %s", formats.Error(err))
+		return
+	}
 	rt := false
 	if s := query.Get("runtime"); s != "" {
 		if b, err := strconv.ParseBool(s); err == nil {
