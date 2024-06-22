@@ -87,7 +87,10 @@ func (t *Tunnel) redial() {
 	defer t.s.ctx.cancel(ctx)
 	_, err := t.dial(ctx)
 	if err != nil && !errors.Is(err, ErrNoDialAddress) && !errors.Is(err, ErrDialInProgress) {
-		t.redialCount++
+		redialCount := t.redialCount + 1
+		if redialCount > t.redialCount {
+			t.redialCount = redialCount
+		}
 		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.name, t.redialCount, t.c.MuxDial, formats.Error(err))
 		return
 	}
