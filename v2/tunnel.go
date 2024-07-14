@@ -103,6 +103,7 @@ func (t *Tunnel) scheduleRedial() <-chan time.Time {
 		return make(<-chan time.Time)
 	}
 	var waitTimeConst = [...]time.Duration{
+		200 * time.Millisecond,
 		5 * time.Second,
 		10 * time.Second,
 		15 * time.Second,
