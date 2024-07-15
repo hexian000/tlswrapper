@@ -104,12 +104,13 @@ func (t *Tunnel) scheduleRedial() <-chan time.Time {
 	}
 	var waitTimeConst = [...]time.Duration{
 		200 * time.Millisecond,
+		2 * time.Second,
+		2 * time.Second,
 		5 * time.Second,
-		10 * time.Second,
-		15 * time.Second,
-		30 * time.Second,
+		5 * time.Second,
 		1 * time.Minute,
 		2 * time.Minute,
+		5 * time.Minute,
 	}
 	waitTime := waitTimeConst[len(waitTimeConst)-1]
 	if n < len(waitTimeConst) {
