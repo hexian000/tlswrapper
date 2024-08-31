@@ -86,24 +86,6 @@ case "$1" in
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
-"asan")
-    GOFLAGS="${GOFLAGS} -asan"
-    GCFLAGS="${GCFLAGS} -N -l"
-    set -x
-    CGO_ENABLED=1 \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}" "${PACKAGE}"
-    ls -lh "${OUT}"
-    ;;
-"msan")
-    GOFLAGS="${GOFLAGS} -msan"
-    GCFLAGS="${GCFLAGS} -N -l"
-    set -x
-    CGO_ENABLED=1 CC=clang \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}" "${PACKAGE}"
-    ls -lh "${OUT}"
-    ;;
 *)
     GCFLAGS="${GCFLAGS} -N -l"
     set -x
