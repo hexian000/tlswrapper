@@ -109,6 +109,7 @@ func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 		ioClose(dialed)
 		return
 	}
+	slog.Debugf("%q -> %v: forward established", h.name, dialed.RemoteAddr())
 	h.s.stats.success.Add(1)
 }
 
@@ -135,6 +136,7 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 		ioClose(dialed)
 		return
 	}
+	slog.Debugf("%v -> %q: forward established", h.t.l.Addr(), h.t.name)
 }
 
 // EmptyHandler rejects all connections

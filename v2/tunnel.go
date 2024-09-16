@@ -171,16 +171,20 @@ func (t *Tunnel) addMux(mux *yamux.Session, isDialed bool) {
 	t.lastChanged = now
 }
 
+func (t *Tunnel) getMuxTag(mux *yamux.Session) (string, bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	tag, ok := t.mux[mux]
+	return tag, ok
+}
+
 func (t *Tunnel) delMux(mux *yamux.Session) {
 	now := time.Now()
-	getTag := func(mux *yamux.Session) string {
-		t.mu.RLock()
-		defer t.mu.RUnlock()
-		return t.mux[mux]
+	if tag, ok := t.getMuxTag(mux); ok {
+		msg := fmt.Sprintf("%s: connection lost", tag)
+		slog.Info(msg)
+		t.s.recentEvents.Add(now, msg)
 	}
-	msg := fmt.Sprintf("%s: connection lost", getTag(mux))
-	slog.Info(msg)
-	t.s.recentEvents.Add(now, msg)
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -300,7 +304,7 @@ func (t *Tunnel) MuxDial(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	slog.Debugf("stream open: %s ID=%v", t.name, stream.StreamID())
+	slog.Debugf("stream open: %q ID=%v", t.name, stream.StreamID())
 	return stream, nil
 }
 
