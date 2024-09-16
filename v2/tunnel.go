@@ -143,13 +143,7 @@ func (t *Tunnel) run() {
 		t.runWithRedial()
 		return
 	}
-	for {
-		select {
-		case <-t.s.g.CloseC():
-			// server shutdown
-			return
-		}
-	}
+	<-t.s.g.CloseC()
 }
 
 func (t *Tunnel) addMux(mux *yamux.Session, isDialed bool) {
