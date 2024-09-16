@@ -291,7 +291,6 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 		return nil, err
 	}
 	slog.Infof("%q => %v: setup %v", t.name, conn.RemoteAddr(), formats.Duration(time.Since(start)))
-	t.s.recentEvents.Add(time.Now(), fmt.Sprintf("%q => %v: established", t.name, mux.RemoteAddr()))
 	return mux, nil
 }
 
