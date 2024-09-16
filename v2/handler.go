@@ -77,7 +77,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 			slog.Infof("%q <= %v: unknown identity %q", t.name, conn.RemoteAddr(), handshake.Identity)
 		}
 	}
-	t.addMux(mux)
+	t.addMux(mux, false)
 	if err := h.s.g.Go(func() {
 		defer t.delMux(mux)
 		t.Serve(mux)

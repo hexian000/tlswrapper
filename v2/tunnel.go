@@ -23,8 +23,7 @@ type Tunnel struct {
 	c           *TunnelConfig
 	l           hlistener.Listener
 	mu          sync.RWMutex
-	mux         map[*yamux.Session]struct{}
-	muxCloseSig chan *yamux.Session
+	mux         map[*yamux.Session]string // map[mux]tag
 	redialCount int
 	dialMu      sync.Mutex
 	lastChanged time.Time
@@ -32,11 +31,10 @@ type Tunnel struct {
 
 func NewTunnel(s *Server, c *TunnelConfig) *Tunnel {
 	return &Tunnel{
-		name:        c.Identity,
-		s:           s,
-		c:           c,
-		mux:         make(map[*yamux.Session]struct{}),
-		muxCloseSig: make(chan *yamux.Session, 16),
+		name: c.Identity,
+		s:    s,
+		c:    c,
+		mux:  make(map[*yamux.Session]string),
 	}
 }
 
@@ -124,9 +122,6 @@ func (t *Tunnel) runWithRedial() {
 	for {
 		t.redial()
 		select {
-		case mux := <-t.muxCloseSig:
-			slog.Infof("tunnel %q: connection lost %v", t.name, mux.RemoteAddr())
-			t.s.recentEvents.Add(time.Now(), fmt.Sprintf("%q => %v: connection lost", t.name, mux.RemoteAddr()))
 		case <-t.scheduleRedial():
 		case <-t.s.g.CloseC():
 			// server shutdown
@@ -150,9 +145,6 @@ func (t *Tunnel) run() {
 	}
 	for {
 		select {
-		case mux := <-t.muxCloseSig:
-			slog.Infof("tunnel %q: connection lost %v", t.name, mux.RemoteAddr())
-			t.s.recentEvents.Add(time.Now(), fmt.Sprintf("%q => %v: connection lost", t.name, mux.RemoteAddr()))
 		case <-t.s.g.CloseC():
 			// server shutdown
 			return
@@ -160,7 +152,18 @@ func (t *Tunnel) run() {
 	}
 }
 
-func (t *Tunnel) addMux(mux *yamux.Session) {
+func (t *Tunnel) addMux(mux *yamux.Session, isDialed bool) {
+	now := time.Now()
+	var tag string
+	if isDialed {
+		tag = fmt.Sprintf("%q => %v", t.name, mux.RemoteAddr())
+	} else {
+		tag = fmt.Sprintf("%q <= %v", t.name, mux.RemoteAddr())
+	}
+	msg := fmt.Sprintf("%s: established", tag)
+	slog.Info(msg)
+	t.s.recentEvents.Add(now, msg)
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	num := len(t.mux)
@@ -169,13 +172,22 @@ func (t *Tunnel) addMux(mux *yamux.Session) {
 			delete(t.mux, mux)
 		}
 	}
-	t.mux[mux] = struct{}{}
+	t.mux[mux] = tag
 	t.s.numSessions.Add(uint32(len(t.mux) - num))
-	t.lastChanged = time.Now()
+	t.lastChanged = now
 }
 
 func (t *Tunnel) delMux(mux *yamux.Session) {
-	t.muxCloseSig <- mux
+	now := time.Now()
+	getTag := func(mux *yamux.Session) string {
+		t.mu.RLock()
+		defer t.mu.RUnlock()
+		return t.mux[mux]
+	}
+	msg := fmt.Sprintf("%s: connection lost", getTag(mux))
+	slog.Info(msg)
+	t.s.recentEvents.Add(now, msg)
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	num := len(t.mux)
@@ -186,7 +198,7 @@ func (t *Tunnel) delMux(mux *yamux.Session) {
 		}
 	}
 	t.s.numSessions.Add(uint32(len(t.mux) - num))
-	t.lastChanged = time.Now()
+	t.lastChanged = now
 }
 
 func (t *Tunnel) getMux() *yamux.Session {
@@ -270,7 +282,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 			slog.Infof("%q => %v: unknown identity %q", t.name, conn.RemoteAddr(), handshake.Identity)
 		}
 	}
-	t.addMux(mux)
+	t.addMux(mux, true)
 	if err := t.s.g.Go(func() {
 		defer t.delMux(mux)
 		tun.Serve(mux)
