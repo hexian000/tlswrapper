@@ -69,7 +69,7 @@ func (t *Tunnel) Start() error {
 			return err
 		}
 		slog.Noticef("forward listen: %v", l.Addr())
-		h := &TunnelHandler{s: t.s, t: t}
+		h := &TunnelHandler{l: l, s: t.s, t: t}
 		if err := t.s.g.Go(func() {
 			t.s.Serve(l, h)
 		}); err != nil {

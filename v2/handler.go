@@ -115,6 +115,7 @@ func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 
 // TunnelHandler forwards connections over the tunnel
 type TunnelHandler struct {
+	l net.Listener
 	s *Server
 	t *Tunnel
 }
@@ -136,7 +137,7 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 		ioClose(dialed)
 		return
 	}
-	slog.Debugf("%v -> %q: forward established", h.t.l.Addr(), h.t.name)
+	slog.Debugf("%v -> %q: forward established", h.l.Addr(), h.t.name)
 }
 
 // EmptyHandler rejects all connections
