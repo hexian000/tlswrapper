@@ -227,7 +227,7 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if t.NumSessions > 0 {
 				s = fmt.Sprintf("%d (%d streams)", t.NumSessions, t.NumStreams)
 			}
-			fprintf(w, "%-20q: %s, since %s\n", t.Name, s, t.LastChanged.Format(time.RFC3339))
+			fprintf(w, "%-20q: %s, %s\n", t.Name, t.LastChanged.Format(time.RFC3339), s)
 		} else {
 			fprintf(w, "%-20q: never seen\n", t.Name)
 		}
