@@ -11,14 +11,20 @@ import (
 
 const Type = "application/x-tlswrapper; version=3"
 
-type ClientHello struct {
+const (
+	MsgHello = iota
+)
+
+type ClientMsg struct {
 	Type    string `json:"type"`
-	Service string `json:"service"`
+	Msg     int    `json:"msgid"`
+	Service string `json:"service,omitempty"`
 }
 
-type ServerHello struct {
+type ServerMsg struct {
 	Type    string `json:"type"`
-	Service string `json:"service"`
+	Msg     int    `json:"msgid"`
+	Service string `json:"service,omitempty"`
 }
 
 var (
@@ -57,11 +63,11 @@ func recvmsg(conn net.Conn, msg interface{}) error {
 	return nil
 }
 
-func Client(conn net.Conn, req *ClientHello) (*ServerHello, error) {
+func Roundtrip(conn net.Conn, req *ClientMsg) (*ServerMsg, error) {
 	if err := sendmsg(conn, req); err != nil {
 		return nil, err
 	}
-	rsp := &ServerHello{}
+	rsp := &ServerMsg{}
 	if err := recvmsg(conn, rsp); err != nil {
 		return nil, err
 	}
@@ -71,16 +77,17 @@ func Client(conn net.Conn, req *ClientHello) (*ServerHello, error) {
 	return rsp, nil
 }
 
-func Server(conn net.Conn, rsp *ServerHello) (*ClientHello, error) {
-	req := &ClientHello{}
+func RecvRequest(conn net.Conn) (*ClientMsg, error) {
+	req := &ClientMsg{}
 	if err := recvmsg(conn, req); err != nil {
 		return nil, err
 	}
 	if req.Type != Type {
 		return nil, ErrUnsupportedProtocol
 	}
-	if err := sendmsg(conn, rsp); err != nil {
-		return nil, err
-	}
 	return req, nil
+}
+
+func SendResponse(conn net.Conn, rsp *ServerMsg) error {
+	return sendmsg(conn, rsp)
 }

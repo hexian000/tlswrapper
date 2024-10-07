@@ -51,16 +51,21 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	} else {
 		slog.Warningf("%q <= %v: connection is not encrypted", h.t.tag, conn.RemoteAddr())
 	}
+	req, err := proto.RecvRequest(conn)
+	if err != nil {
+		slog.Errorf("%q <= %v: %s", h.t.tag, conn.RemoteAddr(), formats.Error(err))
+		return
+	}
 	t := h.t
-	req := &proto.ServerHello{
+	rsp := &proto.ServerMsg{
 		Type:    proto.Type,
+		Msg:     proto.MsgHello,
 		Service: c.RemoteService,
 	}
 	if t.c.RemoteService != "" {
-		req.Service = t.c.RemoteService
+		rsp.Service = t.c.RemoteService
 	}
-	rsp, err := proto.Server(conn, req)
-	if err != nil {
+	if err := proto.SendResponse(conn, rsp); err != nil {
 		slog.Errorf("%q <= %v: %s", h.t.tag, conn.RemoteAddr(), formats.Error(err))
 		return
 	}
@@ -71,11 +76,11 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		return
 	}
 	h.s.stats.authorized.Add(1)
-	if rsp.Service != "" {
-		if tun := h.s.findTunnel(rsp.Service); tun != nil {
+	if req.Service != "" {
+		if tun := h.s.findTunnel(req.Service); tun != nil {
 			t = tun
 		} else {
-			slog.Infof("%q <= %v: unknown service %q", t.tag, conn.RemoteAddr(), req.Service)
+			slog.Infof("%q <= %v: unknown service %q", t.tag, conn.RemoteAddr(), rsp.Service)
 		}
 	}
 	t.addMux(mux, false)

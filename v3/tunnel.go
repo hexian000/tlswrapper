@@ -262,14 +262,15 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	} else {
 		slog.Warningf("%q => %v: connection is not encrypted", t.tag, conn.RemoteAddr())
 	}
-	req := &proto.ClientHello{
+	req := &proto.ClientMsg{
 		Type:    proto.Type,
+		Msg:     proto.MsgHello,
 		Service: c.RemoteService,
 	}
 	if t.c.RemoteService != "" {
 		req.Service = t.c.RemoteService
 	}
-	rsp, err := proto.Client(conn, req)
+	rsp, err := proto.Roundtrip(conn, req)
 	if err != nil {
 		return nil, err
 	}
