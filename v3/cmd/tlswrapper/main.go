@@ -11,6 +11,7 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 	sd "github.com/hexian000/gosnippets/systemd"
 	"github.com/hexian000/tlswrapper/v3"
+	"github.com/hexian000/tlswrapper/v3/config"
 )
 
 func parseFlags() string {
@@ -29,7 +30,7 @@ func parseFlags() string {
 
 func main() {
 	path := parseFlags()
-	cfg, err := tlswrapper.ReadConfig(path)
+	cfg, err := config.ReadFile(path)
 	if err != nil {
 		slog.Fatal("read config: ", err)
 		os.Exit(1)
@@ -58,7 +59,7 @@ func main() {
 		}
 		// reload
 		_, _ = sd.Notify(sd.Reloading)
-		cfg, err := tlswrapper.ReadConfig(path)
+		cfg, err := config.ReadFile(path)
 		if err != nil {
 			slog.Error("read config: ", err)
 			continue

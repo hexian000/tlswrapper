@@ -1,4 +1,4 @@
-package tlswrapper
+package config
 
 import (
 	"crypto/tls"
@@ -16,8 +16,8 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
-// TunnelConfig represents a fixed tunnel between 2 peers
-type TunnelConfig struct {
+// Tunnel represents a fixed tunnel between 2 peers
+type Tunnel struct {
 	// (optional) is disabled
 	Disabled bool `json:"disabled,omitempty"`
 	// (optional) mux dial address
@@ -36,8 +36,8 @@ type TunnelConfig struct {
 	StreamWindow uint32 `json:"window"`
 }
 
-// Config file
-type Config struct {
+// File config file
+type File struct {
 	// (optional) local peer name
 	PeerName string `json:"peername,omitempty"`
 	// (optional) mux listen address
@@ -45,7 +45,7 @@ type Config struct {
 	// service name to dial address
 	Services map[string]string `json:"services"`
 	// peer name to config
-	Peers map[string]TunnelConfig `json:"peers"`
+	Peers map[string]Tunnel `json:"peers"`
 	// (optional) health check and metrics, default to "" (disabled)
 	HTTPListen string `json:"httplisten,omitempty"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
@@ -84,7 +84,7 @@ type Config struct {
 	LogLevel int `json:"loglevel"`
 }
 
-var DefaultConfig = Config{
+var DefaultConfig = File{
 	ServerName:         "example.com",
 	NoDelay:            true,
 	StartupLimitStart:  10,
@@ -101,14 +101,14 @@ var DefaultConfig = Config{
 	LogLevel:           slog.LevelNotice,
 }
 
-var DefaultTunnelConfig = TunnelConfig{
+var DefaultTunnelConfig = Tunnel{
 	Redial:        true,
 	KeepAlive:     25, // every 25s
 	AcceptBacklog: 256,
 	StreamWindow:  256 * 1024, // 256 KiB
 }
 
-func parseConfig(b []byte) (*Config, error) {
+func Load(b []byte) (*File, error) {
 	cfg := DefaultConfig
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return nil, err
@@ -123,12 +123,12 @@ func parseConfig(b []byte) (*Config, error) {
 	return &cfg, nil
 }
 
-func ReadConfig(path string) (*Config, error) {
+func ReadFile(path string) (*File, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return parseConfig(b)
+	return Load(b)
 }
 
 func rangeCheckInt(key string, value int, min int, max int) error {
@@ -138,7 +138,7 @@ func rangeCheckInt(key string, value int, min int, max int) error {
 	return nil
 }
 
-func (c *Config) Validate() error {
+func (c *File) Validate() error {
 	// TODO
 	// if err := rangeCheckInt("keepalive", c.KeepAlive, 0, 86400); err != nil {
 	// 	return err
@@ -165,7 +165,7 @@ func (c *Config) Validate() error {
 }
 
 // SetConnParams sets TCP params
-func (c *Config) SetConnParams(conn net.Conn) {
+func (c *File) SetConnParams(conn net.Conn) {
 	if tcpConn := conn.(*net.TCPConn); tcpConn != nil {
 		_ = tcpConn.SetNoDelay(c.NoDelay)
 		_ = tcpConn.SetKeepAlive(false) // we have an encrypted one
@@ -173,7 +173,7 @@ func (c *Config) SetConnParams(conn net.Conn) {
 }
 
 // NewTLSConfig creates tls.Config
-func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
+func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {
 	if sni == "" {
 		sni = c.ServerName
 	}
@@ -207,7 +207,7 @@ func (c *Config) NewTLSConfig(sni string) (*tls.Config, error) {
 }
 
 // Timeout gets the generic request timeout
-func (c *Config) Timeout() time.Duration {
+func (c *File) Timeout() time.Duration {
 	return time.Duration(c.ConnectTimeout) * time.Second
 }
 
@@ -229,7 +229,15 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 }
 
 // NewMuxConfig creates yamux.Config
-func (c *Config) NewMuxConfig() *yamux.Config {
+func (c *File) FindService(service string) string {
+	if service == "" {
+		return ""
+	}
+	return c.Services[service]
+}
+
+// NewMuxConfig creates yamux.Config
+func (c *File) NewMuxConfig() *yamux.Config {
 	t := DefaultTunnelConfig
 	keepAliveInterval := time.Duration(c.ServerKeepAlive) * time.Second
 	enableKeepAlive := keepAliveInterval >= time.Second
@@ -249,7 +257,7 @@ func (c *Config) NewMuxConfig() *yamux.Config {
 }
 
 // NewMuxConfig creates yamux.Config
-func (t *TunnelConfig) NewMuxConfig(c *Config) *yamux.Config {
+func (t *Tunnel) NewMuxConfig(c *File) *yamux.Config {
 	keepAliveInterval := time.Duration(t.KeepAlive) * time.Second
 	enableKeepAlive := keepAliveInterval >= time.Second
 	if !enableKeepAlive {

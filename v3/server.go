@@ -17,6 +17,7 @@ import (
 	"github.com/hexian000/gosnippets/net/hlistener"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
+	"github.com/hexian000/tlswrapper/v3/config"
 	"github.com/hexian000/tlswrapper/v3/eventlog"
 	"github.com/hexian000/tlswrapper/v3/forwarder"
 )
@@ -30,7 +31,7 @@ var (
 
 // Server object
 type Server struct {
-	c      *Config
+	c      *config.File
 	tlscfg *tls.Config
 	cfgMu  sync.RWMutex
 
@@ -41,8 +42,8 @@ type Server struct {
 	recentEvents eventlog.Recent
 
 	listeners map[string]net.Listener
-	peers     map[string]*Tunnel // map[service]tunnel
-	peersMu   sync.RWMutex
+	tunnels   map[string]*tunnel // map[service]tunnel
+	tunnelsMu sync.RWMutex
 	ctx       contextMgr
 
 	dialer net.Dialer
@@ -59,11 +60,11 @@ type Server struct {
 }
 
 // NewServer creates a server object
-func NewServer(cfg *Config) *Server {
+func NewServer(cfg *config.File) *Server {
 	g := routines.NewGroup()
 	return &Server{
 		listeners: make(map[string]net.Listener),
-		peers:     make(map[string]*Tunnel),
+		tunnels:   make(map[string]*tunnel),
 		ctx: contextMgr{
 			timeout:  cfg.Timeout,
 			contexts: make(map[context.Context]context.CancelFunc),
@@ -76,25 +77,29 @@ func NewServer(cfg *Config) *Server {
 	}
 }
 
-func (s *Server) addPeer(name string, c *TunnelConfig) *Tunnel {
-	t := NewTunnel(s, name, c)
-	s.peersMu.Lock()
-	defer s.peersMu.Unlock()
-	s.peers[name] = t
+func (s *Server) addTunnel(peerName string, c *config.Tunnel) *tunnel {
+	t := &tunnel{
+		peerName: peerName, s: s, c: c,
+		mux:       make(map[*yamux.Session]string),
+		redialSig: make(chan struct{}, 1),
+	}
+	s.tunnelsMu.Lock()
+	defer s.tunnelsMu.Unlock()
+	s.tunnels[peerName] = t
 	return t
 }
 
-func (s *Server) findPeer(name string) *Tunnel {
-	s.peersMu.RLock()
-	defer s.peersMu.RUnlock()
-	return s.peers[name]
+func (s *Server) findTunnel(peerName string) *tunnel {
+	s.tunnelsMu.RLock()
+	defer s.tunnelsMu.RUnlock()
+	return s.tunnels[peerName]
 }
 
-func (s *Server) getAllTunnels() []*Tunnel {
-	s.peersMu.RLock()
-	defer s.peersMu.RUnlock()
-	tunnels := make([]*Tunnel, 0, len(s.peers))
-	for _, t := range s.peers {
+func (s *Server) getAllTunnels() []*tunnel {
+	s.tunnelsMu.RLock()
+	defer s.tunnelsMu.RUnlock()
+	tunnels := make([]*tunnel, 0, len(s.tunnels))
+	for _, t := range s.tunnels {
 		tunnels = append(tunnels, t)
 	}
 	return tunnels
@@ -216,7 +221,7 @@ func (s *Server) Start() error {
 		}
 	}
 	for name, c := range s.c.Peers {
-		t := s.addPeer(name, &c)
+		t := s.addTunnel(name, &c)
 		slog.Debugf("tunnel %q: start", name)
 		if err := t.Start(); err != nil {
 			return err
@@ -242,7 +247,7 @@ func (s *Server) Shutdown() error {
 }
 
 // LoadConfig reloads the configuration file
-func (s *Server) LoadConfig(cfg *Config) error {
+func (s *Server) LoadConfig(cfg *config.File) error {
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
 	if s.c != nil {
@@ -257,7 +262,7 @@ func (s *Server) LoadConfig(cfg *Config) error {
 	return nil
 }
 
-func (s *Server) getConfig() *Config {
+func (s *Server) getConfig() *config.File {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
 	return s.c

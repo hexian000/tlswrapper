@@ -16,6 +16,7 @@ import (
 
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
+	"github.com/hexian000/tlswrapper/v3/config"
 )
 
 const maxContentLength = 4194304
@@ -51,7 +52,7 @@ func (h *apiConfigHandler) Post(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(formats.Error(err)))
 		return
 	}
-	cfg, err := parseConfig(b[:n])
+	cfg, err := config.Load(b[:n])
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(formats.Error(err)))

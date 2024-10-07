@@ -73,7 +73,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 	h.s.stats.authorized.Add(1)
-	t := h.s.findPeer(req.PeerName)
+	t := h.s.findTunnel(req.PeerName)
 	var muxcfg *yamux.Config
 	if t != nil {
 		muxcfg = t.c.NewMuxConfig(c)
@@ -89,7 +89,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		t.addMux(mux, false)
 	}
 	var muxHandler Handler
-	if dialAddr, ok := c.Services[req.Service]; ok {
+	if dialAddr := c.FindService(req.Service); dialAddr != "" {
 		muxHandler = &ForwardHandler{
 			s: h.s, tag: req.PeerName, dial: dialAddr,
 		}
@@ -146,7 +146,7 @@ func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 type TunnelHandler struct {
 	l net.Listener
 	s *Server
-	t *Tunnel
+	t *tunnel
 }
 
 func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {

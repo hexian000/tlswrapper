@@ -13,13 +13,14 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
+	"github.com/hexian000/tlswrapper/v3/config"
 	"github.com/hexian000/tlswrapper/v3/proto"
 )
 
-type Tunnel struct {
+type tunnel struct {
 	peerName    string // used for logging
 	s           *Server
-	c           *TunnelConfig
+	c           *config.Tunnel
 	mu          sync.RWMutex
 	mux         map[*yamux.Session]string // map[mux]tag
 	redialSig   chan struct{}
@@ -28,15 +29,7 @@ type Tunnel struct {
 	lastChanged time.Time
 }
 
-func NewTunnel(s *Server, peerName string, c *TunnelConfig) *Tunnel {
-	return &Tunnel{
-		peerName: peerName, s: s, c: c,
-		mux:       make(map[*yamux.Session]string),
-		redialSig: make(chan struct{}, 1),
-	}
-}
-
-func (t *Tunnel) Start() error {
+func (t *tunnel) Start() error {
 	if t.c.Listen != "" {
 		l, err := t.s.Listen(t.c.Listen)
 		if err != nil {
@@ -53,7 +46,7 @@ func (t *Tunnel) Start() error {
 	return t.s.g.Go(t.run)
 }
 
-func (t *Tunnel) redial() {
+func (t *tunnel) redial() {
 	ctx := t.s.ctx.withTimeout()
 	if ctx == nil {
 		return
@@ -71,7 +64,7 @@ func (t *Tunnel) redial() {
 	t.redialCount = 0
 }
 
-func (t *Tunnel) scheduleRedial() <-chan time.Time {
+func (t *tunnel) scheduleRedial() <-chan time.Time {
 	if !t.c.Redial || t.c.MuxDial == "" || t.redialCount < 1 {
 		return make(<-chan time.Time)
 	}
@@ -94,7 +87,7 @@ func (t *Tunnel) scheduleRedial() <-chan time.Time {
 	return time.After(waitTime)
 }
 
-func (t *Tunnel) run() {
+func (t *tunnel) run() {
 	defer func() {
 		t.mu.Lock()
 		defer t.mu.Unlock()
@@ -115,7 +108,7 @@ func (t *Tunnel) run() {
 	}
 }
 
-func (t *Tunnel) addMux(mux *yamux.Session, isDialed bool) {
+func (t *tunnel) addMux(mux *yamux.Session, isDialed bool) {
 	now := time.Now()
 	var tag string
 	if isDialed {
@@ -140,14 +133,14 @@ func (t *Tunnel) addMux(mux *yamux.Session, isDialed bool) {
 	t.lastChanged = now
 }
 
-func (t *Tunnel) getMuxTag(mux *yamux.Session) (string, bool) {
+func (t *tunnel) getMuxTag(mux *yamux.Session) (string, bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	tag, ok := t.mux[mux]
 	return tag, ok
 }
 
-func (t *Tunnel) delMux(mux *yamux.Session) {
+func (t *tunnel) delMux(mux *yamux.Session) {
 	now := time.Now()
 	if tag, ok := t.getMuxTag(mux); ok {
 		msg := fmt.Sprintf("%s: connection lost", tag)
@@ -172,7 +165,7 @@ func (t *Tunnel) delMux(mux *yamux.Session) {
 	}
 }
 
-func (t *Tunnel) getMux() *yamux.Session {
+func (t *tunnel) getMux() *yamux.Session {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	for mux := range t.mux {
@@ -183,13 +176,13 @@ func (t *Tunnel) getMux() *yamux.Session {
 	return nil
 }
 
-func (t *Tunnel) NumSessions() int {
+func (t *tunnel) NumSessions() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return len(t.mux)
 }
 
-func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
+func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if !t.dialMu.TryLock() {
 		return nil, ErrDialInProgress
 	}
@@ -235,7 +228,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	}
 	t.addMux(mux, true)
 	var muxHandler Handler
-	if dialAddr, ok := c.Services[req.Service]; ok {
+	if dialAddr := c.FindService(req.Service); dialAddr != "" {
 		muxHandler = &ForwardHandler{
 			s: t.s, tag: t.peerName, dial: dialAddr,
 		}
@@ -260,7 +253,7 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	return mux, nil
 }
 
-func (t *Tunnel) MuxDial(ctx context.Context) (net.Conn, error) {
+func (t *tunnel) MuxDial(ctx context.Context) (net.Conn, error) {
 	mux := t.getMux()
 	if mux == nil {
 		var err error
@@ -283,7 +276,7 @@ type TunnelStats struct {
 	NumStreams  int
 }
 
-func (t *Tunnel) Stats() TunnelStats {
+func (t *tunnel) Stats() TunnelStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	numSessions, numStreams := 0, 0
