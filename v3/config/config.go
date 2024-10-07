@@ -84,7 +84,7 @@ type File struct {
 	LogLevel int `json:"loglevel"`
 }
 
-var DefaultConfig = File{
+var Default = File{
 	ServerName:         "example.com",
 	NoDelay:            true,
 	StartupLimitStart:  10,
@@ -101,7 +101,7 @@ var DefaultConfig = File{
 	LogLevel:           slog.LevelNotice,
 }
 
-var DefaultTunnelConfig = Tunnel{
+var TunnelDefault = Tunnel{
 	Redial:        true,
 	KeepAlive:     25, // every 25s
 	AcceptBacklog: 256,
@@ -109,7 +109,7 @@ var DefaultTunnelConfig = Tunnel{
 }
 
 func Load(b []byte) (*File, error) {
-	cfg := DefaultConfig
+	cfg := Default
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func Load(b []byte) (*File, error) {
 	return &cfg, nil
 }
 
-func ReadFile(path string) (*File, error) {
+func LoadFile(path string) (*File, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -238,7 +238,7 @@ func (c *File) FindService(service string) string {
 
 // NewMuxConfig creates yamux.Config
 func (c *File) NewMuxConfig() *yamux.Config {
-	t := DefaultTunnelConfig
+	t := TunnelDefault
 	keepAliveInterval := time.Duration(c.ServerKeepAlive) * time.Second
 	enableKeepAlive := keepAliveInterval >= time.Second
 	if !enableKeepAlive {

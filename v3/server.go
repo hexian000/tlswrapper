@@ -175,10 +175,10 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 func (s *Server) Listen(addr string) (net.Listener, error) {
 	listener, err := net.Listen(network, addr)
 	if err != nil {
-		slog.Error("listen ", addr, ": ", formats.Error(err))
+		slog.Errorf("listen %s: %s", addr, formats.Error(err))
 		return listener, err
 	}
-	slog.Info("listen: ", listener.Addr())
+	slog.Infof("listen: %v", listener.Addr())
 	s.listeners[addr] = listener
 	return listener, err
 }
@@ -234,7 +234,7 @@ func (s *Server) Start() error {
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
 	for addr, listener := range s.listeners {
-		slog.Info("listener close: ", listener.Addr())
+		slog.Infof("listener close: %v", listener.Addr())
 		ioClose(listener)
 		delete(s.listeners, addr)
 	}

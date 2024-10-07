@@ -35,7 +35,7 @@ func (t *tunnel) Start() error {
 		if err != nil {
 			return err
 		}
-		slog.Noticef("forward listen: %v", l.Addr())
+		slog.Noticef("tunnel %q: listen %v", t.peerName, l.Addr())
 		h := &TunnelHandler{l: l, s: t.s, t: t}
 		if err := t.s.g.Go(func() {
 			t.s.Serve(l, h)

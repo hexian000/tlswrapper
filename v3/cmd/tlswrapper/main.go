@@ -30,7 +30,7 @@ func parseFlags() string {
 
 func main() {
 	path := parseFlags()
-	cfg, err := config.ReadFile(path)
+	cfg, err := config.LoadFile(path)
 	if err != nil {
 		slog.Fatal("read config: ", err)
 		os.Exit(1)
@@ -59,7 +59,7 @@ func main() {
 		}
 		// reload
 		_, _ = sd.Notify(sd.Reloading)
-		cfg, err := config.ReadFile(path)
+		cfg, err := config.LoadFile(path)
 		if err != nil {
 			slog.Error("read config: ", err)
 			continue

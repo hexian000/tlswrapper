@@ -1,14 +1,16 @@
 {
-  "tunnel": [
-    {
-      "muxlisten": "0.0.0.0:12345",
-      "dial": "127.0.0.1:8080"
-    },
-    {
-      "listen": "127.0.0.1:8080",
-      "muxdial": "127.0.0.1:12345"
-    }
-  ],
+  "peername": "client1",
+  "muxlisten": "127.1.0.1:12345",
+  "services": {
+      "socks": "127.0.1.1:1081"
+  },
+  "peers": {
+      "client2": {
+          "addr": "127.1.0.2:12345",
+          "listen": "127.1.0.2:1081",
+          "peerservice": "socks"
+      }
+  },
   "cert": "server-cert.pem",
   "key": "server-key.pem",
   "authcerts": [
