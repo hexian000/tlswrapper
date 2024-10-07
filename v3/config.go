@@ -17,10 +17,10 @@ import (
 )
 
 type TunnelConfig struct {
-	// (optional) local service identity
-	Service string `json:"service,omitempty"`
-	// (optional) remote service
-	RemoteService string `json:"remoteservice,omitempty"`
+	// local service identity
+	Service string `json:"service"`
+	// remote service
+	RemoteService string `json:"remoteservice"`
 	// (optional) mux listen address
 	MuxListen string `json:"muxlisten,omitempty"`
 	// (optional) mux dial address
@@ -33,8 +33,6 @@ type TunnelConfig struct {
 
 // Config file
 type Config struct {
-	// (optional) default remote service
-	RemoteService string `json:"remoteservice,omitempty"`
 	// tunnel configs
 	Tunnels []TunnelConfig `json:"tunnel"`
 	// (optional) keep tunnels connected
