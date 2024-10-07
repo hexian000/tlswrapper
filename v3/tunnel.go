@@ -12,16 +12,14 @@ import (
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
 	snet "github.com/hexian000/gosnippets/net"
-	"github.com/hexian000/gosnippets/net/hlistener"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v3/proto"
 )
 
 type Tunnel struct {
-	tag         string // used for logging
+	peerName    string // used for logging
 	s           *Server
 	c           *TunnelConfig
-	l           hlistener.Listener
 	mu          sync.RWMutex
 	mux         map[*yamux.Session]string // map[mux]tag
 	redialSig   chan struct{}
@@ -30,45 +28,15 @@ type Tunnel struct {
 	lastChanged time.Time
 }
 
-func NewTunnel(s *Server, c *TunnelConfig) *Tunnel {
-	tag := c.Service
-	if tag == "" {
-		if c.MuxListen != "" {
-			tag = fmt.Sprintf("muxlisten: %s", c.MuxListen)
-		} else if c.MuxDial != "" {
-			tag = fmt.Sprintf("muxdial: %s", c.MuxDial)
-		}
-	}
+func NewTunnel(s *Server, peerName string, c *TunnelConfig) *Tunnel {
 	return &Tunnel{
-		tag: tag, s: s, c: c,
+		peerName: peerName, s: s, c: c,
 		mux:       make(map[*yamux.Session]string),
 		redialSig: make(chan struct{}, 1),
 	}
 }
 
 func (t *Tunnel) Start() error {
-	if t.c.MuxListen != "" {
-		l, err := t.s.Listen(t.c.MuxListen)
-		if err != nil {
-			return err
-		}
-		slog.Noticef("mux listen: %v", l.Addr())
-		h := &TLSHandler{s: t.s, t: t}
-		c := t.s.getConfig()
-		t.l = hlistener.Wrap(l, &hlistener.Config{
-			Start:       uint32(c.StartupLimitStart),
-			Full:        uint32(c.StartupLimitFull),
-			Rate:        float64(c.StartupLimitRate) / 100.0,
-			MaxSessions: uint32(c.MaxSessions),
-			Stats:       h.Stats4Listener,
-		})
-		l = t.l
-		if err := t.s.g.Go(func() {
-			t.s.Serve(l, h)
-		}); err != nil {
-			return err
-		}
-	}
 	if t.c.Listen != "" {
 		l, err := t.s.Listen(t.c.Listen)
 		if err != nil {
@@ -97,14 +65,14 @@ func (t *Tunnel) redial() {
 		if redialCount > t.redialCount {
 			t.redialCount = redialCount
 		}
-		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.tag, t.redialCount, t.c.MuxDial, formats.Error(err))
+		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.peerName, t.redialCount, t.c.MuxDial, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
 }
 
 func (t *Tunnel) scheduleRedial() <-chan time.Time {
-	if !t.s.c.Redial || t.c.MuxDial == "" || t.redialCount < 1 {
+	if !t.c.Redial || t.c.MuxDial == "" || t.redialCount < 1 {
 		return make(<-chan time.Time)
 	}
 	n := t.redialCount - 1
@@ -122,7 +90,7 @@ func (t *Tunnel) scheduleRedial() <-chan time.Time {
 	if n < len(waitTimeConst) {
 		waitTime = waitTimeConst[n]
 	}
-	slog.Debugf("tunnel %q: redial scheduled after %v", t.tag, waitTime)
+	slog.Debugf("tunnel %q: redial scheduled after %v", t.peerName, waitTime)
 	return time.After(waitTime)
 }
 
@@ -151,9 +119,9 @@ func (t *Tunnel) addMux(mux *yamux.Session, isDialed bool) {
 	now := time.Now()
 	var tag string
 	if isDialed {
-		tag = fmt.Sprintf("%q => %v", t.tag, mux.RemoteAddr())
+		tag = fmt.Sprintf("%q => %v", t.peerName, mux.RemoteAddr())
 	} else {
-		tag = fmt.Sprintf("%q <= %v", t.tag, mux.RemoteAddr())
+		tag = fmt.Sprintf("%q <= %v", t.peerName, mux.RemoteAddr())
 	}
 	msg := fmt.Sprintf("%s: established", tag)
 	slog.Info(msg)
@@ -221,18 +189,6 @@ func (t *Tunnel) NumSessions() int {
 	return len(t.mux)
 }
 
-func (t *Tunnel) Serve(mux *yamux.Session) {
-	var h Handler
-	if t.c.Dial != "" {
-		h = &ForwardHandler{
-			s: t.s, tag: t.tag, dial: t.c.Dial,
-		}
-	} else {
-		h = &EmptyHandler{}
-	}
-	t.s.Serve(mux, h)
-}
-
 func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if !t.dialMu.TryLock() {
 		return nil, ErrDialInProgress
@@ -260,42 +216,47 @@ func (t *Tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if tlscfg := t.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
 	} else {
-		slog.Warningf("%q => %v: connection is not encrypted", t.tag, conn.RemoteAddr())
+		slog.Warningf("%q => %v: connection is not encrypted", t.peerName, conn.RemoteAddr())
 	}
-	req := &proto.ClientMsg{
-		Type:    proto.Type,
-		Msg:     proto.MsgHello,
-		Service: c.RemoteService,
-	}
-	if t.c.RemoteService != "" {
-		req.Service = t.c.RemoteService
+	req := &proto.Message{
+		Type:     proto.Type,
+		Msg:      proto.MsgClientHello,
+		PeerName: t.s.c.PeerName,
+		Service:  t.c.PeerService,
 	}
 	rsp, err := proto.Roundtrip(conn, req)
 	if err != nil {
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
-	mux, err := yamux.Client(conn, t.s.getMuxConfig(false))
+	mux, err := yamux.Client(conn, t.c.NewMuxConfig(t.s.c))
 	if err != nil {
 		return nil, err
 	}
-	tun := t
-	if rsp.Service != "" {
-		if found := t.s.findTunnel(rsp.Service); found != nil {
-			tun = found
-		} else {
-			slog.Infof("%q => %v: unknown service %q", t.tag, conn.RemoteAddr(), rsp.Service)
+	t.addMux(mux, true)
+	var muxHandler Handler
+	if dialAddr, ok := c.Services[req.Service]; ok {
+		muxHandler = &ForwardHandler{
+			s: t.s, tag: t.peerName, dial: dialAddr,
 		}
 	}
-	t.addMux(mux, true)
+	if muxHandler == nil {
+		if req.Service != "" {
+			slog.Infof("%q => %v: unknown service %q", t.peerName, conn.RemoteAddr(), rsp.Service)
+		}
+		if err := mux.GoAway(); err != nil {
+			return nil, err
+		}
+		muxHandler = &EmptyHandler{}
+	}
 	if err := t.s.g.Go(func() {
 		defer t.delMux(mux)
-		tun.Serve(mux)
+		t.s.Serve(mux, muxHandler)
 	}); err != nil {
 		ioClose(mux)
 		return nil, err
 	}
-	slog.Infof("%q => %v: setup %v", t.tag, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	slog.Infof("%q => %v: setup %v", t.peerName, conn.RemoteAddr(), formats.Duration(time.Since(start)))
 	return mux, nil
 }
 
@@ -311,7 +272,7 @@ func (t *Tunnel) MuxDial(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	slog.Debugf("stream open: %q ID=%v", t.tag, stream.StreamID())
+	slog.Debugf("stream open: %q ID=%v", t.peerName, stream.StreamID())
 	return stream, nil
 }
 
@@ -333,7 +294,7 @@ func (t *Tunnel) Stats() TunnelStats {
 		}
 	}
 	return TunnelStats{
-		Name:        t.tag,
+		Name:        t.peerName,
 		LastChanged: t.lastChanged,
 		NumSessions: numSessions,
 		NumStreams:  numStreams,

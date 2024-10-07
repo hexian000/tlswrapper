@@ -71,6 +71,7 @@ case "$1" in
 "d")
     set -x
     go fmt ./...
+    GCFLAGS="${GCFLAGS} -N -l"
     CGO_ENABLED=0 \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"

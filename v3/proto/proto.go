@@ -20,19 +20,15 @@ var (
 )
 
 const (
-	MsgHello = iota
+	MsgClientHello = iota
+	MsgServerHello
 )
 
-type ClientMsg struct {
-	Type    string `json:"type"`
-	Msg     int    `json:"msgid"`
-	Service string `json:"service,omitempty"`
-}
-
-type ServerMsg struct {
-	Type    string `json:"type"`
-	Msg     int    `json:"msgid"`
-	Service string `json:"service,omitempty"`
+type Message struct {
+	Type     string `json:"type"`
+	Msg      int    `json:"msgid"`
+	PeerName string `json:"peername,omitempty"`
+	Service  string `json:"service,omitempty"`
 }
 
 var (
@@ -90,11 +86,11 @@ func checkType(s string) error {
 	return nil
 }
 
-func Roundtrip(conn net.Conn, req *ClientMsg) (*ServerMsg, error) {
+func Roundtrip(conn net.Conn, req *Message) (*Message, error) {
 	if err := sendmsg(conn, req); err != nil {
 		return nil, err
 	}
-	rsp := &ServerMsg{}
+	rsp := &Message{}
 	if err := recvmsg(conn, rsp); err != nil {
 		return nil, err
 	}
@@ -104,8 +100,8 @@ func Roundtrip(conn net.Conn, req *ClientMsg) (*ServerMsg, error) {
 	return rsp, nil
 }
 
-func RecvRequest(conn net.Conn) (*ClientMsg, error) {
-	req := &ClientMsg{}
+func RecvMessage(conn net.Conn) (*Message, error) {
+	req := &Message{}
 	if err := recvmsg(conn, req); err != nil {
 		return nil, err
 	}
@@ -115,6 +111,6 @@ func RecvRequest(conn net.Conn) (*ClientMsg, error) {
 	return req, nil
 }
 
-func SendResponse(conn net.Conn, rsp *ServerMsg) error {
+func SendMessage(conn net.Conn, rsp *Message) error {
 	return sendmsg(conn, rsp)
 }

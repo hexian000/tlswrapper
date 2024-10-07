@@ -16,27 +16,36 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
+// TunnelConfig represents a fixed tunnel between 2 peers
 type TunnelConfig struct {
-	// local service identity
-	Service string `json:"service"`
-	// remote service
-	RemoteService string `json:"remoteservice"`
-	// (optional) mux listen address
-	MuxListen string `json:"muxlisten,omitempty"`
+	// (optional) is disabled
+	Disabled bool `json:"disabled,omitempty"`
 	// (optional) mux dial address
-	MuxDial string `json:"muxdial,omitempty"`
-	// (optional) remote service listen address
+	MuxDial string `json:"addr,omitempty"`
+	// (optional) local listener address
 	Listen string `json:"listen,omitempty"`
-	// (optional) service dial address
-	Dial string `json:"dial,omitempty"`
+	// remote service name
+	PeerService string `json:"peerservice"`
+	// (optional) keep tunnels connected
+	Redial bool `json:"redial"`
+	// (optional) client-side keep alive interval in seconds, default to 25 (every 25s)
+	KeepAlive int `json:"keepalive"`
+	// (optional) mux accept backlog, default to 256, you may not want to change this
+	AcceptBacklog int `json:"backlog"`
+	// (optional) stream window size in bytes, default to 256 KiB, increase this on long fat networks
+	StreamWindow uint32 `json:"window"`
 }
 
 // Config file
 type Config struct {
-	// tunnel configs
-	Tunnels []TunnelConfig `json:"tunnel"`
-	// (optional) keep tunnels connected
-	Redial bool `json:"redial"`
+	// (optional) local peer name
+	PeerName string `json:"peername,omitempty"`
+	// (optional) mux listen address
+	MuxListen string `json:"muxlisten,omitempty"`
+	// service name to dial address
+	Services map[string]string `json:"services"`
+	// peer name to config
+	Peers map[string]TunnelConfig `json:"peers"`
 	// (optional) health check and metrics, default to "" (disabled)
 	HTTPListen string `json:"httplisten,omitempty"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
@@ -49,10 +58,6 @@ type Config struct {
 	AuthorizedCerts []string `json:"authcerts"`
 	// (optional) TCP no delay, default to true
 	NoDelay bool `json:"nodelay"`
-	// (optional) client-side keep alive interval in seconds, default to 25 (every 25s)
-	KeepAlive int `json:"keepalive"`
-	// (optional) server-side keep alive interval in seconds, default to 300 (every 5min)
-	ServerKeepAlive int `json:"serverkeepalive"`
 	// (optional) soft limit of concurrent unauthenticated connections, default to 10
 	StartupLimitStart int `json:"startuplimitstart"`
 	// (optional) probability of random disconnection when soft limit is exceeded, default to 30 (30%)
@@ -63,10 +68,8 @@ type Config struct {
 	MaxConn int `json:"maxconn"`
 	// (optional) max concurrent incoming sessions, default to 128
 	MaxSessions int `json:"maxsessions"`
-	// (optional) mux accept backlog, default to 256, you may not want to change this
-	AcceptBacklog int `json:"backlog"`
-	// (optional) stream window size in bytes, default to 256 KiB, increase this on long fat networks
-	StreamWindow uint32 `json:"window"`
+	// (optional) server-side keep alive interval in seconds, default to 300 (every 5min)
+	ServerKeepAlive int `json:"serverkeepalive"`
 	// (optional) tunnel connecting timeout in seconds, default to 15
 	ConnectTimeout int `json:"timeout"`
 	// (optional) stream open timeout in seconds, default to 30
@@ -84,22 +87,25 @@ type Config struct {
 var DefaultConfig = Config{
 	ServerName:         "example.com",
 	NoDelay:            true,
-	Redial:             true,
-	KeepAlive:          25,  // every 25s
-	ServerKeepAlive:    300, // every 5min
 	StartupLimitStart:  10,
 	StartupLimitRate:   30,
 	StartupLimitFull:   60,
 	MaxConn:            16384,
 	MaxSessions:        128,
-	AcceptBacklog:      256,
-	StreamWindow:       256 * 1024, // 256 KiB
+	ServerKeepAlive:    300, // every 5min
 	ConnectTimeout:     15,
 	StreamOpenTimeout:  30,
 	StreamCloseTimeout: 120,
 	WriteTimeout:       15,
 	Log:                "stdout",
 	LogLevel:           slog.LevelNotice,
+}
+
+var DefaultTunnelConfig = TunnelConfig{
+	Redial:        true,
+	KeepAlive:     25, // every 25s
+	AcceptBacklog: 256,
+	StreamWindow:  256 * 1024, // 256 KiB
 }
 
 func parseConfig(b []byte) (*Config, error) {
@@ -133,12 +139,13 @@ func rangeCheckInt(key string, value int, min int, max int) error {
 }
 
 func (c *Config) Validate() error {
-	if err := rangeCheckInt("keepalive", c.KeepAlive, 0, 86400); err != nil {
-		return err
-	}
-	if err := rangeCheckInt("serverkeepalive", c.ServerKeepAlive, 0, 86400); err != nil {
-		return err
-	}
+	// TODO
+	// if err := rangeCheckInt("keepalive", c.KeepAlive, 0, 86400); err != nil {
+	// 	return err
+	// }
+	// if err := rangeCheckInt("serverkeepalive", c.ServerKeepAlive, 0, 86400); err != nil {
+	// 	return err
+	// }
 	if err := rangeCheckInt("startuplimitstart", c.StartupLimitStart, 1, math.MaxInt); err != nil {
 		return err
 	}
@@ -222,21 +229,38 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 }
 
 // NewMuxConfig creates yamux.Config
-func (c *Config) NewMuxConfig(isServer bool) *yamux.Config {
-	keepAliveInterval := time.Duration(c.KeepAlive) * time.Second
-	if isServer {
-		keepAliveInterval = time.Duration(c.ServerKeepAlive) * time.Second
-	}
+func (c *Config) NewMuxConfig() *yamux.Config {
+	t := DefaultTunnelConfig
+	keepAliveInterval := time.Duration(c.ServerKeepAlive) * time.Second
 	enableKeepAlive := keepAliveInterval >= time.Second
 	if !enableKeepAlive {
 		keepAliveInterval = 15 * time.Second
 	}
 	return &yamux.Config{
-		AcceptBacklog:          c.AcceptBacklog,
+		AcceptBacklog:          t.AcceptBacklog,
 		EnableKeepAlive:        enableKeepAlive,
 		KeepAliveInterval:      keepAliveInterval,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
-		MaxStreamWindowSize:    c.StreamWindow,
+		MaxStreamWindowSize:    t.StreamWindow,
+		StreamOpenTimeout:      time.Duration(c.StreamOpenTimeout) * time.Second,
+		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
+		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
+	}
+}
+
+// NewMuxConfig creates yamux.Config
+func (t *TunnelConfig) NewMuxConfig(c *Config) *yamux.Config {
+	keepAliveInterval := time.Duration(t.KeepAlive) * time.Second
+	enableKeepAlive := keepAliveInterval >= time.Second
+	if !enableKeepAlive {
+		keepAliveInterval = 15 * time.Second
+	}
+	return &yamux.Config{
+		AcceptBacklog:          t.AcceptBacklog,
+		EnableKeepAlive:        enableKeepAlive,
+		KeepAliveInterval:      keepAliveInterval,
+		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
+		MaxStreamWindowSize:    t.StreamWindow,
 		StreamOpenTimeout:      time.Duration(c.StreamOpenTimeout) * time.Second,
 		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
 		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),

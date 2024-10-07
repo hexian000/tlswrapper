@@ -22,7 +22,6 @@ type Handler interface {
 // TLSHandler creates a tunnel
 type TLSHandler struct {
 	s *Server
-	t *Tunnel
 
 	halfOpen atomic.Uint32
 }
@@ -39,7 +38,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	start := time.Now()
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
-			slog.Errorf("%q <= %v: %s", h.t.tag, conn.RemoteAddr(), formats.Error(err))
+			slog.Errorf("? <= %v: %s", conn.RemoteAddr(), formats.Error(err))
 			return
 		}
 	}
@@ -49,50 +48,73 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	if tlscfg := h.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
 	} else {
-		slog.Warningf("%q <= %v: connection is not encrypted", h.t.tag, conn.RemoteAddr())
+		slog.Warningf("? <= %v: connection is not encrypted", conn.RemoteAddr())
 	}
-	req, err := proto.RecvRequest(conn)
+	req, err := proto.RecvMessage(conn)
 	if err != nil {
-		slog.Errorf("%q <= %v: %s", h.t.tag, conn.RemoteAddr(), formats.Error(err))
+		slog.Errorf("? <= %v: %s", conn.RemoteAddr(), formats.Error(err))
 		return
 	}
-	t := h.t
-	rsp := &proto.ServerMsg{
-		Type:    proto.Type,
-		Msg:     proto.MsgHello,
-		Service: c.RemoteService,
+	if req.Msg != proto.MsgClientHello {
+		slog.Errorf("? <= %v: %s", conn.RemoteAddr(), "invalid message")
+		return
 	}
-	if t.c.RemoteService != "" {
-		rsp.Service = t.c.RemoteService
+	rsp := &proto.Message{
+		Type:     proto.Type,
+		Msg:      proto.MsgServerHello,
+		PeerName: c.PeerName,
 	}
-	if err := proto.SendResponse(conn, rsp); err != nil {
-		slog.Errorf("%q <= %v: %s", h.t.tag, conn.RemoteAddr(), formats.Error(err))
+	if cfg, ok := c.Peers[req.PeerName]; ok {
+		rsp.Service = cfg.PeerService
+	}
+	if err := proto.SendMessage(conn, rsp); err != nil {
+		slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
 		return
 	}
 	_ = conn.SetDeadline(time.Time{})
-	mux, err := yamux.Server(conn, h.s.getMuxConfig(true))
+	h.s.stats.authorized.Add(1)
+	t := h.s.findPeer(req.PeerName)
+	var muxcfg *yamux.Config
+	if t != nil {
+		muxcfg = t.c.NewMuxConfig(c)
+	} else {
+		muxcfg = c.NewMuxConfig()
+	}
+	mux, err := yamux.Server(conn, muxcfg)
 	if err != nil {
-		slog.Errorf("%q <= %v: %s", h.t.tag, conn.RemoteAddr(), formats.Error(err))
+		slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
 		return
 	}
-	h.s.stats.authorized.Add(1)
-	if req.Service != "" {
-		if tun := h.s.findTunnel(req.Service); tun != nil {
-			t = tun
-		} else {
-			slog.Infof("%q <= %v: unknown service %q", t.tag, conn.RemoteAddr(), rsp.Service)
+	if t != nil {
+		t.addMux(mux, false)
+	}
+	var muxHandler Handler
+	if dialAddr, ok := c.Services[req.Service]; ok {
+		muxHandler = &ForwardHandler{
+			s: h.s, tag: req.PeerName, dial: dialAddr,
 		}
 	}
-	t.addMux(mux, false)
+	if muxHandler == nil {
+		if req.Service != "" {
+			slog.Infof("%q <= %v: unknown service %q", req.PeerName, conn.RemoteAddr(), rsp.Service)
+		}
+		if err := mux.GoAway(); err != nil {
+			slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
+			return
+		}
+		muxHandler = &EmptyHandler{}
+	}
 	if err := h.s.g.Go(func() {
-		defer t.delMux(mux)
-		t.Serve(mux)
+		if t != nil {
+			defer t.delMux(mux)
+		}
+		h.s.Serve(mux, muxHandler)
 	}); err != nil {
-		slog.Errorf("%q <= %v: %s", t.tag, conn.RemoteAddr(), formats.Error(err))
+		slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
 		ioClose(mux)
 		return
 	}
-	slog.Infof("%q <= %v: setup %v", t.tag, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	slog.Infof("%q <= %v: setup %v", req.PeerName, conn.RemoteAddr(), formats.Duration(time.Since(start)))
 }
 
 // ForwardHandler forwards connections to another plain address
@@ -131,20 +153,20 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.t.MuxDial(ctx)
 	if err != nil {
 		if errors.Is(err, ErrDialInProgress) {
-			slog.Debugf("%v -> %q: %s", accepted.RemoteAddr(), h.t.tag, formats.Error(err))
+			slog.Debugf("%v -> %q: %s", accepted.RemoteAddr(), h.t.peerName, formats.Error(err))
 		} else {
-			slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.t.tag, formats.Error(err))
+			slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.t.peerName, formats.Error(err))
 		}
 		ioClose(accepted)
 		return
 	}
 	if err := h.s.f.Forward(accepted, dialed); err != nil {
-		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.t.tag, formats.Error(err))
+		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.t.peerName, formats.Error(err))
 		ioClose(accepted)
 		ioClose(dialed)
 		return
 	}
-	slog.Debugf("%v -> %q: forward established", h.l.Addr(), h.t.tag)
+	slog.Debugf("%v -> %q: forward established", h.l.Addr(), h.t.peerName)
 }
 
 // EmptyHandler rejects all connections

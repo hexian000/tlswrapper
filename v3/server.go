@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"runtime/debug"
@@ -15,6 +14,7 @@ import (
 	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
 	snet "github.com/hexian000/gosnippets/net"
+	"github.com/hexian000/gosnippets/net/hlistener"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v3/eventlog"
@@ -30,21 +30,20 @@ var (
 
 // Server object
 type Server struct {
-	c            *Config
-	tlscfg       *tls.Config
-	muxcfg       *yamux.Config
-	servermuxcfg *yamux.Config
-	cfgMu        sync.RWMutex
+	c      *Config
+	tlscfg *tls.Config
+	cfgMu  sync.RWMutex
 
+	l hlistener.Listener
 	f forwarder.Forwarder
 
 	flowStats    *snet.FlowStats
 	recentEvents eventlog.Recent
 
-	listeners  map[string]net.Listener
-	services   map[string]*Tunnel // map[service]tunnel
-	servicesMu sync.RWMutex
-	ctx        contextMgr
+	listeners map[string]net.Listener
+	peers     map[string]*Tunnel // map[service]tunnel
+	peersMu   sync.RWMutex
+	ctx       contextMgr
 
 	dialer net.Dialer
 	g      routines.Group
@@ -64,7 +63,7 @@ func NewServer(cfg *Config) *Server {
 	g := routines.NewGroup()
 	return &Server{
 		listeners: make(map[string]net.Listener),
-		services:  make(map[string]*Tunnel),
+		peers:     make(map[string]*Tunnel),
 		ctx: contextMgr{
 			timeout:  cfg.Timeout,
 			contexts: make(map[context.Context]context.CancelFunc),
@@ -77,25 +76,25 @@ func NewServer(cfg *Config) *Server {
 	}
 }
 
-func (s *Server) addTunnel(c *TunnelConfig) *Tunnel {
-	t := NewTunnel(s, c)
-	s.servicesMu.Lock()
-	defer s.servicesMu.Unlock()
-	s.services[c.Service] = t
+func (s *Server) addPeer(name string, c *TunnelConfig) *Tunnel {
+	t := NewTunnel(s, name, c)
+	s.peersMu.Lock()
+	defer s.peersMu.Unlock()
+	s.peers[name] = t
 	return t
 }
 
-func (s *Server) findTunnel(service string) *Tunnel {
-	s.servicesMu.RLock()
-	defer s.servicesMu.RUnlock()
-	return s.services[service]
+func (s *Server) findPeer(name string) *Tunnel {
+	s.peersMu.RLock()
+	defer s.peersMu.RUnlock()
+	return s.peers[name]
 }
 
-func (s *Server) getTunnels() []*Tunnel {
-	s.servicesMu.RLock()
-	defer s.servicesMu.RUnlock()
-	tunnels := make([]*Tunnel, 0, len(s.services))
-	for _, t := range s.services {
+func (s *Server) getAllTunnels() []*Tunnel {
+	s.peersMu.RLock()
+	defer s.peersMu.RUnlock()
+	tunnels := make([]*Tunnel, 0, len(s.peers))
+	for _, t := range s.peers {
 		tunnels = append(tunnels, t)
 	}
 	return tunnels
@@ -114,15 +113,13 @@ type ServerStats struct {
 }
 
 func (s *Server) Stats() (stats ServerStats) {
-	for _, t := range s.getTunnels() {
+	if s.l != nil {
+		stats.Accepted, stats.Served = s.l.Stats()
+	}
+	for _, t := range s.getAllTunnels() {
 		tstats := t.Stats()
 		stats.NumSessions += tstats.NumSessions
 		stats.NumStreams += tstats.NumStreams
-		if t.l != nil {
-			accepted, served := t.l.Stats()
-			stats.Accepted += accepted
-			stats.Served += served
-		}
 		stats.tunnels = append(stats.tunnels, tstats)
 	}
 	stats.Rx, stats.Tx = s.flowStats.Read.Load(), s.flowStats.Written.Load()
@@ -183,6 +180,27 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 
 // Start the service
 func (s *Server) Start() error {
+	if s.c.MuxListen != "" {
+		l, err := s.Listen(s.c.MuxListen)
+		if err != nil {
+			return err
+		}
+		slog.Noticef("mux listen: %v", l.Addr())
+		h := &TLSHandler{s: s}
+		c := s.getConfig()
+		s.l = hlistener.Wrap(l, &hlistener.Config{
+			Start:       uint32(c.StartupLimitStart),
+			Full:        uint32(c.StartupLimitFull),
+			Rate:        float64(c.StartupLimitRate) / 100.0,
+			MaxSessions: uint32(c.MaxSessions),
+			Stats:       h.Stats4Listener,
+		})
+		if err := s.g.Go(func() {
+			s.Serve(s.l, h)
+		}); err != nil {
+			return err
+		}
+	}
 	if s.c.HTTPListen != "" {
 		l, err := s.Listen(s.c.HTTPListen)
 		if err != nil {
@@ -197,13 +215,9 @@ func (s *Server) Start() error {
 			return err
 		}
 	}
-	for i := range s.c.Tunnels {
-		c := &s.c.Tunnels[i]
-		if s.findTunnel(c.Service) != nil {
-			return fmt.Errorf("tunnel #%d redefined existing service %q", i, c.Service)
-		}
-		t := s.addTunnel(c)
-		slog.Debugf("tunnel #%d: start service %q", i, c.Service)
+	for name, c := range s.c.Peers {
+		t := s.addPeer(name, &c)
+		slog.Debugf("tunnel %q: start", name)
 		if err := t.Start(); err != nil {
 			return err
 		}
@@ -232,7 +246,7 @@ func (s *Server) LoadConfig(cfg *Config) error {
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
 	if s.c != nil {
-		cfg.Tunnels = s.c.Tunnels
+		cfg.Services = s.c.Services
 	}
 	tlscfg, err := cfg.NewTLSConfig(cfg.ServerName)
 	if err != nil {
@@ -240,8 +254,6 @@ func (s *Server) LoadConfig(cfg *Config) error {
 	}
 	s.c = cfg
 	s.tlscfg = tlscfg
-	s.muxcfg = cfg.NewMuxConfig(false)
-	s.servermuxcfg = cfg.NewMuxConfig(true)
 	return nil
 }
 
@@ -255,13 +267,4 @@ func (s *Server) getTLSConfig() *tls.Config {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
 	return s.tlscfg
-}
-
-func (s *Server) getMuxConfig(isServer bool) *yamux.Config {
-	s.cfgMu.RLock()
-	defer s.cfgMu.RUnlock()
-	if isServer {
-		return s.servermuxcfg
-	}
-	return s.muxcfg
 }
