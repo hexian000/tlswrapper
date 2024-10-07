@@ -15,12 +15,12 @@ fi
 echo "+ version: ${VERSION}"
 
 set -e
-MODROOT="./v2"
+MODROOT="./v3"
 PACKAGE="./cmd/tlswrapper"
 OUT="$(realpath ./build)/tlswrapper"
 GOFLAGS="-trimpath"
 GCFLAGS=""
-LDFLAGS="-X github.com/hexian000/tlswrapper/v2.Version=${VERSION}"
+LDFLAGS="-X github.com/hexian000/tlswrapper/v3.Version=${VERSION}"
 
 cd "${MODROOT}" && go mod vendor
 case "$1" in

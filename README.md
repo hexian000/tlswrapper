@@ -124,7 +124,7 @@ See [gencerts.sh](gencerts.sh).
 - "key": peer private key
 - "authcerts": peer authorized certificates list, bundles are supported
 
-See [source code](v2/config.go) for a complete list of all available options.
+See [source code](v3/config.go) for a complete list of all available options.
 
 See [config.json](config.json) for example config file.
 
