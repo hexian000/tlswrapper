@@ -6,10 +6,18 @@ import (
 	"errors"
 	"io"
 	"math"
+	"mime"
 	"net"
 )
 
-const Type = "application/x-tlswrapper; version=3"
+var (
+	versionStr = "3"
+
+	mimeType   = "application/x-tlswrapper-msg"
+	mimeParams = map[string]string{"version": versionStr}
+
+	Type = mime.FormatMediaType(mimeType, mimeParams)
+)
 
 const (
 	MsgHello = iota
@@ -28,8 +36,9 @@ type ServerMsg struct {
 }
 
 var (
-	ErrMsgTooLong          = errors.New("message too long")
-	ErrUnsupportedProtocol = errors.New("unsupported protocol")
+	ErrMsgTooLong           = errors.New("message too long")
+	ErrUnsupportedProtocol  = errors.New("unsupported protocol")
+	ErrIncompatiableVersion = errors.New("incompatible protocol version")
 )
 
 func sendmsg(conn net.Conn, msg interface{}) error {
@@ -63,6 +72,24 @@ func recvmsg(conn net.Conn, msg interface{}) error {
 	return nil
 }
 
+func checkType(s string) error {
+	mediatype, params, err := mime.ParseMediaType(s)
+	if err != nil {
+		return err
+	}
+	if mediatype != mimeType {
+		return ErrUnsupportedProtocol
+	}
+	version, ok := params["version"]
+	if !ok {
+		return ErrUnsupportedProtocol
+	}
+	if version != versionStr {
+		return ErrIncompatiableVersion
+	}
+	return nil
+}
+
 func Roundtrip(conn net.Conn, req *ClientMsg) (*ServerMsg, error) {
 	if err := sendmsg(conn, req); err != nil {
 		return nil, err
@@ -71,8 +98,8 @@ func Roundtrip(conn net.Conn, req *ClientMsg) (*ServerMsg, error) {
 	if err := recvmsg(conn, rsp); err != nil {
 		return nil, err
 	}
-	if rsp.Type != Type {
-		return nil, ErrUnsupportedProtocol
+	if err := checkType(rsp.Type); err != nil {
+		return nil, err
 	}
 	return rsp, nil
 }
@@ -82,8 +109,8 @@ func RecvRequest(conn net.Conn) (*ClientMsg, error) {
 	if err := recvmsg(conn, req); err != nil {
 		return nil, err
 	}
-	if req.Type != Type {
-		return nil, ErrUnsupportedProtocol
+	if err := checkType(req.Type); err != nil {
+		return nil, err
 	}
 	return req, nil
 }
