@@ -20,7 +20,6 @@ import (
 type tunnel struct {
 	peerName    string // used for logging
 	s           *Server
-	c           *config.Tunnel
 	mu          sync.RWMutex
 	mux         map[*yamux.Session]string // map[mux]tag
 	redialSig   chan struct{}
@@ -29,9 +28,14 @@ type tunnel struct {
 	lastChanged time.Time
 }
 
+func (t *tunnel) getConfig() *config.Tunnel {
+	return t.s.getTunnelConfig(t.peerName)
+}
+
 func (t *tunnel) Start() error {
-	if t.c.Listen != "" {
-		l, err := t.s.Listen(t.c.Listen)
+	c := t.getConfig()
+	if c.Listen != "" {
+		l, err := t.s.Listen(c.Listen)
 		if err != nil {
 			return err
 		}
@@ -58,14 +62,16 @@ func (t *tunnel) redial() {
 		if redialCount > t.redialCount {
 			t.redialCount = redialCount
 		}
-		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.peerName, t.redialCount, t.c.MuxDial, formats.Error(err))
+		c := t.getConfig()
+		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.peerName, t.redialCount, c.MuxDial, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
 }
 
 func (t *tunnel) scheduleRedial() <-chan time.Time {
-	if !t.c.Redial || t.c.MuxDial == "" || t.redialCount < 1 {
+	c := t.getConfig()
+	if !c.Redial || c.MuxDial == "" || t.redialCount < 1 {
 		return make(<-chan time.Time)
 	}
 	n := t.redialCount - 1
@@ -190,11 +196,12 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if mux := t.getMux(); mux != nil {
 		return mux, nil
 	}
-	if t.c.MuxDial == "" {
+	c := t.getConfig()
+	if c.MuxDial == "" {
 		return nil, ErrNoDialAddress
 	}
 	start := time.Now()
-	conn, err := t.s.dialer.DialContext(ctx, network, t.c.MuxDial)
+	conn, err := t.s.dialer.DialContext(ctx, network, c.MuxDial)
 	if err != nil {
 		return nil, err
 	}
@@ -203,8 +210,8 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 			return nil, err
 		}
 	}
-	c := t.s.getConfig()
-	c.SetConnParams(conn)
+	serverCfg := t.s.getConfig()
+	serverCfg.SetConnParams(conn)
 	conn = snet.FlowMeter(conn, t.s.flowStats)
 	if tlscfg := t.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
@@ -214,21 +221,21 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	req := &proto.Message{
 		Type:     proto.Type,
 		Msg:      proto.MsgClientHello,
-		PeerName: t.s.c.PeerName,
-		Service:  t.c.PeerService,
+		PeerName: serverCfg.PeerName,
+		Service:  c.PeerService,
 	}
 	rsp, err := proto.Roundtrip(conn, req)
 	if err != nil {
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
-	mux, err := yamux.Client(conn, t.c.NewMuxConfig(t.s.c))
+	mux, err := yamux.Client(conn, c.NewMuxConfig(t.s.c))
 	if err != nil {
 		return nil, err
 	}
 	t.addMux(mux, true)
 	var muxHandler Handler
-	if dialAddr := c.FindService(req.Service); dialAddr != "" {
+	if dialAddr := serverCfg.FindService(req.Service); dialAddr != "" {
 		muxHandler = &ForwardHandler{
 			s: t.s, tag: t.peerName, dial: dialAddr,
 		}

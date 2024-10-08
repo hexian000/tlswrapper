@@ -77,9 +77,9 @@ func NewServer(cfg *config.File) *Server {
 	}
 }
 
-func (s *Server) addTunnel(peerName string, c *config.Tunnel) *tunnel {
+func (s *Server) addTunnel(peerName string) *tunnel {
 	t := &tunnel{
-		peerName: peerName, s: s, c: c,
+		peerName: peerName, s: s,
 		mux:       make(map[*yamux.Session]string),
 		redialSig: make(chan struct{}, 1),
 	}
@@ -220,8 +220,8 @@ func (s *Server) Start() error {
 			return err
 		}
 	}
-	for name, c := range s.c.Peers {
-		t := s.addTunnel(name, &c)
+	for name := range s.c.Peers {
+		t := s.addTunnel(name)
 		slog.Debugf("tunnel %q: start", name)
 		if err := t.Start(); err != nil {
 			return err
@@ -248,15 +248,12 @@ func (s *Server) Shutdown() error {
 
 // LoadConfig reloads the configuration file
 func (s *Server) LoadConfig(cfg *config.File) error {
-	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-	if s.c != nil {
-		cfg.Services = s.c.Services
-	}
 	tlscfg, err := cfg.NewTLSConfig(cfg.ServerName)
 	if err != nil {
 		return err
 	}
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
 	s.c = cfg
 	s.tlscfg = tlscfg
 	return nil
@@ -266,6 +263,14 @@ func (s *Server) getConfig() *config.File {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
 	return s.c
+}
+
+func (s *Server) getTunnelConfig(peerName string) *config.Tunnel {
+	c, ok := s.getConfig().Peers[peerName]
+	if !ok {
+		return nil
+	}
+	return &c
 }
 
 func (s *Server) getTLSConfig() *tls.Config {

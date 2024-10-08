@@ -76,7 +76,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	t := h.s.findTunnel(req.PeerName)
 	var muxcfg *yamux.Config
 	if t != nil {
-		muxcfg = t.c.NewMuxConfig(c)
+		muxcfg = t.getConfig().NewMuxConfig(c)
 	} else {
 		muxcfg = c.NewMuxConfig()
 	}
