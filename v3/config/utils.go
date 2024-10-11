@@ -27,14 +27,6 @@ func (c *File) Timeout() time.Duration {
 	return time.Duration(c.ConnectTimeout) * time.Second
 }
 
-// FindService finds dial address by service name
-func (c *File) FindService(service string) string {
-	if service == "" {
-		return ""
-	}
-	return c.Services[service]
-}
-
 // SetConnParams sets TCP params
 func (c *File) SetConnParams(conn net.Conn) {
 	if tcpConn := conn.(*net.TCPConn); tcpConn != nil {
@@ -44,10 +36,8 @@ func (c *File) SetConnParams(conn net.Conn) {
 }
 
 // NewTLSConfig creates tls.Config
-func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {
-	if sni == "" {
-		sni = c.ServerName
-	}
+func (c *File) NewTLSConfig() (*tls.Config, error) {
+	sni := c.ServerName
 	if c.Certificate == "" && c.PrivateKey == "" {
 		return nil, nil
 	}

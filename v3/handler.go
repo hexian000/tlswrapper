@@ -41,10 +41,10 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 			return
 		}
 	}
-	cfg := h.s.getConfig()
+	cfg, tlscfg := h.s.getConfig()
 	cfg.SetConnParams(conn)
 	conn = snet.FlowMeter(conn, h.s.flowStats)
-	if tlscfg := h.s.getTLSConfig(); tlscfg != nil {
+	if tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
 	} else {
 		slog.Warningf("? <= %v: connection is not encrypted", conn.RemoteAddr())
@@ -73,7 +73,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	_ = conn.SetDeadline(time.Time{})
 	h.s.stats.authorized.Add(1)
 
-	_, err = h.s.startMux(conn, req.PeerName, req.Service, false)
+	_, err = h.s.startMux(conn, cfg, req.PeerName, req.Service, false)
 	if err != nil {
 		slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
 		return

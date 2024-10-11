@@ -62,12 +62,11 @@ type Server struct {
 // NewServer creates a server object
 func NewServer(cfg *config.File) *Server {
 	g := routines.NewGroup()
-	return &Server{
+	s := &Server{
 		cfg:       cfg,
 		listeners: make(map[string]net.Listener),
 		tunnels:   make(map[string]*tunnel),
 		ctx: contextMgr{
-			timeout:  cfg.Timeout,
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
 		f:            forwarder.New(cfg.MaxConn, g),
@@ -75,6 +74,11 @@ func NewServer(cfg *config.File) *Server {
 		recentEvents: eventlog.NewRecent(100),
 		g:            g,
 	}
+	s.ctx.timeout = func() time.Duration {
+		cfg, _ := s.getConfig()
+		return cfg.Timeout()
+	}
+	return s
 }
 
 func (s *Server) addTunnel(peerName string) *tunnel {
@@ -165,15 +169,21 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 				errors.Is(err, yamux.ErrSessionShutdown) {
 				return
 			}
+			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
+				time.Sleep(500 * time.Millisecond)
+			}
 			slog.Errorf("serve: %s", formats.Error(err))
 			return
 		}
-		s.serveOne(conn, handler)
+		if err := s.g.Go(func() {
+			s.serveOne(conn, handler)
+		}); err != nil {
+			slog.Errorf("serve: %s", formats.Error(err))
+		}
 	}
 }
 
-func (s *Server) startMux(conn net.Conn, peerName, service string, isDialed bool) (mux *yamux.Session, err error) {
-	cfg := s.getConfig()
+func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service string, isDialed bool) (mux *yamux.Session, err error) {
 	muxcfg := cfg.NewMuxConfig(peerName, isDialed)
 	if isDialed {
 		mux, err = yamux.Client(conn, muxcfg)
@@ -189,8 +199,11 @@ func (s *Server) startMux(conn net.Conn, peerName, service string, isDialed bool
 		}
 	}
 	var muxHandler Handler
-	dialAddr := cfg.FindService(service)
-	if dialAddr == "" {
+	if dialAddr, ok := cfg.Services[service]; ok {
+		muxHandler = &ForwardHandler{
+			s: s, tag: peerName, dial: dialAddr,
+		}
+	} else {
 		if service != "" {
 			slog.Warningf("%q <= %v: unknown service %q", peerName, conn.RemoteAddr(), service)
 		}
@@ -200,10 +213,6 @@ func (s *Server) startMux(conn net.Conn, peerName, service string, isDialed bool
 			return
 		}
 		muxHandler = &EmptyHandler{}
-	} else {
-		muxHandler = &ForwardHandler{
-			s: s, tag: peerName, dial: dialAddr,
-		}
 	}
 	err = s.g.Go(func() {
 		if t := s.findTunnel(peerName); t != nil {
@@ -238,7 +247,7 @@ func (s *Server) Start() error {
 		}
 		slog.Noticef("mux listen: %v", l.Addr())
 		h := &TLSHandler{s: s}
-		c := s.getConfig()
+		c, _ := s.getConfig()
 		s.l = hlistener.Wrap(l, &hlistener.Config{
 			Start:       uint32(c.StartupLimitStart),
 			Full:        uint32(c.StartupLimitFull),
@@ -294,7 +303,7 @@ func (s *Server) Shutdown() error {
 
 // LoadConfig reloads the configuration file
 func (s *Server) LoadConfig(cfg *config.File) error {
-	tlscfg, err := cfg.NewTLSConfig(cfg.ServerName)
+	tlscfg, err := cfg.NewTLSConfig()
 	if err != nil {
 		return err
 	}
@@ -305,14 +314,8 @@ func (s *Server) LoadConfig(cfg *config.File) error {
 	return nil
 }
 
-func (s *Server) getConfig() *config.File {
+func (s *Server) getConfig() (*config.File, *tls.Config) {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
-	return s.cfg
-}
-
-func (s *Server) getTLSConfig() *tls.Config {
-	s.cfgMu.RLock()
-	defer s.cfgMu.RUnlock()
-	return s.tlscfg
+	return s.cfg, s.tlscfg
 }

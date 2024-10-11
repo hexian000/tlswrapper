@@ -67,7 +67,8 @@ func (h *apiConfigHandler) Post(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *apiConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
-	b, err := json.MarshalIndent(h.s.getConfig(), "", "    ")
+	cfg, _ := h.s.getConfig()
+	b, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(formats.Error(err)))

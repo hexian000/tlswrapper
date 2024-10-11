@@ -28,13 +28,13 @@ type tunnel struct {
 	lastChanged time.Time
 }
 
-func (t *tunnel) getConfig() *config.Tunnel {
-	cfg := t.s.getConfig()
-	return cfg.GetTunnel(t.peerName)
+func (t *tunnel) getConfig() (*config.File, *tls.Config, *config.Tunnel) {
+	cfg, tlscfg := t.s.getConfig()
+	return cfg, tlscfg, cfg.GetTunnel(t.peerName)
 }
 
 func (t *tunnel) Start() error {
-	c := t.getConfig()
+	_, _, c := t.getConfig()
 	if c.Listen != "" {
 		l, err := t.s.Listen(c.Listen)
 		if err != nil {
@@ -63,7 +63,7 @@ func (t *tunnel) redial() {
 		if redialCount > t.redialCount {
 			t.redialCount = redialCount
 		}
-		c := t.getConfig()
+		_, _, c := t.getConfig()
 		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.peerName, t.redialCount, c.MuxDial, formats.Error(err))
 		return
 	}
@@ -71,7 +71,7 @@ func (t *tunnel) redial() {
 }
 
 func (t *tunnel) scheduleRedial() <-chan time.Time {
-	c := t.getConfig()
+	_, _, c := t.getConfig()
 	if !c.NoRedial || c.MuxDial == "" || t.redialCount < 1 {
 		return make(<-chan time.Time)
 	}
@@ -197,7 +197,7 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if mux := t.getMux(); mux != nil {
 		return mux, nil
 	}
-	tuncfg := t.getConfig()
+	cfg, tlscfg, tuncfg := t.getConfig()
 	if tuncfg.MuxDial == "" {
 		return nil, ErrNoDialAddress
 	}
@@ -211,10 +211,9 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 			return nil, err
 		}
 	}
-	cfg := t.s.getConfig()
 	cfg.SetConnParams(conn)
 	conn = snet.FlowMeter(conn, t.s.flowStats)
-	if tlscfg := t.s.getTLSConfig(); tlscfg != nil {
+	if tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
 	} else {
 		slog.Warningf("%q => %v: connection is not encrypted", t.peerName, conn.RemoteAddr())
@@ -231,7 +230,7 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 
-	mux, err := t.s.startMux(conn, rsp.PeerName, rsp.Service, true)
+	mux, err := t.s.startMux(conn, cfg, rsp.PeerName, rsp.Service, true)
 	if err != nil {
 		return nil, err
 	}
