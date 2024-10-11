@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"sync/atomic"
 	"time"
@@ -35,9 +36,10 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	h.halfOpen.Add(1)
 	defer h.halfOpen.Add(^uint32(0))
 	start := time.Now()
+	tag := fmt.Sprintf("? <= %v", conn.RemoteAddr())
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
-			slog.Errorf("? <= %v: %s", conn.RemoteAddr(), formats.Error(err))
+			slog.Errorf("%s: %s", tag, formats.Error(err))
 			return
 		}
 	}
@@ -47,16 +49,19 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	if tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
 	} else {
-		slog.Warningf("? <= %v: connection is not encrypted", conn.RemoteAddr())
+		slog.Warningf("%s: connection is not encrypted", tag)
 	}
 	req, err := proto.Read(conn)
 	if err != nil {
-		slog.Errorf("? <= %v: %s", conn.RemoteAddr(), formats.Error(err))
+		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
 	}
 	if req.Msg != proto.MsgClientHello {
-		slog.Errorf("? <= %v: %s", conn.RemoteAddr(), "invalid message")
+		slog.Errorf("%s: %s", tag, "invalid message")
 		return
+	}
+	if req.PeerName != "" {
+		tag = fmt.Sprintf("%q <= %v", req.PeerName, conn.RemoteAddr())
 	}
 	rsp := &proto.Message{
 		Type:     proto.Type,
@@ -67,19 +72,18 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		rsp.Service = cfg.PeerService
 	}
 	if err := proto.Write(conn, rsp); err != nil {
-		slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
+		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
 	}
 	_ = conn.SetDeadline(time.Time{})
 	h.s.stats.authorized.Add(1)
 
-	_, err = h.s.startMux(conn, cfg, req.PeerName, req.Service, false)
+	_, err = h.s.startMux(conn, cfg, req.PeerName, req.Service, false, tag)
 	if err != nil {
-		slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
+		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
 	}
-	slog.Debugf("%q <= %v: service=%q, setup %v", req.PeerName, conn.RemoteAddr(),
-		req.Service, formats.Duration(time.Since(start)))
+	slog.Debugf("%s: service=%q, setup %v", tag, req.Service, formats.Duration(time.Since(start)))
 }
 
 // ForwardHandler forwards connections to another plain address

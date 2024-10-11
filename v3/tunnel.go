@@ -132,15 +132,9 @@ func (t *tunnel) run() {
 	}
 }
 
-func (t *tunnel) addMux(mux *yamux.Session, isDialed bool) {
+func (t *tunnel) addMux(mux *yamux.Session, tag string) {
 	now := time.Now()
-	var tag string
-	if isDialed {
-		tag = fmt.Sprintf("%q => %v", t.peerName, mux.RemoteAddr())
-	} else {
-		tag = fmt.Sprintf("%q <= %v", t.peerName, mux.RemoteAddr())
-	}
-	msg := fmt.Sprintf("%s: established", tag)
+	msg := fmt.Sprintf("%s: tunnel established", tag)
 	slog.Info(msg)
 	t.s.recentEvents.Add(now, msg)
 
@@ -167,7 +161,7 @@ func (t *tunnel) getMuxTag(mux *yamux.Session) (string, bool) {
 func (t *tunnel) delMux(mux *yamux.Session) {
 	now := time.Now()
 	if tag, ok := t.getMuxTag(mux); ok {
-		msg := fmt.Sprintf("%s: connection lost", tag)
+		msg := fmt.Sprintf("%s: tunnel connection lost", tag)
 		slog.Info(msg)
 		t.s.recentEvents.Add(now, msg)
 	}
@@ -223,6 +217,7 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	tag := fmt.Sprintf("%q => %v", t.peerName, conn.RemoteAddr())
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
 			return nil, err
@@ -233,7 +228,7 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
 	} else {
-		slog.Warningf("%q => %v: connection is not encrypted", t.peerName, conn.RemoteAddr())
+		slog.Warningf("%s: connection is not encrypted", tag)
 	}
 	req := &proto.Message{
 		Type:     proto.Type,
@@ -247,12 +242,11 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 
-	mux, err := t.s.startMux(conn, cfg, rsp.PeerName, rsp.Service, true)
+	mux, err := t.s.startMux(conn, cfg, rsp.PeerName, rsp.Service, true, tag)
 	if err != nil {
 		return nil, err
 	}
-	slog.Debugf("%q => %v: service=%q, setup %v", rsp.PeerName, conn.RemoteAddr(),
-		rsp.Service, formats.Duration(time.Since(start)))
+	slog.Debugf("%s: service=%q, setup %v", tag, rsp.Service, formats.Duration(time.Since(start)))
 	return mux, nil
 }
 

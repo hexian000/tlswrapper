@@ -14,6 +14,11 @@ import (
 	"github.com/hexian000/tlswrapper/v3/config"
 )
 
+func init() {
+	slog.Default().SetFilePrefix("github.com/hexian000/tlswrapper/v3/")
+	slog.Default().SetOutputConfig("stdout", "tlswrapper")
+}
+
 func parseFlags() string {
 	var flagHelp bool
 	var flagConfig string

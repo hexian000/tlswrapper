@@ -35,17 +35,18 @@ type Server struct {
 	tlscfg *tls.Config
 	cfgMu  sync.RWMutex
 
-	l hlistener.Listener
-	f forwarder.Forwarder
+	l           hlistener.Listener
+	apiListener net.Listener
+	f           forwarder.Forwarder
 
 	flowStats    *snet.FlowStats
 	recentEvents eventlog.Recent
 
-	listeners   map[net.Listener]struct{}
-	listenersMu sync.Mutex
-	tunnels     map[string]*tunnel // map[service]tunnel
-	tunnelsMu   sync.RWMutex
-	ctx         contextMgr
+	tunnels   map[string]*tunnel // map[service]tunnel
+	tunnelsMu sync.RWMutex
+	mux       map[*yamux.Session]string // map[mux]tag
+	muxMu     sync.RWMutex
+	ctx       contextMgr
 
 	dialer net.Dialer
 	g      routines.Group
@@ -64,9 +65,9 @@ type Server struct {
 func NewServer(cfg *config.File) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
-		cfg:       cfg,
-		listeners: make(map[net.Listener]struct{}),
-		tunnels:   make(map[string]*tunnel),
+		cfg:     cfg,
+		tunnels: make(map[string]*tunnel),
+		mux:     make(map[*yamux.Session]string),
 		ctx: contextMgr{
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
@@ -87,19 +88,6 @@ func NewServer(cfg *config.File) (*Server, error) {
 	return s, err
 }
 
-func (s *Server) addTunnel(peerName string) *tunnel {
-	t := &tunnel{
-		peerName: peerName, s: s,
-		mux:       make(map[*yamux.Session]string),
-		closeSig:  make(chan struct{}, 1),
-		redialSig: make(chan struct{}, 1),
-	}
-	s.tunnelsMu.Lock()
-	defer s.tunnelsMu.Unlock()
-	s.tunnels[peerName] = t
-	return t
-}
-
 func (s *Server) findTunnel(peerName string) *tunnel {
 	s.tunnelsMu.RLock()
 	defer s.tunnelsMu.RUnlock()
@@ -114,6 +102,14 @@ func (s *Server) getAllTunnels() []*tunnel {
 		tunnels = append(tunnels, t)
 	}
 	return tunnels
+}
+
+func (s *Server) stopAllTunnels() {
+	s.tunnelsMu.RLock()
+	defer s.tunnelsMu.RUnlock()
+	for _, t := range s.tunnels {
+		_ = t.Stop()
+	}
 }
 
 type ServerStats struct {
@@ -190,7 +186,30 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	}
 }
 
-func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service string, isDialed bool) (mux *yamux.Session, err error) {
+func (s *Server) addMux(mux *yamux.Session, tag string) {
+	slog.Infof("%s: mux established", tag)
+	s.muxMu.Lock()
+	defer s.muxMu.Unlock()
+	s.mux[mux] = tag
+}
+
+func (s *Server) getMuxTag(mux *yamux.Session) (string, bool) {
+	s.muxMu.RLock()
+	defer s.muxMu.RUnlock()
+	tag, ok := s.mux[mux]
+	return tag, ok
+}
+
+func (s *Server) delMux(mux *yamux.Session) {
+	if tag, ok := s.getMuxTag(mux); ok {
+		slog.Infof("%s: mux connection lost", tag)
+	}
+	s.muxMu.Lock()
+	defer s.muxMu.Unlock()
+	delete(s.mux, mux)
+}
+
+func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service string, isDialed bool, tag string) (mux *yamux.Session, err error) {
 	muxcfg := cfg.NewMuxConfig(peerName, isDialed)
 	if isDialed {
 		mux, err = yamux.Client(conn, muxcfg)
@@ -212,7 +231,7 @@ func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service str
 		}
 	} else {
 		if service != "" {
-			slog.Warningf("%q <= %v: unknown service %q", peerName, conn.RemoteAddr(), service)
+			slog.Warningf("%s: unknown service %q", tag, service)
 		}
 		err = mux.GoAway()
 		if err != nil {
@@ -223,8 +242,11 @@ func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service str
 	}
 	err = s.g.Go(func() {
 		if t := s.findTunnel(peerName); t != nil {
-			t.addMux(mux, isDialed)
+			t.addMux(mux, tag)
 			defer t.delMux(mux)
+		} else {
+			s.addMux(mux, tag)
+			defer s.delMux(mux)
 		}
 		s.Serve(mux, muxHandler)
 	})
@@ -235,23 +257,17 @@ func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service str
 }
 
 func (s *Server) Listen(addr string) (net.Listener, error) {
-	s.listenersMu.Lock()
-	defer s.listenersMu.Unlock()
 	listener, err := net.Listen(network, addr)
 	if err != nil {
 		slog.Errorf("listen %s: %s", addr, formats.Error(err))
 		return listener, err
 	}
 	slog.Infof("listen: %v", listener.Addr())
-	s.listeners[listener] = struct{}{}
 	return listener, err
 }
 
 func (s *Server) Unlisten(listener net.Listener) {
-	s.listenersMu.Lock()
-	defer s.listenersMu.Unlock()
 	ioClose(listener)
-	delete(s.listeners, listener)
 	slog.Infof("listener close: %v", listener.Addr())
 }
 
@@ -267,7 +283,13 @@ func (s *Server) reloadTunnels(cfg *config.File) error {
 		}
 	}
 	for name := range s.cfg.Peers {
-		t := s.addTunnel(name)
+		t := &tunnel{
+			peerName: name, s: s,
+			mux:       make(map[*yamux.Session]string),
+			closeSig:  make(chan struct{}, 1),
+			redialSig: make(chan struct{}, 1),
+		}
+		s.tunnels[name] = t
 		if err := t.Start(); err != nil {
 			return err
 		}
@@ -295,6 +317,8 @@ func (s *Server) Start() error {
 		if err := s.g.Go(func() {
 			s.Serve(s.l, h)
 		}); err != nil {
+			ioClose(s.l)
+			s.l = nil
 			return err
 		}
 	}
@@ -309,8 +333,10 @@ func (s *Server) Start() error {
 				slog.Error(formats.Error(err))
 			}
 		}); err != nil {
+			ioClose(l)
 			return err
 		}
+		s.apiListener = l
 	}
 	if err := s.reloadTunnels(s.cfg); err != nil {
 		return err
@@ -319,20 +345,28 @@ func (s *Server) Start() error {
 	return nil
 }
 
-func (s *Server) unlistenAll() {
-	s.listenersMu.Lock()
-	defer s.listenersMu.Unlock()
-	for listener := range s.listeners {
-		slog.Infof("listener close: %v", listener.Addr())
-		ioClose(listener)
-		delete(s.listeners, listener)
+func (s *Server) closeAllMux() {
+	s.muxMu.Lock()
+	defer s.muxMu.Unlock()
+	for mux := range s.mux {
+		ioClose(mux)
+		delete(s.mux, mux)
 	}
 }
 
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
-	s.unlistenAll()
+	if s.l != nil {
+		ioClose(s.l)
+		s.l = nil
+	}
+	if s.apiListener != nil {
+		ioClose(s.apiListener)
+		s.apiListener = nil
+	}
 	s.ctx.close()
+	s.stopAllTunnels()
+	s.closeAllMux()
 	s.f.Close()
 	s.g.Close()
 	slog.Info("waiting for unfinished connections")

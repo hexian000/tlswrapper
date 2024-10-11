@@ -68,26 +68,27 @@ case "$1" in
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.${OUTEXT}" "${PACKAGE}"
     ;;
-"d")
+"a")
     set -x
     go fmt ./...
+    GOFLAGS="${GOFLAGS} -a -race"
     GCFLAGS="${GCFLAGS} -N -l"
-    CGO_ENABLED=0 \
+    CGO_ENABLED=1 \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
-"race")
+"d")
+    set -x
+    go fmt ./...
     GOFLAGS="${GOFLAGS} -race"
     GCFLAGS="${GCFLAGS} -N -l"
-    set -x
     CGO_ENABLED=1 \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
 *)
-    GCFLAGS="${GCFLAGS} -N -l"
     set -x
     CGO_ENABLED=0 \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \

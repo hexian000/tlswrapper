@@ -75,7 +75,7 @@ type File struct {
 	// (optional) log output, default to stdout
 	Log string `json:"log,omitempty"`
 	// (optional) log output, default to 4 (notice)
-	LogLevel int `json:"loglevel"`
+	LogLevel slog.Level `json:"loglevel"`
 }
 
 var Default = File{
