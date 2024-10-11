@@ -36,9 +36,9 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Debugf("runtime: %s", runtime.Version())
-	server := tlswrapper.NewServer(cfg)
-	if err := server.LoadConfig(cfg); err != nil {
-		slog.Fatal("load config: ", err)
+	server, err := tlswrapper.NewServer(cfg)
+	if err != nil {
+		slog.Fatal("server init: ", err)
 		os.Exit(1)
 	}
 	if err := server.Start(); err != nil {

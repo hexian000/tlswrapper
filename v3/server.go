@@ -41,10 +41,11 @@ type Server struct {
 	flowStats    *snet.FlowStats
 	recentEvents eventlog.Recent
 
-	listeners map[string]net.Listener
-	tunnels   map[string]*tunnel // map[service]tunnel
-	tunnelsMu sync.RWMutex
-	ctx       contextMgr
+	listeners   map[net.Listener]struct{}
+	listenersMu sync.Mutex
+	tunnels     map[string]*tunnel // map[service]tunnel
+	tunnelsMu   sync.RWMutex
+	ctx         contextMgr
 
 	dialer net.Dialer
 	g      routines.Group
@@ -60,11 +61,11 @@ type Server struct {
 }
 
 // NewServer creates a server object
-func NewServer(cfg *config.File) *Server {
+func NewServer(cfg *config.File) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
 		cfg:       cfg,
-		listeners: make(map[string]net.Listener),
+		listeners: make(map[net.Listener]struct{}),
 		tunnels:   make(map[string]*tunnel),
 		ctx: contextMgr{
 			contexts: make(map[context.Context]context.CancelFunc),
@@ -78,13 +79,19 @@ func NewServer(cfg *config.File) *Server {
 		cfg, _ := s.getConfig()
 		return cfg.Timeout()
 	}
-	return s
+	tlscfg, err := cfg.NewTLSConfig()
+	if err != nil {
+		return nil, err
+	}
+	s.tlscfg = tlscfg
+	return s, err
 }
 
 func (s *Server) addTunnel(peerName string) *tunnel {
 	t := &tunnel{
 		peerName: peerName, s: s,
 		mux:       make(map[*yamux.Session]string),
+		closeSig:  make(chan struct{}, 1),
 		redialSig: make(chan struct{}, 1),
 	}
 	s.tunnelsMu.Lock()
@@ -228,14 +235,44 @@ func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service str
 }
 
 func (s *Server) Listen(addr string) (net.Listener, error) {
+	s.listenersMu.Lock()
+	defer s.listenersMu.Unlock()
 	listener, err := net.Listen(network, addr)
 	if err != nil {
 		slog.Errorf("listen %s: %s", addr, formats.Error(err))
 		return listener, err
 	}
 	slog.Infof("listen: %v", listener.Addr())
-	s.listeners[addr] = listener
+	s.listeners[listener] = struct{}{}
 	return listener, err
+}
+
+func (s *Server) Unlisten(listener net.Listener) {
+	s.listenersMu.Lock()
+	defer s.listenersMu.Unlock()
+	ioClose(listener)
+	delete(s.listeners, listener)
+	slog.Infof("listener close: %v", listener.Addr())
+}
+
+func (s *Server) reloadTunnels(cfg *config.File) error {
+	s.tunnelsMu.Lock()
+	defer s.tunnelsMu.Unlock()
+	for name, t := range s.tunnels {
+		if _, ok := cfg.Peers[name]; !ok {
+			if err := t.Stop(); err != nil {
+				slog.Errorf("tunnel %q: %s", name, formats.Error(err))
+			}
+			delete(s.tunnels, name)
+		}
+	}
+	for name := range s.cfg.Peers {
+		t := s.addTunnel(name)
+		if err := t.Start(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Start the service
@@ -275,24 +312,26 @@ func (s *Server) Start() error {
 			return err
 		}
 	}
-	for name := range s.cfg.Peers {
-		t := s.addTunnel(name)
-		slog.Debugf("tunnel %q: start", name)
-		if err := t.Start(); err != nil {
-			return err
-		}
+	if err := s.reloadTunnels(s.cfg); err != nil {
+		return err
 	}
 	s.started = time.Now()
 	return nil
 }
 
-// Shutdown gracefully
-func (s *Server) Shutdown() error {
-	for addr, listener := range s.listeners {
+func (s *Server) unlistenAll() {
+	s.listenersMu.Lock()
+	defer s.listenersMu.Unlock()
+	for listener := range s.listeners {
 		slog.Infof("listener close: %v", listener.Addr())
 		ioClose(listener)
-		delete(s.listeners, addr)
+		delete(s.listeners, listener)
 	}
+}
+
+// Shutdown gracefully
+func (s *Server) Shutdown() error {
+	s.unlistenAll()
 	s.ctx.close()
 	s.f.Close()
 	s.g.Close()

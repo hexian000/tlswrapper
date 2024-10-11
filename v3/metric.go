@@ -58,8 +58,7 @@ func (h *apiConfigHandler) Post(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(formats.Error(err)))
 		return
 	}
-	err = h.s.LoadConfig(cfg)
-	if err != nil {
+	if err := h.s.LoadConfig(cfg); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(formats.Error(err)))
 		return

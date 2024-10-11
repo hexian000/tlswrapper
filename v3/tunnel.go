@@ -20,8 +20,10 @@ import (
 type tunnel struct {
 	peerName    string // used for logging
 	s           *Server
+	l           net.Listener
 	mu          sync.RWMutex
 	mux         map[*yamux.Session]string // map[mux]tag
+	closeSig    chan struct{}
 	redialSig   chan struct{}
 	redialCount int
 	dialMu      sync.Mutex
@@ -45,10 +47,19 @@ func (t *tunnel) Start() error {
 		if err := t.s.g.Go(func() {
 			t.s.Serve(l, h)
 		}); err != nil {
+			ioClose(l)
 			return err
 		}
+		t.l = l
 	}
+	slog.Debugf("tunnel %q: start", t.peerName)
 	return t.s.g.Go(t.run)
+}
+
+func (t *tunnel) Stop() error {
+	close(t.closeSig)
+	slog.Debugf("tunnel %q: stop", t.peerName)
+	return nil
 }
 
 func (t *tunnel) redial() {
@@ -98,6 +109,10 @@ func (t *tunnel) run() {
 	defer func() {
 		t.mu.Lock()
 		defer t.mu.Unlock()
+		if t.l != nil {
+			t.s.Unlisten(t.l)
+			t.l = nil
+		}
 		for mux := range t.mux {
 			ioClose(mux)
 			delete(t.mux, mux)
@@ -106,6 +121,8 @@ func (t *tunnel) run() {
 	for {
 		t.redial()
 		select {
+		case <-t.closeSig:
+			return
 		case <-t.redialSig:
 		case <-t.scheduleRedial():
 		case <-t.s.g.CloseC():
