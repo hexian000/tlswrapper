@@ -2,7 +2,7 @@ package config
 
 import "github.com/hexian000/gosnippets/slog"
 
-// Tunnel represents a fixed tunnel between 2 peers
+// Tunnel represents a "fixed" tunnel between 2 peers
 type Tunnel struct {
 	// (optional) is disabled
 	Disabled bool `json:"disabled,omitempty"`
@@ -12,13 +12,13 @@ type Tunnel struct {
 	Listen string `json:"listen,omitempty"`
 	// remote service name
 	PeerService string `json:"peerservice"`
-	// (optional) keep tunnels connected
-	Redial bool `json:"redial"`
-	// (optional) client-side keep alive interval in seconds, default to 25 (every 25s)
+	// (optional) true for overwritting the global value
+	NoRedial bool `json:"noredial"`
+	// (optional) non-zero for overwritting the global value
 	KeepAlive int `json:"keepalive"`
-	// (optional) mux accept backlog, default to 256, you may not want to change this
+	// (optional) non-zero for overwritting the global value
 	AcceptBacklog int `json:"backlog"`
-	// (optional) stream window size in bytes, default to 256 KiB, increase this on long fat networks
+	// (optional) non-zero for overwritting the global value
 	StreamWindow uint32 `json:"window"`
 }
 
@@ -54,7 +54,11 @@ type File struct {
 	MaxConn int `json:"maxconn"`
 	// (optional) max concurrent incoming sessions, default to 128
 	MaxSessions int `json:"maxsessions"`
-	// (optional) server-side keep alive interval in seconds, default to 300 (every 5min)
+	// (optional) don't keep tunnels connected, default to false
+	NoRedial bool `json:"noredial"`
+	// (optional) client-side keep alive interval in seconds, 0 for disable, default to 25 (every 25s)
+	KeepAlive int `json:"keepalive"`
+	// (optional) server-side keep alive interval in seconds, 0 for disable, default to 300 (every 5min)
 	ServerKeepAlive int `json:"serverkeepalive"`
 	// (optional) mux accept backlog, default to 256, you may not want to change this
 	AcceptBacklog int `json:"backlog"`
@@ -66,7 +70,7 @@ type File struct {
 	StreamOpenTimeout int `json:"streamopentimeout"`
 	// (optional) stream close timeout in seconds, default to 120
 	StreamCloseTimeout int `json:"streamclosetimeout"`
-	// (optional) data write request timeout in seconds, default to 15, used to detect network failes early
+	// (optional) data write request timeout in seconds, default to 15, for detecting network failures earlier
 	WriteTimeout int `json:"writetimeout"`
 	// (optional) log output, default to stdout
 	Log string `json:"log,omitempty"`
@@ -82,6 +86,8 @@ var Default = File{
 	StartupLimitFull:   60,
 	MaxConn:            16384,
 	MaxSessions:        128,
+	NoRedial:           true,
+	KeepAlive:          25,  // every 25s
 	ServerKeepAlive:    300, // every 5min
 	AcceptBacklog:      256,
 	StreamWindow:       256 * 1024, // 256 KiB
@@ -91,11 +97,4 @@ var Default = File{
 	WriteTimeout:       15,
 	Log:                "stdout",
 	LogLevel:           slog.LevelNotice,
-}
-
-var TunnelDefault = Tunnel{
-	Redial:        true,
-	KeepAlive:     25, // every 25s
-	AcceptBacklog: 256,
-	StreamWindow:  256 * 1024, // 256 KiB
 }

@@ -42,8 +42,8 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 			return
 		}
 	}
-	c := h.s.getConfig()
-	c.SetConnParams(conn)
+	cfg := h.s.getConfig()
+	cfg.SetConnParams(conn)
 	conn = snet.FlowMeter(conn, h.s.flowStats)
 	if tlscfg := h.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
@@ -62,9 +62,9 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	rsp := &proto.Message{
 		Type:     proto.Type,
 		Msg:      proto.MsgServerHello,
-		PeerName: c.PeerName,
+		PeerName: cfg.PeerName,
 	}
-	if cfg, ok := c.Peers[req.PeerName]; ok {
+	if cfg, ok := cfg.Peers[req.PeerName]; ok {
 		rsp.Service = cfg.PeerService
 	}
 	if err := proto.SendMessage(conn, rsp); err != nil {
@@ -76,9 +76,10 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	t := h.s.findTunnel(req.PeerName)
 	var muxcfg *yamux.Config
 	if t != nil {
-		muxcfg = t.getConfig().NewMuxConfig(c)
+		tuncfg := t.getConfig()
+		muxcfg = tuncfg.NewMuxConfig(cfg)
 	} else {
-		muxcfg = c.NewMuxConfig()
+		muxcfg = cfg.NewMuxConfig()
 	}
 	mux, err := yamux.Server(conn, muxcfg)
 	if err != nil {
@@ -89,7 +90,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		t.addMux(mux, false)
 	}
 	var muxHandler Handler
-	if dialAddr := c.FindService(req.Service); dialAddr != "" {
+	if dialAddr := cfg.FindService(req.Service); dialAddr != "" {
 		muxHandler = &ForwardHandler{
 			s: h.s, tag: req.PeerName, dial: dialAddr,
 		}

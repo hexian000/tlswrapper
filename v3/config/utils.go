@@ -13,6 +13,15 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
+// GetTunnel finds the tunnel config
+func (c *File) GetTunnel(peerName string) *Tunnel {
+	tuncfg, ok := c.Peers[peerName]
+	if !ok {
+		return nil
+	}
+	return &tuncfg
+}
+
 // Timeout gets the generic request timeout
 func (c *File) Timeout() time.Duration {
 	return time.Duration(c.ConnectTimeout) * time.Second

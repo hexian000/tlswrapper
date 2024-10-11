@@ -29,7 +29,8 @@ type tunnel struct {
 }
 
 func (t *tunnel) getConfig() *config.Tunnel {
-	return t.s.getTunnelConfig(t.peerName)
+	cfg := t.s.getConfig()
+	return cfg.GetTunnel(t.peerName)
 }
 
 func (t *tunnel) Start() error {
@@ -71,7 +72,7 @@ func (t *tunnel) redial() {
 
 func (t *tunnel) scheduleRedial() <-chan time.Time {
 	c := t.getConfig()
-	if !c.Redial || c.MuxDial == "" || t.redialCount < 1 {
+	if !c.NoRedial || c.MuxDial == "" || t.redialCount < 1 {
 		return make(<-chan time.Time)
 	}
 	n := t.redialCount - 1
@@ -196,12 +197,12 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if mux := t.getMux(); mux != nil {
 		return mux, nil
 	}
-	c := t.getConfig()
-	if c.MuxDial == "" {
+	tuncfg := t.getConfig()
+	if tuncfg.MuxDial == "" {
 		return nil, ErrNoDialAddress
 	}
 	start := time.Now()
-	conn, err := t.s.dialer.DialContext(ctx, network, c.MuxDial)
+	conn, err := t.s.dialer.DialContext(ctx, network, tuncfg.MuxDial)
 	if err != nil {
 		return nil, err
 	}
@@ -210,8 +211,8 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 			return nil, err
 		}
 	}
-	serverCfg := t.s.getConfig()
-	serverCfg.SetConnParams(conn)
+	cfg := t.s.getConfig()
+	cfg.SetConnParams(conn)
 	conn = snet.FlowMeter(conn, t.s.flowStats)
 	if tlscfg := t.s.getTLSConfig(); tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
@@ -221,21 +222,21 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	req := &proto.Message{
 		Type:     proto.Type,
 		Msg:      proto.MsgClientHello,
-		PeerName: serverCfg.PeerName,
-		Service:  c.PeerService,
+		PeerName: cfg.PeerName,
+		Service:  tuncfg.PeerService,
 	}
 	rsp, err := proto.Roundtrip(conn, req)
 	if err != nil {
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
-	mux, err := yamux.Client(conn, c.NewMuxConfig(t.s.c))
+	mux, err := yamux.Client(conn, tuncfg.NewMuxConfig(cfg))
 	if err != nil {
 		return nil, err
 	}
 	t.addMux(mux, true)
 	var muxHandler Handler
-	if dialAddr := serverCfg.FindService(req.Service); dialAddr != "" {
+	if dialAddr := cfg.FindService(req.Service); dialAddr != "" {
 		muxHandler = &ForwardHandler{
 			s: t.s, tag: t.peerName, dial: dialAddr,
 		}

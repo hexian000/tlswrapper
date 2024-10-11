@@ -31,7 +31,7 @@ var (
 
 // Server object
 type Server struct {
-	c      *config.File
+	cfg    *config.File
 	tlscfg *tls.Config
 	cfgMu  sync.RWMutex
 
@@ -63,6 +63,7 @@ type Server struct {
 func NewServer(cfg *config.File) *Server {
 	g := routines.NewGroup()
 	return &Server{
+		cfg:       cfg,
 		listeners: make(map[string]net.Listener),
 		tunnels:   make(map[string]*tunnel),
 		ctx: contextMgr{
@@ -73,7 +74,6 @@ func NewServer(cfg *config.File) *Server {
 		flowStats:    &snet.FlowStats{},
 		recentEvents: eventlog.NewRecent(100),
 		g:            g,
-		c:            cfg,
 	}
 }
 
@@ -185,8 +185,8 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 
 // Start the service
 func (s *Server) Start() error {
-	if s.c.MuxListen != "" {
-		l, err := s.Listen(s.c.MuxListen)
+	if s.cfg.MuxListen != "" {
+		l, err := s.Listen(s.cfg.MuxListen)
 		if err != nil {
 			return err
 		}
@@ -206,8 +206,8 @@ func (s *Server) Start() error {
 			return err
 		}
 	}
-	if s.c.HTTPListen != "" {
-		l, err := s.Listen(s.c.HTTPListen)
+	if s.cfg.HTTPListen != "" {
+		l, err := s.Listen(s.cfg.HTTPListen)
 		if err != nil {
 			return err
 		}
@@ -220,7 +220,7 @@ func (s *Server) Start() error {
 			return err
 		}
 	}
-	for name := range s.c.Peers {
+	for name := range s.cfg.Peers {
 		t := s.addTunnel(name)
 		slog.Debugf("tunnel %q: start", name)
 		if err := t.Start(); err != nil {
@@ -254,7 +254,7 @@ func (s *Server) LoadConfig(cfg *config.File) error {
 	}
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
-	s.c = cfg
+	s.cfg = cfg
 	s.tlscfg = tlscfg
 	return nil
 }
@@ -262,15 +262,7 @@ func (s *Server) LoadConfig(cfg *config.File) error {
 func (s *Server) getConfig() *config.File {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
-	return s.c
-}
-
-func (s *Server) getTunnelConfig(peerName string) *config.Tunnel {
-	c, ok := s.getConfig().Peers[peerName]
-	if !ok {
-		return nil
-	}
-	return &c
+	return s.cfg
 }
 
 func (s *Server) getTLSConfig() *tls.Config {
