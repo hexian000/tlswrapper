@@ -95,37 +95,32 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 }
 
 // NewMuxConfig creates yamux.Config
-func (c *File) NewMuxConfig() *yamux.Config {
-	keepAliveInterval := time.Duration(c.ServerKeepAlive) * time.Second
-	enableKeepAlive := keepAliveInterval >= time.Second
-	if !enableKeepAlive {
-		keepAliveInterval = 15 * time.Second
+func (c *File) NewMuxConfig(peerName string, isDialed bool) *yamux.Config {
+	acceptBacklog := c.AcceptBacklog
+	streamWindow := c.StreamWindow
+	keepAlive := c.ServerKeepAlive
+	if isDialed {
+		keepAlive = c.KeepAlive
 	}
-	return &yamux.Config{
-		AcceptBacklog:          c.AcceptBacklog,
-		EnableKeepAlive:        enableKeepAlive,
-		KeepAliveInterval:      keepAliveInterval,
-		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
-		MaxStreamWindowSize:    c.StreamWindow,
-		StreamOpenTimeout:      time.Duration(c.StreamOpenTimeout) * time.Second,
-		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
-		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
+	if t, ok := c.Peers[peerName]; ok {
+		acceptBacklog = t.AcceptBacklog
+		streamWindow = t.StreamWindow
+		if isDialed {
+			keepAlive = t.KeepAlive
+		}
 	}
-}
 
-// NewMuxConfig creates yamux.Config
-func (t *Tunnel) NewMuxConfig(c *File) *yamux.Config {
-	keepAliveInterval := time.Duration(t.KeepAlive) * time.Second
+	keepAliveInterval := time.Duration(keepAlive) * time.Second
 	enableKeepAlive := keepAliveInterval >= time.Second
 	if !enableKeepAlive {
 		keepAliveInterval = 15 * time.Second
 	}
 	return &yamux.Config{
-		AcceptBacklog:          t.AcceptBacklog,
+		AcceptBacklog:          acceptBacklog,
 		EnableKeepAlive:        enableKeepAlive,
 		KeepAliveInterval:      keepAliveInterval,
 		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
-		MaxStreamWindowSize:    t.StreamWindow,
+		MaxStreamWindowSize:    streamWindow,
 		StreamOpenTimeout:      time.Duration(c.StreamOpenTimeout) * time.Second,
 		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
 		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),

@@ -172,6 +172,52 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	}
 }
 
+func (s *Server) startMux(conn net.Conn, peerName, service string, isDialed bool) (mux *yamux.Session, err error) {
+	cfg := s.getConfig()
+	muxcfg := cfg.NewMuxConfig(peerName, isDialed)
+	if isDialed {
+		mux, err = yamux.Client(conn, muxcfg)
+		if err != nil {
+			ioClose(conn)
+			return
+		}
+	} else {
+		mux, err = yamux.Server(conn, muxcfg)
+		if err != nil {
+			ioClose(conn)
+			return
+		}
+	}
+	var muxHandler Handler
+	dialAddr := cfg.FindService(service)
+	if dialAddr == "" {
+		if service != "" {
+			slog.Warningf("%q <= %v: unknown service %q", peerName, conn.RemoteAddr(), service)
+		}
+		err = mux.GoAway()
+		if err != nil {
+			ioClose(mux)
+			return
+		}
+		muxHandler = &EmptyHandler{}
+	} else {
+		muxHandler = &ForwardHandler{
+			s: s, tag: peerName, dial: dialAddr,
+		}
+	}
+	err = s.g.Go(func() {
+		if t := s.findTunnel(peerName); t != nil {
+			t.addMux(mux, isDialed)
+			defer t.delMux(mux)
+		}
+		s.Serve(mux, muxHandler)
+	})
+	if err != nil {
+		ioClose(mux)
+	}
+	return
+}
+
 func (s *Server) Listen(addr string) (net.Listener, error) {
 	listener, err := net.Listen(network, addr)
 	if err != nil {

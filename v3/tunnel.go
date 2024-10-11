@@ -230,34 +230,13 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
-	mux, err := yamux.Client(conn, tuncfg.NewMuxConfig(cfg))
+
+	mux, err := t.s.startMux(conn, rsp.PeerName, rsp.Service, true)
 	if err != nil {
 		return nil, err
 	}
-	t.addMux(mux, true)
-	var muxHandler Handler
-	if dialAddr := cfg.FindService(req.Service); dialAddr != "" {
-		muxHandler = &ForwardHandler{
-			s: t.s, tag: t.peerName, dial: dialAddr,
-		}
-	}
-	if muxHandler == nil {
-		if req.Service != "" {
-			slog.Infof("%q => %v: unknown service %q", t.peerName, conn.RemoteAddr(), rsp.Service)
-		}
-		if err := mux.GoAway(); err != nil {
-			return nil, err
-		}
-		muxHandler = &EmptyHandler{}
-	}
-	if err := t.s.g.Go(func() {
-		defer t.delMux(mux)
-		t.s.Serve(mux, muxHandler)
-	}); err != nil {
-		ioClose(mux)
-		return nil, err
-	}
-	slog.Infof("%q => %v: setup %v", t.peerName, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	slog.Debugf("%q => %v: service=%q, setup %v", rsp.PeerName, conn.RemoteAddr(),
+		rsp.Service, formats.Duration(time.Since(start)))
 	return mux, nil
 }
 

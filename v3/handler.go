@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
@@ -73,49 +72,14 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 	h.s.stats.authorized.Add(1)
-	t := h.s.findTunnel(req.PeerName)
-	var muxcfg *yamux.Config
-	if t != nil {
-		tuncfg := t.getConfig()
-		muxcfg = tuncfg.NewMuxConfig(cfg)
-	} else {
-		muxcfg = cfg.NewMuxConfig()
-	}
-	mux, err := yamux.Server(conn, muxcfg)
+
+	_, err = h.s.startMux(conn, req.PeerName, req.Service, false)
 	if err != nil {
 		slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
 		return
 	}
-	if t != nil {
-		t.addMux(mux, false)
-	}
-	var muxHandler Handler
-	if dialAddr := cfg.FindService(req.Service); dialAddr != "" {
-		muxHandler = &ForwardHandler{
-			s: h.s, tag: req.PeerName, dial: dialAddr,
-		}
-	}
-	if muxHandler == nil {
-		if req.Service != "" {
-			slog.Infof("%q <= %v: unknown service %q", req.PeerName, conn.RemoteAddr(), rsp.Service)
-		}
-		if err := mux.GoAway(); err != nil {
-			slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
-			return
-		}
-		muxHandler = &EmptyHandler{}
-	}
-	if err := h.s.g.Go(func() {
-		if t != nil {
-			defer t.delMux(mux)
-		}
-		h.s.Serve(mux, muxHandler)
-	}); err != nil {
-		slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
-		ioClose(mux)
-		return
-	}
-	slog.Infof("%q <= %v: setup %v", req.PeerName, conn.RemoteAddr(), formats.Duration(time.Since(start)))
+	slog.Debugf("%q <= %v: service=%q, setup %v", req.PeerName, conn.RemoteAddr(),
+		req.Service, formats.Duration(time.Since(start)))
 }
 
 // ForwardHandler forwards connections to another plain address
