@@ -35,11 +35,13 @@ type File struct {
 	// (optional) health check and metrics, default to "" (disabled)
 	HTTPListen string `json:"httplisten,omitempty"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
-	ServerName string `json:"sni"`
-	// TLS: local certificate
-	Certificate string `json:"cert"`
-	// TLS: local private key
-	PrivateKey string `json:"key"`
+	ServerName   string `json:"sni"`
+	Certificates []struct {
+		// TLS: local certificate PEM file path
+		Certificate string `json:"cert"`
+		// TLS: local private key PEM file path
+		PrivateKey string `json:"key"`
+	} `json:"certs"`
 	// TLS: authorized remote certificates, bundle supported
 	AuthorizedCerts []string `json:"authcerts"`
 	// (optional) TCP no delay, default to true

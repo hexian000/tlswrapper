@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -38,32 +39,31 @@ func (c *File) SetConnParams(conn net.Conn) {
 // NewTLSConfig creates tls.Config
 func (c *File) NewTLSConfig() (*tls.Config, error) {
 	sni := c.ServerName
-	if c.Certificate == "" && c.PrivateKey == "" {
-		return nil, nil
-	}
-	cert, err := tls.LoadX509KeyPair(c.Certificate, c.PrivateKey)
-	if err != nil {
-		return nil, err
-	}
-	certPool := x509.NewCertPool()
-	for _, path := range c.AuthorizedCerts {
-		certBytes, err := os.ReadFile(path)
+	certs := make([]tls.Certificate, 0, len(c.Certificates))
+	for _, pair := range c.Certificates {
+		cert, err := tls.LoadX509KeyPair(pair.Certificate, pair.PrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		ok := certPool.AppendCertsFromPEM(certBytes)
-		if !ok {
+		certs = append(certs, cert)
+	}
+	certPool := x509.NewCertPool()
+	for _, path := range c.AuthorizedCerts {
+		pemBytes, err := os.ReadFile(path)
+		if err != nil {
 			return nil, err
+		}
+		if !certPool.AppendCertsFromPEM(pemBytes) {
+			return nil, fmt.Errorf("unable to parse certificate: %s", path)
 		}
 	}
 	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
+		Certificates: certs,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    certPool,
 		RootCAs:      certPool,
 		ServerName:   sni,
 		MinVersion:   tls.VersionTLS13,
-		MaxVersion:   tls.VersionTLS13,
 	}, nil
 }
 

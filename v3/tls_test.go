@@ -3,6 +3,7 @@ package tlswrapper_test
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"testing"
 )
 
@@ -18,32 +19,39 @@ func TestTLS(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	certPool := x509.NewCertPool()
-	if ok := certPool.AppendCertsFromPEM([]byte(testServerCertPEM)); !ok {
+	serverCertPool := x509.NewCertPool()
+	if ok := serverCertPool.AppendCertsFromPEM([]byte(testClientCertPEM)); !ok {
 		t.Fail()
 		return
 	}
-	if ok := certPool.AppendCertsFromPEM([]byte(testClientCertPEM)); !ok {
+	clientCertPool := x509.NewCertPool()
+	if ok := clientCertPool.AppendCertsFromPEM([]byte(testServerCertPEM)); !ok {
 		t.Fail()
 		return
 	}
 	serverCfg := &tls.Config{
 		Certificates: []tls.Certificate{serverCert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    certPool,
-		RootCAs:      certPool,
+		ClientCAs:    serverCertPool,
+		RootCAs:      serverCertPool,
 		ServerName:   "example.com",
 		MinVersion:   tls.VersionTLS13,
-		MaxVersion:   tls.VersionTLS13,
 	}
 	clientCfg := &tls.Config{
 		Certificates: []tls.Certificate{clientCert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    certPool,
-		RootCAs:      certPool,
-		ServerName:   "example.com",
-		MinVersion:   tls.VersionTLS13,
-		MaxVersion:   tls.VersionTLS13,
+		ClientCAs:    clientCertPool,
+		RootCAs:      clientCertPool,
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			block := &pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: rawCerts[0],
+			}
+			t.Logf("%s", string(pem.EncodeToMemory(block)))
+			return nil
+		},
+		ServerName: "example.com",
+		MinVersion: tls.VersionTLS13,
 	}
 
 	println("tls: listen")
