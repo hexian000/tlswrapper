@@ -50,7 +50,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	} else {
 		slog.Warningf("? <= %v: connection is not encrypted", conn.RemoteAddr())
 	}
-	req, err := proto.RecvMessage(conn)
+	req, err := proto.Read(conn)
 	if err != nil {
 		slog.Errorf("? <= %v: %s", conn.RemoteAddr(), formats.Error(err))
 		return
@@ -67,7 +67,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	if cfg, ok := cfg.Peers[req.PeerName]; ok {
 		rsp.Service = cfg.PeerService
 	}
-	if err := proto.SendMessage(conn, rsp); err != nil {
+	if err := proto.Write(conn, rsp); err != nil {
 		slog.Errorf("%q <= %v: %s", req.PeerName, conn.RemoteAddr(), formats.Error(err))
 		return
 	}

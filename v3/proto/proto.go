@@ -13,7 +13,7 @@ import (
 var (
 	versionStr = "3"
 
-	mimeType   = "application/x-tlswrapper-msg"
+	mimeType   = "application/x-tlswrapper"
 	mimeParams = map[string]string{"version": versionStr}
 
 	Type = mime.FormatMediaType(mimeType, mimeParams)
@@ -37,7 +37,7 @@ var (
 	ErrIncompatiableVersion = errors.New("incompatible protocol version")
 )
 
-func sendmsg(conn net.Conn, msg interface{}) error {
+func sendmsg(w io.Writer, msg interface{}) error {
 	b, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -47,18 +47,18 @@ func sendmsg(conn net.Conn, msg interface{}) error {
 	}
 	hdr := make([]byte, 2)
 	binary.BigEndian.PutUint16(hdr, uint16(len(b)))
-	_, err = conn.Write(append(hdr, b...))
+	_, err = w.Write(append(hdr, b...))
 	return err
 }
 
-func recvmsg(conn net.Conn, msg interface{}) error {
+func recvmsg(r io.Reader, msg interface{}) error {
 	hdr := make([]byte, 2)
-	_, err := io.ReadFull(conn, hdr)
+	_, err := io.ReadFull(r, hdr)
 	if err != nil {
 		return err
 	}
 	b := make([]byte, int(binary.BigEndian.Uint16(hdr)))
-	_, err = io.ReadFull(conn, b)
+	_, err = io.ReadFull(r, b)
 	if err != nil {
 		return err
 	}
@@ -100,9 +100,9 @@ func Roundtrip(conn net.Conn, req *Message) (*Message, error) {
 	return rsp, nil
 }
 
-func RecvMessage(conn net.Conn) (*Message, error) {
+func Read(r io.Reader) (*Message, error) {
 	req := &Message{}
-	if err := recvmsg(conn, req); err != nil {
+	if err := recvmsg(r, req); err != nil {
 		return nil, err
 	}
 	if err := checkType(req.Type); err != nil {
@@ -111,6 +111,6 @@ func RecvMessage(conn net.Conn) (*Message, error) {
 	return req, nil
 }
 
-func SendMessage(conn net.Conn, rsp *Message) error {
-	return sendmsg(conn, rsp)
+func Write(w io.Writer, rsp *Message) error {
+	return sendmsg(w, rsp)
 }
