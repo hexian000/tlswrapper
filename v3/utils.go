@@ -98,19 +98,19 @@ func GenCerts() {
 			defer wg.Done()
 			certPem, keyPem, err := generateX509KeyPair(f.ServerName, bits)
 			if err != nil {
-				slog.Fatal("gencerts: ", formats.Error(err))
+				slog.Fatalf("gencerts %q: %s", name, formats.Error(err))
 				return
 			}
 			certFile, keyFile := name+"-cert.pem", name+"-key.pem"
 			if err := os.WriteFile(certFile, certPem, 0644); err != nil {
-				slog.Errorf("gencerts %q: %s", name, formats.Error(err))
+				slog.Errorf("gencerts: %s", formats.Error(err))
 				return
 			}
 			if err := os.WriteFile(keyFile, keyPem, 0600); err != nil {
-				slog.Errorf("gencerts %q: %s", name, formats.Error(err))
+				slog.Errorf("gencerts: %s", formats.Error(err))
 				return
 			}
-			slog.Noticef("gencerts %q: %q, %q", name, certFile, keyFile)
+			slog.Noticef("gencerts: %q, %q", certFile, keyFile)
 		}(name)
 	}
 	wg.Wait()
