@@ -10,16 +10,16 @@ type Tunnel struct {
 	MuxDial string `json:"addr,omitempty"`
 	// (optional) local listener address
 	Listen string `json:"listen,omitempty"`
-	// remote service name
-	PeerService string `json:"peerservice"`
+	// (optional) remote service name
+	Service string `json:"service,omitempty"`
 	// (optional) true for overwritting the global value
-	NoRedial bool `json:"noredial"`
+	NoRedial bool `json:"noredial,omitempty"`
 	// (optional) non-zero for overwritting the global value
-	KeepAlive int `json:"keepalive"`
+	KeepAlive int `json:"keepalive,omitempty"`
 	// (optional) non-zero for overwritting the global value
-	AcceptBacklog int `json:"backlog"`
+	AcceptBacklog int `json:"backlog,omitempty"`
 	// (optional) non-zero for overwritting the global value
-	StreamWindow uint32 `json:"window"`
+	StreamWindow uint32 `json:"window,omitempty"`
 }
 
 type KeyPair struct {

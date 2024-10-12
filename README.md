@@ -110,7 +110,7 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
     "server": {
       "addr": "example.com:38000",
       "listen": "127.0.0.1:8080",
-      "peerservice": "http"
+      "service": "http"
     }
   },
   "certs": [
@@ -137,7 +137,7 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
   "peers": {
     "client": {
       "listen": "127.0.0.1:8080",
-      "peerservice": "http"
+      "service": "http"
     }
   },
   "certs": [
@@ -190,7 +190,7 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
 - "peers": named peers to that need to keep connected
 - "peers[\*].addr": dial address
 - "peers[\*].listen": listen for port forwarding
-- "peers[\*].peerservice": the service name we ask the peer for
+- "peers[\*].service": the service name we ask the peer for
 - "certs": local certificates
 - "certs[\*].cert": certificate PEM file path
 - "certs[\*].key": private key PEM file path

@@ -3,7 +3,7 @@
     "server": {
       "addr": "example.com:38000",
       "listen": "127.0.0.1:8080",
-      "peerservice": "http"
+      "service": "http"
     }
   },
   "certs": [

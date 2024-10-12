@@ -234,7 +234,7 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 		Type:     proto.Type,
 		Msg:      proto.MsgClientHello,
 		PeerName: cfg.PeerName,
-		Service:  tuncfg.PeerService,
+		Service:  tuncfg.Service,
 	}
 	rsp, err := proto.Roundtrip(conn, req)
 	if err != nil {

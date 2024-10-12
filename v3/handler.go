@@ -69,7 +69,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		PeerName: cfg.PeerName,
 	}
 	if cfg, ok := cfg.Peers[req.PeerName]; ok {
-		rsp.Service = cfg.PeerService
+		rsp.Service = cfg.Service
 	}
 	if err := proto.Write(conn, rsp); err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
