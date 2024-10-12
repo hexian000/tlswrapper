@@ -245,7 +245,7 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 
-	mux, err := t.s.startMux(conn, cfg, rsp.PeerName, rsp.Service, true, tag)
+	mux, err := t.s.startMux(conn, cfg, rsp.PeerName, rsp.Service, t, tag)
 	if err != nil {
 		return nil, err
 	}

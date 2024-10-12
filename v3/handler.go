@@ -78,7 +78,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	_ = conn.SetDeadline(time.Time{})
 	h.s.stats.authorized.Add(1)
 
-	_, err = h.s.startMux(conn, cfg, req.PeerName, req.Service, false, tag)
+	_, err = h.s.startMux(conn, cfg, req.PeerName, req.Service, nil, tag)
 	if err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
@@ -88,34 +88,38 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 
 // ForwardHandler forwards connections to another plain address
 type ForwardHandler struct {
-	s       *Server
-	t       *tunnel
-	service string
+	s        *Server
+	peerName string
+	service  string
 }
 
 func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 	h.s.stats.request.Add(1)
-	peerName := h.t.peerName
+	peerName := "?"
+	if h.peerName != "" {
+		peerName = fmt.Sprintf("%q", h.peerName)
+	}
 	cfg, _ := h.s.getConfig()
 	dialAddr, ok := cfg.Services[h.service]
 	if !ok {
-		slog.Warningf("tunnel %q: unknown service %q", peerName, h.service)
+		slog.Warningf("tunnel %s: unknown service %q", peerName, h.service)
 		ioClose(accepted)
 		return
 	}
+	tag := peerName + " -> " + dialAddr
 	dialed, err := h.s.dialDirect(ctx, dialAddr)
 	if err != nil {
-		slog.Errorf("%q -> %s: %v", peerName, dialAddr, err)
+		slog.Errorf("%s: %v", tag, err)
 		ioClose(accepted)
 		return
 	}
 	if err := h.s.f.Forward(accepted, dialed); err != nil {
-		slog.Errorf("%q -> %s: %v", peerName, dialAddr, err)
+		slog.Errorf("%s: %v", tag, err)
 		ioClose(accepted)
 		ioClose(dialed)
 		return
 	}
-	slog.Debugf("%q -> %v: forward established", peerName, dialed.RemoteAddr())
+	slog.Debugf("%s: forward established", tag)
 	h.s.stats.success.Add(1)
 }
 
