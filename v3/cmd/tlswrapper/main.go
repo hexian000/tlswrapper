@@ -69,17 +69,17 @@ func main() {
 	}
 	cfg, err := config.LoadFile(f.Config)
 	if err != nil {
-		slog.Fatal("load config: ", err)
+		slog.Fatal("load config: ", formats.Error(err))
 		os.Exit(1)
 	}
 	slog.Debugf("runtime: %s", runtime.Version())
 	server, err := tlswrapper.NewServer(cfg)
 	if err != nil {
-		slog.Fatal("server init: ", err)
+		slog.Fatal("server init: ", formats.Error(err))
 		os.Exit(1)
 	}
 	if err := server.Start(); err != nil {
-		slog.Fatal("server start: ", err)
+		slog.Fatal("server start: ", formats.Error(err))
 		os.Exit(1)
 	}
 
@@ -98,11 +98,11 @@ func main() {
 		_, _ = sd.Notify(sd.Reloading)
 		cfg, err := config.LoadFile(f.Config)
 		if err != nil {
-			slog.Error("read config: ", err)
+			slog.Error("read config: ", formats.Error(err))
 			continue
 		}
 		if err := server.LoadConfig(cfg); err != nil {
-			slog.Error("load config: ", err)
+			slog.Error("load config: ", formats.Error(err))
 			continue
 		}
 		_, _ = sd.Notify(sd.Ready)
@@ -111,7 +111,7 @@ func main() {
 
 	slog.Notice("server stop")
 	if err := server.Shutdown(); err != nil {
-		slog.Fatal("server shutdown: ", err)
+		slog.Fatal("server shutdown: ", formats.Error(err))
 		os.Exit(1)
 	}
 
