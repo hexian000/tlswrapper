@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
@@ -40,19 +41,21 @@ func ImportCert() {
 		slog.Fatal("importcert: ", formats.Error(err))
 		os.Exit(1)
 	}
-	slog.Info("importcert: ok")
+	slog.Notice("importcert: ok")
 }
 
-func generateX509KeyPair(sni string, bits int, certFile, keyFile string) error {
+func generateX509KeyPair(sni string, bits int) (certPem []byte, keyPem []byte, err error) {
 	key, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
-		return fmt.Errorf("RSA generate key: %s", formats.Error(err))
+		err = fmt.Errorf("RSA generate key: %s", formats.Error(err))
+		return
 	}
 	rawKey, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
-		return fmt.Errorf("PKCS8 private key: %s", formats.Error(err))
+		err = fmt.Errorf("PKCS8 private key: %s", formats.Error(err))
+		return
 	}
-	keyPem := pem.EncodeToMemory(&pem.Block{
+	keyPem = pem.EncodeToMemory(&pem.Block{
 		Type:  "PRIVATE KEY",
 		Bytes: rawKey,
 	})
@@ -74,32 +77,42 @@ func generateX509KeyPair(sni string, bits int, certFile, keyFile string) error {
 	}
 	rawCert, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
 	if err != nil {
-		return fmt.Errorf("X.509: %s", formats.Error(err))
+		err = fmt.Errorf("X.509: %s", formats.Error(err))
+		return
 	}
-	certPem := pem.EncodeToMemory(&pem.Block{
+	certPem = pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: rawCert,
 	})
-
-	if err := os.WriteFile(certFile, certPem, 0644); err != nil {
-		return fmt.Errorf("write certificate: %s", formats.Error(err))
-	}
-	if err := os.WriteFile(keyFile, keyPem, 0600); err != nil {
-		return fmt.Errorf("write private key: %s", formats.Error(err))
-	}
-	return nil
+	return
 }
 
 func GenCerts() {
 	f := &Flags
+	wg := &sync.WaitGroup{}
 	bits := f.KeySize
+	slog.Noticef("gencerts: RSA %d bits...", bits)
 	for _, name := range strings.Split(f.GenCerts, ",") {
-		certFile, keyFile := name+"-cert.pem", name+"-key.pem"
-		slog.Infof("gencerts: %q (RSA %d bits)...", name, bits)
-		err := generateX509KeyPair(f.ServerName, bits, certFile, keyFile)
-		if err != nil {
-			slog.Fatal("gencerts: ", formats.Error(err))
-		}
-		slog.Infof("gencerts: X.509 Certificate=%q, Private Key=%q", certFile, keyFile)
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+			certPem, keyPem, err := generateX509KeyPair(f.ServerName, bits)
+			if err != nil {
+				slog.Fatal("gencerts: ", formats.Error(err))
+				return
+			}
+			certFile, keyFile := name+"-cert.pem", name+"-key.pem"
+			if err := os.WriteFile(certFile, certPem, 0644); err != nil {
+				slog.Errorf("gencerts %q: %s", name, formats.Error(err))
+				return
+			}
+			if err := os.WriteFile(keyFile, keyPem, 0600); err != nil {
+				slog.Errorf("gencerts %q: %s", name, formats.Error(err))
+				return
+			}
+			slog.Noticef("gencerts %q: %q, %q", name, certFile, keyFile)
+		}(name)
 	}
+	wg.Wait()
+	slog.Notice("gencerts: ok")
 }
