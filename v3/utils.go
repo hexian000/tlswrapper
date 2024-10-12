@@ -98,7 +98,7 @@ func GenCerts() {
 			defer wg.Done()
 			certPem, keyPem, err := generateX509KeyPair(f.ServerName, bits)
 			if err != nil {
-				slog.Fatalf("gencerts %q: %s", name, formats.Error(err))
+				slog.Errorf("gencerts %q: %s", name, formats.Error(err))
 				return
 			}
 			certFile, keyFile := name+"-cert.pem", name+"-key.pem"
