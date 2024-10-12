@@ -1,11 +1,15 @@
 package tlswrapper
 
 import (
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -44,10 +48,12 @@ func ImportCert() {
 	slog.Notice("importcert: ok")
 }
 
-func generateX509KeyPair(sni string, bits int) (certPem []byte, keyPem []byte, err error) {
-	key, err := rsa.GenerateKey(rand.Reader, bits)
+type keyGenerator func() (key any, pubKey any, err error)
+
+func generateX509KeyPair(sni string, generateKey keyGenerator) (certPem []byte, keyPem []byte, err error) {
+	key, pubKey, err := generateKey()
 	if err != nil {
-		err = fmt.Errorf("RSA generate key: %s", formats.Error(err))
+		err = fmt.Errorf("generate key: %s", formats.Error(err))
 		return
 	}
 	rawKey, err := x509.MarshalPKCS8PrivateKey(key)
@@ -75,7 +81,7 @@ func generateX509KeyPair(sni string, bits int) (certPem []byte, keyPem []byte, e
 		},
 		DNSNames: []string{sni},
 	}
-	rawCert, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	rawCert, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, pubKey, key)
 	if err != nil {
 		err = fmt.Errorf("X.509: %s", formats.Error(err))
 		return
@@ -87,16 +93,69 @@ func generateX509KeyPair(sni string, bits int) (certPem []byte, keyPem []byte, e
 	return
 }
 
+func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
+	switch keytype {
+	case "rsa":
+		bits := keysize
+		if bits == 0 {
+			bits = 3072
+		}
+		slog.Noticef("gencerts: keytype=%q keysize=%d", keytype, bits)
+		return func() (any, any, error) {
+			key, err := rsa.GenerateKey(rand.Reader, bits)
+			if err != nil {
+				return nil, nil, err
+			}
+			return key, &key.PublicKey, nil
+		}, nil
+	case "ecdsa":
+		if keysize == 0 {
+			keysize = 256
+		}
+		var curve elliptic.Curve
+		switch keysize {
+		case 224:
+			curve = elliptic.P224()
+		case 256:
+			curve = elliptic.P256()
+		case 384:
+			curve = elliptic.P384()
+		case 521:
+			curve = elliptic.P521()
+		default:
+			return nil, errors.New("invalid key size")
+		}
+		slog.Noticef("gencerts: keytype=%q keysize=%d", keytype, keysize)
+		return func() (any, any, error) {
+			key, err := ecdsa.GenerateKey(curve, rand.Reader)
+			if err != nil {
+				return nil, nil, err
+			}
+			return key, &key.PublicKey, err
+		}, nil
+	case "ed25519":
+		slog.Noticef("gencerts: keytype=%q", keytype)
+		return func() (any, any, error) {
+			pub, key, err := ed25519.GenerateKey(rand.Reader)
+			return key, pub, err
+		}, nil
+	}
+	return nil, errors.New("invalid key type")
+}
+
 func GenCerts() {
 	f := &Flags
 	wg := &sync.WaitGroup{}
-	bits := f.KeySize
-	slog.Noticef("gencerts: RSA %d bits...", bits)
+	keygen, err := makeKeyGenerator(f.KeyType, f.KeySize)
+	if err != nil {
+		slog.Errorf("gencerts: %s", formats.Error(err))
+		return
+	}
 	for _, name := range strings.Split(f.GenCerts, ",") {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			certPem, keyPem, err := generateX509KeyPair(f.ServerName, bits)
+			certPem, keyPem, err := generateX509KeyPair(f.ServerName, keygen)
 			if err != nil {
 				slog.Errorf("gencerts %q: %s", name, formats.Error(err))
 				return

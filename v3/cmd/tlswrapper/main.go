@@ -26,7 +26,8 @@ func parseFlags(f *tlswrapper.AppFlags) {
 	flag.StringVar(&f.ServerName, "sni", "example.com", "server name")
 	flag.StringVar(&f.GenCerts, "gencerts", "", "comma-separated name list, generate key pairs as <name>-cert.pem, <name>-key.pem")
 	flag.StringVar(&f.ImportCert, "importcert", "", "import PEM files and generate a new config file")
-	flag.IntVar(&f.KeySize, "keysize", 2048, "specify the number of bits for the RSA private key")
+	flag.StringVar(&f.KeyType, "keytype", "rsa", "one of rsa, ecdsa, ed25519")
+	flag.IntVar(&f.KeySize, "keysize", 0, "specify the number of bits for the private key")
 	flag.Parse()
 }
 

@@ -20,6 +20,7 @@ type AppFlags struct {
 	ServerName string
 	GenCerts   string
 	ImportCert string
+	KeyType    string
 	KeySize    int
 }
 
