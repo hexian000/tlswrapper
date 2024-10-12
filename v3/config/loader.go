@@ -9,6 +9,19 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
+func load(cfg *File) error {
+	for i, pair := range cfg.Certificates {
+		if err := pair.Load(); err != nil {
+			return err
+		}
+		cfg.Certificates[i] = pair
+	}
+	if err := cfg.AuthorizedCerts.Load(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func infer(cfg *File) {
 	for name, tuncfg := range cfg.Peers {
 		if !tuncfg.NoRedial {
@@ -30,6 +43,9 @@ func infer(cfg *File) {
 func Load(b []byte) (*File, error) {
 	cfg := Default
 	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil, err
+	}
+	if err := load(&cfg); err != nil {
 		return nil, err
 	}
 	infer(&cfg)
@@ -93,4 +109,16 @@ func (c *File) Validate() error {
 		return err
 	}
 	return nil
+}
+
+func (cfg *File) Dump() ([]byte, error) {
+	for i, pair := range cfg.Certificates {
+		pair.Certificate, pair.PrivateKey = "", ""
+		cfg.Certificates[i] = pair
+	}
+	for i, cert := range cfg.AuthorizedCerts {
+		cert.Certificate = ""
+		cfg.AuthorizedCerts[i] = cert
+	}
+	return json.MarshalIndent(cfg, "", "  ")
 }

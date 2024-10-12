@@ -12,6 +12,7 @@ import (
 	sd "github.com/hexian000/gosnippets/systemd"
 	"github.com/hexian000/tlswrapper/v3"
 	"github.com/hexian000/tlswrapper/v3/config"
+	"github.com/hexian000/tlswrapper/v3/utils"
 )
 
 func init() {
@@ -22,13 +23,40 @@ func init() {
 func parseFlags() string {
 	var flagHelp bool
 	var flagConfig string
+	var flagConfigOut string
+	var flagCertName string
+	var flagKeySize int
 	flag.BoolVar(&flagHelp, "h", false, "help")
 	flag.StringVar(&flagConfig, "c", "", "config file")
+	flag.StringVar(&flagConfigOut, "importcert", "", "import PEM files and generate a new config file")
+	flag.StringVar(&flagCertName, "genkey", "", "generate key pair as <name>-cert.pem, <name>-key.pem")
+	flag.IntVar(&flagKeySize, "keysize", 4096, "bits in RSA private key, default to 4096")
 	flag.Parse()
 	if flagHelp || flagConfig == "" {
 		fmt.Printf("tlswrapper %s\n  %s\n\n", tlswrapper.Version, tlswrapper.Homepage)
 		flag.Usage()
 		os.Exit(1)
+	}
+	if flagConfigOut != "" {
+		err := utils.ImportCert(flagConfig, flagConfigOut)
+		if err != nil {
+			slog.Fatal(err.Error())
+			os.Exit(1)
+		}
+		slog.Info("importcert: ok")
+		os.Exit(0)
+	}
+	if flagCertName != "" {
+		bits := flagKeySize
+		certFile, keyFile := flagCertName+"-cert.pem", flagCertName+"-key.pem"
+		slog.Infof("genkey: RSA %d bits...", bits)
+		err := utils.GenerateX509KeyPair(bits, certFile, keyFile)
+		if err != nil {
+			slog.Fatal(err.Error())
+			os.Exit(1)
+		}
+		slog.Infof("genkey: X.509 Certificate=%q, Private Key=%q", certFile, keyFile)
+		os.Exit(0)
 	}
 	return flagConfig
 }
@@ -37,7 +65,7 @@ func main() {
 	path := parseFlags()
 	cfg, err := config.LoadFile(path)
 	if err != nil {
-		slog.Fatal("read config: ", err)
+		slog.Fatal("load config: ", err)
 		os.Exit(1)
 	}
 	slog.Debugf("runtime: %s", runtime.Version())

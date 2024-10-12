@@ -1,7 +1,6 @@
 package tlswrapper
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -66,8 +65,13 @@ func (h *apiConfigHandler) Post(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *apiConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
+	if true {
+		// TOTHINK: private key is in config file
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
 	cfg, _ := h.s.getConfig()
-	b, err := json.MarshalIndent(cfg, "", "    ")
+	b, err := cfg.Dump()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(formats.Error(err)))

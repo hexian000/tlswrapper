@@ -209,51 +209,34 @@ func (s *Server) delMux(mux *yamux.Session) {
 	delete(s.mux, mux)
 }
 
-func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service string, isDialed bool, tag string) (mux *yamux.Session, err error) {
+func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service string, isDialed bool, tag string) (*yamux.Session, error) {
 	muxcfg := cfg.NewMuxConfig(peerName, isDialed)
+	handshakeFunc := yamux.Server
 	if isDialed {
-		mux, err = yamux.Client(conn, muxcfg)
-		if err != nil {
-			ioClose(conn)
-			return
-		}
-	} else {
-		mux, err = yamux.Server(conn, muxcfg)
-		if err != nil {
-			ioClose(conn)
-			return
-		}
+		handshakeFunc = yamux.Client
 	}
-	var muxHandler Handler
-	if dialAddr, ok := cfg.Services[service]; ok {
-		muxHandler = &ForwardHandler{
-			s: s, tag: peerName, dial: dialAddr,
-		}
-	} else {
-		if service != "" {
-			slog.Warningf("%s: unknown service %q", tag, service)
-		}
-		err = mux.GoAway()
-		if err != nil {
-			ioClose(mux)
-			return
-		}
-		muxHandler = &EmptyHandler{}
+	mux, err := handshakeFunc(conn, muxcfg)
+	if err != nil {
+		ioClose(conn)
+		return nil, err
 	}
-	err = s.g.Go(func() {
-		if t := s.findTunnel(peerName); t != nil {
+	serveFunc := func() {
+		s.addMux(mux, tag)
+		defer s.delMux(mux)
+		s.Serve(mux, &EmptyHandler{})
+	}
+	if t := s.findTunnel(peerName); t != nil {
+		serveFunc = func() {
 			t.addMux(mux, tag)
 			defer t.delMux(mux)
-		} else {
-			s.addMux(mux, tag)
-			defer s.delMux(mux)
+			s.Serve(mux, &ForwardHandler{s, t, service})
 		}
-		s.Serve(mux, muxHandler)
-	})
-	if err != nil {
-		ioClose(mux)
 	}
-	return
+	if err := s.g.Go(serveFunc); err != nil {
+		ioClose(mux)
+		return nil, err
+	}
+	return mux, nil
 }
 
 func (s *Server) Listen(addr string) (net.Listener, error) {

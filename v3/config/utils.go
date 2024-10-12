@@ -11,32 +11,54 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 )
 
-func (c *KeyPair) Load() (tls.Certificate, error) {
-	if c.CertPEM != "" && c.KeyPEM != "" {
-		return tls.X509KeyPair([]byte(c.CertPEM), []byte(c.KeyPEM))
+func (c *KeyPair) Load() error {
+	if c.CertPEM == "" {
+		certPEMBlock, err := os.ReadFile(c.Certificate)
+		if err != nil {
+			err := fmt.Errorf("read certificate %s: %s", c.Certificate, formats.Error(err))
+			return err
+		}
+		c.CertPEM = string(certPEMBlock)
 	}
-	return tls.LoadX509KeyPair(c.Certificate, c.PrivateKey)
+	if c.KeyPEM == "" {
+		keyPEMBlock, err := os.ReadFile(c.PrivateKey)
+		if err != nil {
+			err := fmt.Errorf("read private key %s: %s", c.PrivateKey, formats.Error(err))
+			return err
+		}
+		c.KeyPEM = string(keyPEMBlock)
+	}
+	return nil
 }
 
-func (c CertPool) Load() (certPool *x509.CertPool, err error) {
-	certPool = x509.NewCertPool()
-	for i, cert := range c {
-		pemBytes := []byte(cert.CertPEM)
-		if len(pemBytes) == 0 {
-			pemBytes, err = os.ReadFile(cert.Certificate)
+func (p CertPool) Load() error {
+	for i, c := range p {
+		if c.CertPEM == "" {
+			certPEMBlock, err := os.ReadFile(c.Certificate)
 			if err != nil {
-				return
+				err := fmt.Errorf("read certificate %s: %s", c.Certificate, formats.Error(err))
+				return err
 			}
+			c.CertPEM = string(certPEMBlock)
 		}
-		if !certPool.AppendCertsFromPEM([]byte(pemBytes)) {
-			err = fmt.Errorf("unable to parse certificate %d", i)
-			return
+		p[i] = c
+	}
+	return nil
+}
+
+func (p CertPool) NewX509CertPool() (*x509.CertPool, error) {
+	certPool := x509.NewCertPool()
+	for i, c := range p {
+		if !certPool.AppendCertsFromPEM([]byte(c.CertPEM)) {
+			err := fmt.Errorf("unable to parse authorized certificate #%d", i)
+			return nil, err
 		}
 	}
-	return
+	return certPool, nil
 }
 
 // GetTunnel finds the tunnel config
@@ -65,14 +87,15 @@ func (c *File) SetConnParams(conn net.Conn) {
 func (c *File) NewTLSConfig() (*tls.Config, error) {
 	sni := c.ServerName
 	certs := make([]tls.Certificate, 0, len(c.Certificates))
-	for _, cert := range c.Certificates {
-		tlsCert, err := cert.Load()
+	for i, cert := range c.Certificates {
+		tlsCert, err := tls.X509KeyPair([]byte(cert.CertPEM), []byte(cert.KeyPEM))
 		if err != nil {
+			err := fmt.Errorf("unable to parse certificate #%d: %s", i, formats.Error(err))
 			return nil, err
 		}
 		certs = append(certs, tlsCert)
 	}
-	certPool, err := c.AuthorizedCerts.Load()
+	certPool, err := c.AuthorizedCerts.NewX509CertPool()
 	if err != nil {
 		return nil, err
 	}

@@ -88,26 +88,34 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 
 // ForwardHandler forwards connections to another plain address
 type ForwardHandler struct {
-	s    *Server
-	tag  string
-	dial string
+	s       *Server
+	t       *tunnel
+	service string
 }
 
 func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 	h.s.stats.request.Add(1)
-	dialed, err := h.s.dialDirect(ctx, h.dial)
+	peerName := h.t.peerName
+	cfg, _ := h.s.getConfig()
+	dialAddr, ok := cfg.Services[h.service]
+	if !ok {
+		slog.Warningf("tunnel %q: unknown service %q", peerName, h.service)
+		ioClose(accepted)
+		return
+	}
+	dialed, err := h.s.dialDirect(ctx, dialAddr)
 	if err != nil {
-		slog.Errorf("%q -> %s: %v", h.tag, h.dial, err)
+		slog.Errorf("%q -> %s: %v", peerName, dialAddr, err)
 		ioClose(accepted)
 		return
 	}
 	if err := h.s.f.Forward(accepted, dialed); err != nil {
-		slog.Errorf("%q -> %s: %v", h.tag, h.dial, err)
+		slog.Errorf("%q -> %s: %v", peerName, dialAddr, err)
 		ioClose(accepted)
 		ioClose(dialed)
 		return
 	}
-	slog.Debugf("%q -> %v: forward established", h.tag, dialed.RemoteAddr())
+	slog.Debugf("%q -> %v: forward established", peerName, dialed.RemoteAddr())
 	h.s.stats.success.Add(1)
 }
 
