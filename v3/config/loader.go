@@ -112,13 +112,5 @@ func (c *File) Validate() error {
 }
 
 func (cfg *File) Dump() ([]byte, error) {
-	for i, pair := range cfg.Certificates {
-		pair.Certificate, pair.PrivateKey = "", ""
-		cfg.Certificates[i] = pair
-	}
-	for i, cert := range cfg.AuthorizedCerts {
-		cert.Certificate = ""
-		cfg.AuthorizedCerts[i] = cert
-	}
 	return json.MarshalIndent(cfg, "", "  ")
 }

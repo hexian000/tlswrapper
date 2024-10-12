@@ -90,14 +90,12 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
   },
   "certs": [
     {
-      "cert": "server-cert.pem",
-      "key": "server-key.pem"
+      "cert": "@server-cert.pem",
+      "key": "@server-key.pem"
     }
   ],
   "authcerts": [
-    {
-      "cert": "client-cert.pem"
-    }
+    "@client-cert.pem"
   ]
 }
 ```
@@ -115,14 +113,12 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
   },
   "certs": [
     {
-      "cert": "client-cert.pem",
-      "key": "client-key.pem"
+      "cert": "@client-cert.pem",
+      "key": "@client-key.pem"
     }
   ],
   "authcerts": [
-    {
-      "cert": "server-cert.pem"
-    }
+    "@server-cert.pem"
   ]
 }
 ```
@@ -142,14 +138,12 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
   },
   "certs": [
     {
-      "cert": "server-cert.pem",
-      "key": "server-key.pem"
+      "cert": "@server-cert.pem",
+      "key": "@server-key.pem"
     }
   ],
   "authcerts": [
-    {
-      "cert": "client-cert.pem"
-    }
+    "@client-cert.pem"
   ]
 }
 ```
@@ -169,14 +163,12 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
   },
   "certs": [
     {
-      "cert": "client-cert.pem",
-      "key": "client-key.pem"
+      "cert": "@client-cert.pem",
+      "key": "@client-key.pem"
     }
   ],
   "authcerts": [
-    {
-      "cert": "server-cert.pem"
-    }
+    "@server-cert.pem"
   ]
 }
 ```
@@ -192,10 +184,10 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
 - "peers[\*].listen": listen for port forwarding
 - "peers[\*].service": the service name we ask the peer for
 - "certs": local certificates
-- "certs[\*].cert": certificate PEM file path
-- "certs[\*].key": private key PEM file path
+- "certs[\*].cert": PEM encoded certificate (use "@filename" to read external file, same below)
+- "certs[\*].key": PEM encoded private key
 - "authcerts": peer authorized certificates list, bundles are supported
-- "authcerts[\*].cert": certificate PEM file path
+- "authcerts[\*].cert": PEM encoded certificate
 
 See [source code](v3/config.go) for a complete list of all available options.
 

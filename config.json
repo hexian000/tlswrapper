@@ -8,13 +8,11 @@
   },
   "certs": [
     {
-      "cert": "client-cert.pem",
-      "key": "client-key.pem"
+      "cert": "@client-cert.pem",
+      "key": "@client-key.pem"
     }
   ],
   "authcerts": [
-    {
-      "cert": "server-cert.pem"
-    }
+    "@server-cert.pem"
   ]
 }

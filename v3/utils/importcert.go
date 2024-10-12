@@ -17,7 +17,7 @@ func ImportCert(inCfg string, outCfg string) error {
 	if err != nil {
 		return fmt.Errorf("dump config: %s", formats.Error(err))
 	}
-	err = os.WriteFile(outCfg, b, 0644)
+	err = os.WriteFile(outCfg, b, 0600)
 	if err != nil {
 		return fmt.Errorf("write config: %s", formats.Error(err))
 	}

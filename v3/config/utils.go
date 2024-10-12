@@ -16,44 +16,40 @@ import (
 )
 
 func (c *KeyPair) Load() error {
-	if c.CertPEM == "" {
-		certPEMBlock, err := os.ReadFile(c.Certificate)
+	if strings.HasPrefix(c.Certificate, "@") {
+		certPEMBlock, err := os.ReadFile(strings.TrimPrefix(c.Certificate, "@"))
 		if err != nil {
-			err := fmt.Errorf("read certificate %s: %s", c.Certificate, formats.Error(err))
 			return err
 		}
-		c.CertPEM = string(certPEMBlock)
+		c.Certificate = string(certPEMBlock)
 	}
-	if c.KeyPEM == "" {
-		keyPEMBlock, err := os.ReadFile(c.PrivateKey)
+	if strings.HasPrefix(c.PrivateKey, "@") {
+		keyPEMBlock, err := os.ReadFile(strings.TrimPrefix(c.PrivateKey, "@"))
 		if err != nil {
-			err := fmt.Errorf("read private key %s: %s", c.PrivateKey, formats.Error(err))
 			return err
 		}
-		c.KeyPEM = string(keyPEMBlock)
+		c.PrivateKey = string(keyPEMBlock)
 	}
 	return nil
 }
 
 func (p CertPool) Load() error {
-	for i, c := range p {
-		if c.CertPEM == "" {
-			certPEMBlock, err := os.ReadFile(c.Certificate)
+	for i, cert := range p {
+		if strings.HasPrefix(cert, "@") {
+			certPEMBlock, err := os.ReadFile(strings.TrimPrefix(cert, "@"))
 			if err != nil {
-				err := fmt.Errorf("read certificate %s: %s", c.Certificate, formats.Error(err))
 				return err
 			}
-			c.CertPEM = string(certPEMBlock)
+			p[i] = string(certPEMBlock)
 		}
-		p[i] = c
 	}
 	return nil
 }
 
 func (p CertPool) NewX509CertPool() (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
-	for i, c := range p {
-		if !certPool.AppendCertsFromPEM([]byte(c.CertPEM)) {
+	for i, cert := range p {
+		if !certPool.AppendCertsFromPEM([]byte(cert)) {
 			err := fmt.Errorf("unable to parse authorized certificate #%d", i)
 			return nil, err
 		}
@@ -87,7 +83,7 @@ func (c *File) SetConnParams(conn net.Conn) {
 func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {
 	certs := make([]tls.Certificate, 0, len(c.Certificates))
 	for i, cert := range c.Certificates {
-		tlsCert, err := tls.X509KeyPair([]byte(cert.CertPEM), []byte(cert.KeyPEM))
+		tlsCert, err := tls.X509KeyPair([]byte(cert.Certificate), []byte(cert.PrivateKey))
 		if err != nil {
 			err := fmt.Errorf("unable to parse certificate #%d: %s", i, formats.Error(err))
 			return nil, err

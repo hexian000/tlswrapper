@@ -85,7 +85,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 		return nil, err
 	}
 	s.tlscfg = tlscfg
-	return s, err
+	return s, nil
 }
 
 func (s *Server) findTunnel(peerName string) *tunnel {

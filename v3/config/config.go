@@ -23,24 +23,13 @@ type Tunnel struct {
 }
 
 type KeyPair struct {
-	// TLS: (optional) certificate PEM file path
-	Certificate string `json:"cert,omitempty"`
-	// TLS: (optional) private key PEM file path
-	PrivateKey string `json:"key,omitempty"`
-
-	// TLS: (optional) certificate PEM string
-	CertPEM string `json:"certpem,omitempty"`
-	// TLS: (optional) private key PEM string
-	KeyPEM string `json:"keypem,omitempty"`
+	// TLS: (optional) PEM encoded certificate
+	Certificate string `json:"cert"`
+	// TLS: (optional) PEM encoded private key
+	PrivateKey string `json:"key"`
 }
 
-type CertPool []struct {
-	// TLS: (optional) certificate PEM file path
-	Certificate string `json:"cert,omitempty"`
-
-	// TLS: (optional) certificate PEM string
-	CertPEM string `json:"certpem,omitempty"`
-}
+type CertPool []string
 
 // File config file
 type File struct {
@@ -56,7 +45,7 @@ type File struct {
 	HTTPListen string `json:"httplisten,omitempty"`
 	// TLS: local certificates
 	Certificates []KeyPair `json:"certs"`
-	// TLS: authorized remote certificates, bundles are supported
+	// TLS: authorized remote certificates, PEM encoded
 	AuthorizedCerts CertPool `json:"authcerts"`
 	// (optional) TCP no delay, default to true
 	NoDelay bool `json:"nodelay"`
