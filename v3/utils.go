@@ -48,14 +48,9 @@ func ImportCert() {
 	slog.Notice("importcert: ok")
 }
 
-type keyGenerator func() (key any, pubKey any, err error)
+type keyGenerator func() (pubKey any, key any, err error)
 
-func generateX509KeyPair(sni string, generateKey keyGenerator) (certPem []byte, keyPem []byte, err error) {
-	key, pubKey, err := generateKey()
-	if err != nil {
-		err = fmt.Errorf("generate key: %s", formats.Error(err))
-		return
-	}
+func newX509KeyPair(sni string, pubKey any, key any) (certPem []byte, keyPem []byte, err error) {
 	rawKey, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		err = fmt.Errorf("PKCS8 private key: %s", formats.Error(err))
@@ -106,7 +101,7 @@ func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
 			if err != nil {
 				return nil, nil, err
 			}
-			return key, &key.PublicKey, nil
+			return &key.PublicKey, key, nil
 		}, nil
 	case "ecdsa":
 		if keysize == 0 {
@@ -131,13 +126,13 @@ func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
 			if err != nil {
 				return nil, nil, err
 			}
-			return key, &key.PublicKey, err
+			return &key.PublicKey, key, err
 		}, nil
 	case "ed25519":
 		slog.Noticef("gencerts: keytype=%q", keytype)
 		return func() (any, any, error) {
-			pub, key, err := ed25519.GenerateKey(rand.Reader)
-			return key, pub, err
+			pubKey, key, err := ed25519.GenerateKey(rand.Reader)
+			return pubKey, key, err
 		}, nil
 	}
 	return nil, errors.New("invalid key type")
@@ -155,7 +150,12 @@ func GenCerts() {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			certPem, keyPem, err := generateX509KeyPair(f.ServerName, keygen)
+			pubKey, key, err := keygen()
+			if err != nil {
+				slog.Errorf("generate key: %s", formats.Error(err))
+				return
+			}
+			certPem, keyPem, err := newX509KeyPair(f.ServerName, pubKey, key)
 			if err != nil {
 				slog.Errorf("gencerts %q: %s", name, formats.Error(err))
 				return
