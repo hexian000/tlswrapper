@@ -50,13 +50,13 @@ func ImportCert() {
 
 type keyGenerator func() (pubKey any, key any, err error)
 
-func newX509KeyPair(sni string, pubKey any, key any) (certPem []byte, keyPem []byte, err error) {
+func newCertificate(parent *x509.Certificate, signKey any, sni string, pubKey any, key any) (certPEM []byte, keyPEM []byte, err error) {
 	rawKey, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		err = fmt.Errorf("PKCS8 private key: %s", formats.Error(err))
 		return
 	}
-	keyPem = pem.EncodeToMemory(&pem.Block{
+	keyPEM = pem.EncodeToMemory(&pem.Block{
 		Type:  "PRIVATE KEY",
 		Bytes: rawKey,
 	})
@@ -76,12 +76,19 @@ func newX509KeyPair(sni string, pubKey any, key any) (certPem []byte, keyPem []b
 		},
 		DNSNames: []string{sni},
 	}
-	rawCert, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, pubKey, key)
+	if parent == nil {
+		// create self-signed certificate
+		parent = &tmpl
+		tmpl.BasicConstraintsValid = true
+		tmpl.IsCA = true
+		signKey = key
+	}
+	rawCert, err := x509.CreateCertificate(rand.Reader, &tmpl, parent, pubKey, signKey)
 	if err != nil {
 		err = fmt.Errorf("X.509: %s", formats.Error(err))
 		return
 	}
-	certPem = pem.EncodeToMemory(&pem.Block{
+	certPEM = pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: rawCert,
 	})
@@ -138,12 +145,52 @@ func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
 	return nil, errors.New("invalid key type")
 }
 
+func savePEM(name string, certPem, keyPem []byte) error {
+	certFile, keyFile := name+"-cert.pem", name+"-key.pem"
+	if err := os.WriteFile(certFile, certPem, 0644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(keyFile, keyPem, 0600); err != nil {
+		return err
+	}
+	slog.Noticef("gencerts: %q, %q", certFile, keyFile)
+	return nil
+}
+
+func genCA(f *AppFlags, keygen keyGenerator) (*x509.Certificate, any, error) {
+	caPubKey, caKey, err := keygen()
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate key: %s", formats.Error(err))
+	}
+	caCertPEM, caKeyPEM, err := newCertificate(nil, nil, f.ServerName, caPubKey, caKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := savePEM("ca", caCertPEM, caKeyPEM); err != nil {
+		return nil, nil, err
+	}
+	caDER, _ := pem.Decode(caCertPEM)
+	if caDER == nil || caDER.Type != "CERTIFICATE" {
+		return nil, nil, errors.New("error decoding CA")
+	}
+	caCert, err := x509.ParseCertificate(caDER.Bytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	return caCert, caKey, nil
+}
+
 func GenCerts() {
 	f := &Flags
 	wg := &sync.WaitGroup{}
 	keygen, err := makeKeyGenerator(f.KeyType, f.KeySize)
 	if err != nil {
 		slog.Errorf("gencerts: %s", formats.Error(err))
+		return
+	}
+	caCert, caKey, err := genCA(f, keygen)
+	if err != nil {
+		slog.Errorf("gencerts: CA: %s", formats.Error(err))
 		return
 	}
 	for _, name := range strings.Split(f.GenCerts, ",") {
@@ -155,21 +202,15 @@ func GenCerts() {
 				slog.Errorf("generate key: %s", formats.Error(err))
 				return
 			}
-			certPem, keyPem, err := newX509KeyPair(f.ServerName, pubKey, key)
+			certPem, keyPem, err := newCertificate(caCert, caKey, f.ServerName, pubKey, key)
 			if err != nil {
 				slog.Errorf("gencerts %q: %s", name, formats.Error(err))
 				return
 			}
-			certFile, keyFile := name+"-cert.pem", name+"-key.pem"
-			if err := os.WriteFile(certFile, certPem, 0644); err != nil {
+			if err := savePEM(name, certPem, keyPem); err != nil {
 				slog.Errorf("gencerts: %s", formats.Error(err))
 				return
 			}
-			if err := os.WriteFile(keyFile, keyPem, 0600); err != nil {
-				slog.Errorf("gencerts: %s", formats.Error(err))
-				return
-			}
-			slog.Noticef("gencerts: %q, %q", certFile, keyFile)
 		}(name)
 	}
 	wg.Wait()
