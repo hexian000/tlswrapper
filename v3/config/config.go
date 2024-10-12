@@ -22,6 +22,26 @@ type Tunnel struct {
 	StreamWindow uint32 `json:"window"`
 }
 
+type KeyPair struct {
+	// TLS: (optional) certificate PEM file path
+	Certificate string `json:"cert,omitempty"`
+	// TLS: (optional) private key PEM file path
+	PrivateKey string `json:"key,omitempty"`
+
+	// TLS: (optional) certificate PEM string
+	CertPEM string `json:"certpem,omitempty"`
+	// TLS: (optional) private key PEM string
+	KeyPEM string `json:"keypem,omitempty"`
+}
+
+type CertPool []struct {
+	// TLS: (optional) certificate PEM file path
+	Certificate string `json:"cert,omitempty"`
+
+	// TLS: (optional) certificate PEM string
+	CertPEM string `json:"certpem,omitempty"`
+}
+
 // File config file
 type File struct {
 	// (optional) local peer name
@@ -35,15 +55,11 @@ type File struct {
 	// (optional) health check and metrics, default to "" (disabled)
 	HTTPListen string `json:"httplisten,omitempty"`
 	// TLS: (optional) SNI field in handshake, default to "example.com"
-	ServerName   string `json:"sni"`
-	Certificates []struct {
-		// TLS: local certificate PEM file path
-		Certificate string `json:"cert"`
-		// TLS: local private key PEM file path
-		PrivateKey string `json:"key"`
-	} `json:"certs"`
-	// TLS: authorized remote certificates, bundle supported
-	AuthorizedCerts []string `json:"authcerts"`
+	ServerName string `json:"sni"`
+	// TLS: local certificates
+	Certificates []KeyPair `json:"certs"`
+	// TLS: authorized remote certificates, bundles are supported
+	AuthorizedCerts CertPool `json:"authcerts"`
 	// (optional) TCP no delay, default to true
 	NoDelay bool `json:"nodelay"`
 	// (optional) soft limit of concurrent unauthenticated connections, default to 10

@@ -14,6 +14,31 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
+func (c *KeyPair) Load() (tls.Certificate, error) {
+	if c.CertPEM != "" && c.KeyPEM != "" {
+		return tls.X509KeyPair([]byte(c.CertPEM), []byte(c.KeyPEM))
+	}
+	return tls.LoadX509KeyPair(c.Certificate, c.PrivateKey)
+}
+
+func (c CertPool) Load() (certPool *x509.CertPool, err error) {
+	certPool = x509.NewCertPool()
+	for i, cert := range c {
+		pemBytes := []byte(cert.CertPEM)
+		if len(pemBytes) == 0 {
+			pemBytes, err = os.ReadFile(cert.Certificate)
+			if err != nil {
+				return
+			}
+		}
+		if !certPool.AppendCertsFromPEM([]byte(pemBytes)) {
+			err = fmt.Errorf("unable to parse certificate %d", i)
+			return
+		}
+	}
+	return
+}
+
 // GetTunnel finds the tunnel config
 func (c *File) GetTunnel(peerName string) *Tunnel {
 	tuncfg, ok := c.Peers[peerName]
@@ -40,22 +65,16 @@ func (c *File) SetConnParams(conn net.Conn) {
 func (c *File) NewTLSConfig() (*tls.Config, error) {
 	sni := c.ServerName
 	certs := make([]tls.Certificate, 0, len(c.Certificates))
-	for _, pair := range c.Certificates {
-		cert, err := tls.LoadX509KeyPair(pair.Certificate, pair.PrivateKey)
+	for _, cert := range c.Certificates {
+		tlsCert, err := cert.Load()
 		if err != nil {
 			return nil, err
 		}
-		certs = append(certs, cert)
+		certs = append(certs, tlsCert)
 	}
-	certPool := x509.NewCertPool()
-	for _, path := range c.AuthorizedCerts {
-		pemBytes, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		if !certPool.AppendCertsFromPEM(pemBytes) {
-			return nil, fmt.Errorf("unable to parse certificate: %s", path)
-		}
+	certPool, err := c.AuthorizedCerts.Load()
+	if err != nil {
+		return nil, err
 	}
 	return &tls.Config{
 		Certificates: certs,
