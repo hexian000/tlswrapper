@@ -14,9 +14,7 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 )
 
-const sni = "example.com"
-
-func GenerateX509KeyPair(bits int, certFile, keyFile string) error {
+func GenerateX509KeyPair(sni string, bits int, certFile, keyFile string) error {
 	key, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
 		return fmt.Errorf("RSA generate key: %s", formats.Error(err))

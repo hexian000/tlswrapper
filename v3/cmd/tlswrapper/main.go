@@ -48,7 +48,7 @@ func main() {
 	if f.ImportCert != "" {
 		err := utils.ImportCert(f.Config, f.ImportCert)
 		if err != nil {
-			slog.Fatal(err.Error())
+			slog.Fatal("importcert: ", formats.Error(err))
 			os.Exit(1)
 		}
 		slog.Info("importcert: ok")
@@ -58,12 +58,12 @@ func main() {
 		bits := f.KeySize
 		for _, name := range strings.Split(f.GenCerts, ",") {
 			certFile, keyFile := name+"-cert.pem", name+"-key.pem"
-			slog.Infof("genkey: %q (RSA %d bits)...", name, bits)
-			err := utils.GenerateX509KeyPair(bits, certFile, keyFile)
+			slog.Infof("gencerts: %q (RSA %d bits)...", name, bits)
+			err := utils.GenerateX509KeyPair(f.ServerName, bits, certFile, keyFile)
 			if err != nil {
-				slog.Error(err.Error())
+				slog.Fatal("gencerts: ", formats.Error(err))
 			}
-			slog.Infof("genkey: X.509 Certificate=%q, Private Key=%q", certFile, keyFile)
+			slog.Infof("gencerts: X.509 Certificate=%q, Private Key=%q", certFile, keyFile)
 		}
 		return
 	}
