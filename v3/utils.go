@@ -75,6 +75,10 @@ func newCertificate(parent *x509.Certificate, signKey any, sni string, pubKey an
 			CommonName:         sni,
 		},
 		DNSNames: []string{sni},
+		ExtKeyUsage: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageServerAuth,
+			x509.ExtKeyUsageClientAuth,
+		},
 	}
 	if parent == nil {
 		// create self-signed certificate
