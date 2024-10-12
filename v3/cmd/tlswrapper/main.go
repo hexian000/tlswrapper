@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strings"
 	"syscall"
 
 	"github.com/hexian000/gosnippets/formats"
@@ -14,7 +13,6 @@ import (
 	sd "github.com/hexian000/gosnippets/systemd"
 	"github.com/hexian000/tlswrapper/v3"
 	"github.com/hexian000/tlswrapper/v3/config"
-	"github.com/hexian000/tlswrapper/v3/utils"
 )
 
 func init() {
@@ -46,25 +44,11 @@ func main() {
 		os.Exit(1)
 	}
 	if f.ImportCert != "" {
-		err := utils.ImportCert(f.Config, f.ImportCert)
-		if err != nil {
-			slog.Fatal("importcert: ", formats.Error(err))
-			os.Exit(1)
-		}
-		slog.Info("importcert: ok")
+		tlswrapper.ImportCert()
 		return
 	}
 	if f.GenCerts != "" {
-		bits := f.KeySize
-		for _, name := range strings.Split(f.GenCerts, ",") {
-			certFile, keyFile := name+"-cert.pem", name+"-key.pem"
-			slog.Infof("gencerts: %q (RSA %d bits)...", name, bits)
-			err := utils.GenerateX509KeyPair(f.ServerName, bits, certFile, keyFile)
-			if err != nil {
-				slog.Fatal("gencerts: ", formats.Error(err))
-			}
-			slog.Infof("gencerts: X.509 Certificate=%q, Private Key=%q", certFile, keyFile)
-		}
+		tlswrapper.GenCerts()
 		return
 	}
 	cfg, err := config.LoadFile(f.Config)
