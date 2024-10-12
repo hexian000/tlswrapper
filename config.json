@@ -1,20 +1,20 @@
 {
-  "peername": "client1",
-  "muxlisten": "127.1.0.1:12345",
-  "services": {
-      "socks": "127.0.1.1:1081"
-  },
   "peers": {
-      "client2": {
-          "addr": "127.1.0.2:12345",
-          "listen": "127.1.0.2:1081",
-          "peerservice": "socks"
-      }
+    "server": {
+      "addr": "example.com:38000",
+      "listen": "127.0.0.1:8080",
+      "peerservice": "http"
+    }
   },
-  "cert": "server-cert.pem",
-  "key": "server-key.pem",
+  "certs": [
+    {
+      "cert": "client-cert.pem",
+      "key": "client-key.pem"
+    }
+  ],
   "authcerts": [
-    "client1-cert.pem",
-    "client2-cert.pem"
+    {
+      "cert": "server-cert.pem"
+    }
   ]
 }

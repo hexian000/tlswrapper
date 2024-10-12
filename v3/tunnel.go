@@ -240,6 +240,9 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	if rsp.PeerName != "" && rsp.PeerName != t.peerName {
+		slog.Warningf("%s: peer name mismatch, remote claimed %q", tag, rsp.PeerName)
+	}
 	_ = conn.SetDeadline(time.Time{})
 
 	mux, err := t.s.startMux(conn, cfg, rsp.PeerName, rsp.Service, true, tag)
