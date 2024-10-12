@@ -1,13 +1,16 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 
+	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 	sd "github.com/hexian000/gosnippets/systemd"
 	"github.com/hexian000/tlswrapper/v3"
@@ -20,50 +23,87 @@ func init() {
 	slog.Default().SetOutputConfig("stdout", "tlswrapper")
 }
 
-func parseFlags() string {
-	var flagHelp bool
-	var flagConfig string
-	var flagConfigOut string
-	var flagCertName string
-	var flagKeySize int
-	flag.BoolVar(&flagHelp, "h", false, "help")
-	flag.StringVar(&flagConfig, "c", "", "config file")
-	flag.StringVar(&flagConfigOut, "importcert", "", "import PEM files and generate a new config file")
-	flag.StringVar(&flagCertName, "genkey", "", "generate key pair as <name>-cert.pem, <name>-key.pem")
-	flag.IntVar(&flagKeySize, "keysize", 4096, "bits in RSA private key, default to 4096")
+type flags struct {
+	Help       bool
+	GenKey     bool
+	ImportCert bool
+
+	Config    string
+	Output    string
+	CertNames string
+	KeySize   int
+}
+
+func parseFlags(f *flags) {
+	flag.BoolVar(&f.Help, "h", false, "help")
+	flag.BoolVar(&f.GenKey, "genkey", false, "generate key pairs for TLS")
+	flag.BoolVar(&f.ImportCert, "importcert", false, "import PEM files and generate a new config file")
+
+	flag.StringVar(&f.Config, "c", "", "config file")
+	flag.StringVar(&f.Output, "o", "", "output config file")
+	flag.StringVar(&f.CertNames, "certnames", "", "comma-separated name list, generate key pairs as <name>-cert.pem, <name>-key.pem")
+	flag.IntVar(&f.KeySize, "keysize", 4096, "specify the number of bits for the RSA private key")
 	flag.Parse()
-	if flagHelp || flagConfig == "" {
+}
+
+func checkFlags(f *flags) error {
+	if f.ImportCert {
+		if f.Config == "" || f.Output == "" {
+			return errors.New("`-importcert' requires `-c' and `-o'")
+		}
+		return nil
+	}
+	if f.GenKey {
+		if f.CertNames == "" {
+			return errors.New("`-genkey' requires `-certnames'")
+		}
+		return nil
+	}
+	if !f.Help && !f.ImportCert && !f.GenKey {
+		// server mode
+		if f.Config == "" {
+			return errors.New("config file is not specified")
+		}
+	}
+	return nil
+}
+
+func main() {
+	f := &flags{}
+	parseFlags(f)
+	if err := checkFlags(f); err != nil {
+		slog.Fatalf("flag check failed: %s", formats.Error(err))
+		slog.Infof("try \"%s -h\" for more information", os.Args[0])
+		os.Exit(1)
+	}
+	if f.Help {
 		fmt.Printf("tlswrapper %s\n  %s\n\n", tlswrapper.Version, tlswrapper.Homepage)
 		flag.Usage()
 		os.Exit(1)
 	}
-	if flagConfigOut != "" {
-		err := utils.ImportCert(flagConfig, flagConfigOut)
+	if f.ImportCert {
+		err := utils.ImportCert(f.Config, f.Output)
 		if err != nil {
 			slog.Fatal(err.Error())
 			os.Exit(1)
 		}
 		slog.Info("importcert: ok")
-		os.Exit(0)
+		return
 	}
-	if flagCertName != "" {
-		bits := flagKeySize
-		certFile, keyFile := flagCertName+"-cert.pem", flagCertName+"-key.pem"
-		slog.Infof("genkey: RSA %d bits...", bits)
-		err := utils.GenerateX509KeyPair(bits, certFile, keyFile)
-		if err != nil {
-			slog.Fatal(err.Error())
-			os.Exit(1)
+	if f.GenKey {
+		bits := f.KeySize
+		for _, name := range strings.Split(f.CertNames, ",") {
+			certFile, keyFile := name+"-cert.pem", name+"-key.pem"
+			slog.Infof("genkey: %q (RSA %d bits)...", name, bits)
+			err := utils.GenerateX509KeyPair(bits, certFile, keyFile)
+			if err != nil {
+				slog.Error(err.Error())
+			}
+			slog.Infof("genkey: X.509 Certificate=%q, Private Key=%q", certFile, keyFile)
 		}
-		slog.Infof("genkey: X.509 Certificate=%q, Private Key=%q", certFile, keyFile)
-		os.Exit(0)
+		return
 	}
-	return flagConfig
-}
-
-func main() {
-	path := parseFlags()
-	cfg, err := config.LoadFile(path)
+	cfg, err := config.LoadFile(f.Config)
 	if err != nil {
 		slog.Fatal("load config: ", err)
 		os.Exit(1)
@@ -92,7 +132,7 @@ func main() {
 		}
 		// reload
 		_, _ = sd.Notify(sd.Reloading)
-		cfg, err := config.LoadFile(path)
+		cfg, err := config.LoadFile(f.Config)
 		if err != nil {
 			slog.Error("read config: ", err)
 			continue

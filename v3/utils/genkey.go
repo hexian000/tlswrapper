@@ -14,14 +14,16 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 )
 
+const sni = "example.com"
+
 func GenerateX509KeyPair(bits int, certFile, keyFile string) error {
 	key, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
-		return fmt.Errorf("generate RSA private key: %s", formats.Error(err))
+		return fmt.Errorf("RSA generate key: %s", formats.Error(err))
 	}
 	rawKey, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
-		return fmt.Errorf("marshal PKCS8 private key: %s", formats.Error(err))
+		return fmt.Errorf("PKCS8 private key: %s", formats.Error(err))
 	}
 	keyPem := pem.EncodeToMemory(&pem.Block{
 		Type:  "PRIVATE KEY",
@@ -29,20 +31,23 @@ func GenerateX509KeyPair(bits int, certFile, keyFile string) error {
 	})
 
 	now := time.Now()
-	tml := x509.Certificate{
+	tmpl := x509.Certificate{
 		NotBefore:    now,
 		NotAfter:     now.AddDate(100, 0, 0),
 		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
-			CommonName:         "example.com",
+			Country:            []string{"US"},
+			Province:           []string{"California"},
+			Locality:           []string{"Mountain View"},
 			Organization:       []string{"Your Organization"},
 			OrganizationalUnit: []string{"Your Unit"},
+			CommonName:         sni,
 		},
-		BasicConstraintsValid: true,
+		DNSNames: []string{sni},
 	}
-	rawCert, err := x509.CreateCertificate(rand.Reader, &tml, &tml, &key.PublicKey, key)
+	rawCert, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
 	if err != nil {
-		return fmt.Errorf("create x509 certificate: %s", formats.Error(err))
+		return fmt.Errorf("X.509: %s", formats.Error(err))
 	}
 	certPem := pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
