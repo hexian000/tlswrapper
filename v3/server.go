@@ -80,7 +80,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 		cfg, _ := s.getConfig()
 		return cfg.Timeout()
 	}
-	tlscfg, err := cfg.NewTLSConfig()
+	tlscfg, err := cfg.NewTLSConfig(Flags.ServerName)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,7 @@ func (s *Server) reloadTunnels(cfg *config.File) error {
 			delete(s.tunnels, name)
 		}
 	}
-	for name := range s.cfg.Peers {
+	for name := range cfg.Peers {
 		t := &tunnel{
 			peerName: name, s: s,
 			mux:       make(map[*yamux.Session]string),
@@ -359,7 +359,7 @@ func (s *Server) Shutdown() error {
 
 // LoadConfig reloads the configuration file
 func (s *Server) LoadConfig(cfg *config.File) error {
-	tlscfg, err := cfg.NewTLSConfig()
+	tlscfg, err := cfg.NewTLSConfig(Flags.ServerName)
 	if err != nil {
 		return err
 	}

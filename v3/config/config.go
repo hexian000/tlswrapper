@@ -54,8 +54,6 @@ type File struct {
 	Peers map[string]Tunnel `json:"peers"`
 	// (optional) health check and metrics, default to "" (disabled)
 	HTTPListen string `json:"httplisten,omitempty"`
-	// TLS: (optional) SNI field in handshake, default to "example.com"
-	ServerName string `json:"sni"`
 	// TLS: local certificates
 	Certificates []KeyPair `json:"certs"`
 	// TLS: authorized remote certificates, bundles are supported
@@ -97,7 +95,6 @@ type File struct {
 }
 
 var Default = File{
-	ServerName:         "example.com",
 	NoDelay:            true,
 	StartupLimitStart:  10,
 	StartupLimitRate:   30,

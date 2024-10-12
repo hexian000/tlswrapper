@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -23,56 +22,21 @@ func init() {
 	slog.Default().SetOutputConfig("stdout", "tlswrapper")
 }
 
-type flags struct {
-	Help       bool
-	GenKey     bool
-	ImportCert bool
-
-	Config    string
-	Output    string
-	CertNames string
-	KeySize   int
-}
-
-func parseFlags(f *flags) {
+func parseFlags(f *tlswrapper.AppFlags) {
 	flag.BoolVar(&f.Help, "h", false, "help")
-	flag.BoolVar(&f.GenKey, "genkey", false, "generate key pairs for TLS")
-	flag.BoolVar(&f.ImportCert, "importcert", false, "import PEM files and generate a new config file")
-
 	flag.StringVar(&f.Config, "c", "", "config file")
-	flag.StringVar(&f.Output, "o", "", "output config file")
-	flag.StringVar(&f.CertNames, "certnames", "", "comma-separated name list, generate key pairs as <name>-cert.pem, <name>-key.pem")
+	flag.StringVar(&f.ServerName, "sni", "example.com", "server name")
+	flag.StringVar(&f.GenCerts, "gencerts", "", "comma-separated name list, generate key pairs as <name>-cert.pem, <name>-key.pem")
+	flag.StringVar(&f.ImportCert, "importcert", "", "import PEM files and generate a new config file")
 	flag.IntVar(&f.KeySize, "keysize", 4096, "specify the number of bits for the RSA private key")
 	flag.Parse()
 }
 
-func checkFlags(f *flags) error {
-	if f.ImportCert {
-		if f.Config == "" || f.Output == "" {
-			return errors.New("`-importcert' requires `-c' and `-o'")
-		}
-		return nil
-	}
-	if f.GenKey {
-		if f.CertNames == "" {
-			return errors.New("`-genkey' requires `-certnames'")
-		}
-		return nil
-	}
-	if !f.Help && !f.ImportCert && !f.GenKey {
-		// server mode
-		if f.Config == "" {
-			return errors.New("config file is not specified")
-		}
-	}
-	return nil
-}
-
 func main() {
-	f := &flags{}
+	f := &tlswrapper.Flags
 	parseFlags(f)
-	if err := checkFlags(f); err != nil {
-		slog.Fatalf("flag check failed: %s", formats.Error(err))
+	if err := f.Validate(); err != nil {
+		slog.Fatalf("arguments: %s", formats.Error(err))
 		slog.Infof("try \"%s -h\" for more information", os.Args[0])
 		os.Exit(1)
 	}
@@ -81,8 +45,8 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	if f.ImportCert {
-		err := utils.ImportCert(f.Config, f.Output)
+	if f.ImportCert != "" {
+		err := utils.ImportCert(f.Config, f.ImportCert)
 		if err != nil {
 			slog.Fatal(err.Error())
 			os.Exit(1)
@@ -90,9 +54,9 @@ func main() {
 		slog.Info("importcert: ok")
 		return
 	}
-	if f.GenKey {
+	if f.GenCerts != "" {
 		bits := f.KeySize
-		for _, name := range strings.Split(f.CertNames, ",") {
+		for _, name := range strings.Split(f.GenCerts, ",") {
 			certFile, keyFile := name+"-cert.pem", name+"-key.pem"
 			slog.Infof("genkey: %q (RSA %d bits)...", name, bits)
 			err := utils.GenerateX509KeyPair(bits, certFile, keyFile)

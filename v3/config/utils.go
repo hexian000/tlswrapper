@@ -84,8 +84,7 @@ func (c *File) SetConnParams(conn net.Conn) {
 }
 
 // NewTLSConfig creates tls.Config
-func (c *File) NewTLSConfig() (*tls.Config, error) {
-	sni := c.ServerName
+func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {
 	certs := make([]tls.Certificate, 0, len(c.Certificates))
 	for i, cert := range c.Certificates {
 		tlsCert, err := tls.X509KeyPair([]byte(cert.CertPEM), []byte(cert.KeyPEM))
