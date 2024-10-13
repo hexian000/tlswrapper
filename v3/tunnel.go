@@ -72,10 +72,12 @@ func (t *tunnel) cleanMux() {
 			delete(t.mux, ss)
 		}
 	}
-	for ss := range t.mux {
-		if len(t.mux) > 1 && ss.NumStreams() == 0 {
+	remain := len(t.mux)
+	for ss, tag := range t.mux {
+		if remain > 1 && ss.NumStreams() == 0 {
 			ioClose(ss)
-			delete(t.mux, ss)
+			slog.Debugf("%s: closed due to redundancy", tag)
+			remain--
 		}
 	}
 	t.s.numSessions.Add(uint32(len(t.mux) - num))
@@ -185,17 +187,15 @@ func (t *tunnel) addMux(mux *yamux.Session, tag string) {
 	t.lastChanged = now
 }
 
-func (t *tunnel) getMuxTag(mux *yamux.Session) (string, bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	tag, ok := t.mux[mux]
-	return tag, ok
-}
-
 func (t *tunnel) delMux(mux *yamux.Session) {
 	now := time.Now()
-	if tag, ok := t.getMuxTag(mux); ok {
-		msg := fmt.Sprintf("%s: tunnel connection lost", tag)
+	if tag, ok := func() (string, bool) {
+		t.mu.RLock()
+		defer t.mu.RUnlock()
+		tag, ok := t.mux[mux]
+		return tag, ok
+	}(); ok {
+		msg := fmt.Sprintf("%s: tunnel connection closed", tag)
 		slog.Info(msg)
 		t.s.recentEvents.Add(now, msg)
 	}
