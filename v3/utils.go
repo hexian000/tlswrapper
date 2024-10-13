@@ -104,7 +104,7 @@ func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
 	case "rsa":
 		bits := keysize
 		if bits == 0 {
-			bits = 3072
+			bits = 4096
 		}
 		slog.Noticef("gencerts: keytype=%q keysize=%d", keytype, bits)
 		return func() (any, any, error) {

@@ -62,21 +62,25 @@ Status: **Stable**
 
 ## Authentication Model
 
-Like SSH, each peer should have a key pair (X.509 certificate + private key) and an authorized list. Only certificates in the authorized list can communicate with the peer.
+Like SSH, each peer should have a key pair (X.509 certificate + PKCS #8 private key) and an authorized list. Only certificates in the authorized list (or signed by any authorized certificate) can communicate with the peer.
 
-This behavior is based on TLS 1.3 implemented by "crypto/tls" library in Go.
-
-By default, all certificates are self-signed. This will not reduce security. 
+TLS behavior is based on "crypto/tls" library in [Go](https://github.com/golang/go).
 
 ## Quick Start
 
 ### Generating Key Pair
 
 ```sh
-./tlswrapper -gencerts client,server
+# generate private root certificate
+./tlswrapper -gencerts ca
+# ca-cert.pem, ca-key.pem
+
+# generate peer certificates
+./tlswrapper -gencerts client,server -sign ca
+# client-cert.pem, client-key.pem, server-cert.pem, server-key.pem
 ```
 
-Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `server-key.pem`.
+Adding a certificate to `"authcerts"` will allow all certificates signed by it (including itself).
 
 ### Creating Config Files (Forward Case)
 
@@ -95,7 +99,7 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
     }
   ],
   "authcerts": [
-    "@client-cert.pem"
+    "@ca-cert.pem"
   ]
 }
 ```
@@ -118,7 +122,7 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
     }
   ],
   "authcerts": [
-    "@server-cert.pem"
+    "@ca-cert.pem"
   ]
 }
 ```
@@ -143,7 +147,7 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
     }
   ],
   "authcerts": [
-    "@client-cert.pem"
+    "@ca-cert.pem"
   ]
 }
 ```
@@ -168,7 +172,7 @@ Now we will have `client-cert.pem`, `client-key.pem`, `server-cert.pem` and `ser
     }
   ],
   "authcerts": [
-    "@server-cert.pem"
+    "@ca-cert.pem"
   ]
 }
 ```
