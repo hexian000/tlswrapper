@@ -22,18 +22,6 @@ import (
 	"github.com/hexian000/tlswrapper/v3/config"
 )
 
-func dumpConfig(inCfg, outCfg string) (string, error) {
-	cfg, err := config.LoadFile(inCfg)
-	if err != nil {
-		return "", fmt.Errorf("load config: %s", formats.Error(err))
-	}
-	b, err := cfg.Dump()
-	if err != nil {
-		return "", fmt.Errorf("dump config: %s", formats.Error(err))
-	}
-	return string(b), nil
-}
-
 func DumpConfig() {
 	f := &Flags
 	cfg, err := config.LoadFile(f.Config)
@@ -47,7 +35,6 @@ func DumpConfig() {
 		os.Exit(1)
 	}
 	println(string(b))
-	slog.Notice("dumpconfig: ok")
 }
 
 type keyGenerator func() (pubKey any, key any, err error)
@@ -151,26 +138,17 @@ func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
 	return nil, errors.New("invalid key type")
 }
 
-func readPEM(data []byte, blockType string) (p *pem.Block) {
-	for {
-		p, data = pem.Decode(data)
-		if p == nil || p.Type == blockType {
-			return p
-		}
-	}
-}
-
 func readKeyPair(name string) (*x509.Certificate, any, error) {
 	certFile, keyFile := name+"-cert.pem", name+"-key.pem"
 	certPEM, err := os.ReadFile(certFile)
 	if err != nil {
 		return nil, nil, err
 	}
-	certDER := readPEM(certPEM, "CERTIFICATE")
+	certDER := config.ParsePEM(certPEM, "CERTIFICATE")
 	if certDER == nil {
 		return nil, nil, fmt.Errorf("%s: certificate not found", certFile)
 	}
-	cert, err := x509.ParseCertificate(certDER.Bytes)
+	cert, err := x509.ParseCertificate(certDER)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -178,11 +156,11 @@ func readKeyPair(name string) (*x509.Certificate, any, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	keyDER := readPEM(keyPEM, "PRIVATE KEY")
+	keyDER := config.ParsePEM(keyPEM, "PRIVATE KEY")
 	if keyDER == nil {
 		return nil, nil, fmt.Errorf("%s: private key not found", keyFile)
 	}
-	key, err := x509.ParsePKCS8PrivateKey(keyDER.Bytes)
+	key, err := x509.ParsePKCS8PrivateKey(keyDER)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -210,7 +210,7 @@ func (s *Server) delMux(mux *yamux.Session) {
 }
 
 func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service string, t *tunnel, tag string) (*yamux.Session, error) {
-	muxcfg := cfg.NewMuxConfig(peerName, t != nil)
+	muxcfg := cfg.NewMuxConfig(t != nil)
 	handshakeFunc := yamux.Server
 	if t != nil {
 		handshakeFunc = yamux.Client
@@ -249,23 +249,22 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 	return listener, err
 }
 
-func (s *Server) Unlisten(listener net.Listener) {
-	ioClose(listener)
-	slog.Infof("listener close: %v", listener.Addr())
-}
-
+// cfgMu is held
 func (s *Server) reloadTunnels(cfg *config.File) error {
 	s.tunnelsMu.Lock()
 	defer s.tunnelsMu.Unlock()
 	for name, t := range s.tunnels {
-		if _, ok := cfg.Peers[name]; !ok {
+		if tuncfg, ok := cfg.Peers[name]; !ok || tuncfg.Disabled {
 			if err := t.Stop(); err != nil {
 				slog.Errorf("tunnel %q: %s", name, formats.Error(err))
 			}
 			delete(s.tunnels, name)
 		}
 	}
-	for name := range cfg.Peers {
+	for name, tuncfg := range cfg.Peers {
+		if tuncfg.Disabled {
+			continue
+		}
 		t := &tunnel{
 			peerName: name, s: s,
 			mux:       make(map[*yamux.Session]string),
@@ -363,6 +362,7 @@ func (s *Server) LoadConfig(cfg *config.File) error {
 	if err != nil {
 		return err
 	}
+	s.reloadTunnels(cfg)
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
 	s.cfg = cfg

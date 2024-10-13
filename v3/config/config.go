@@ -12,14 +12,6 @@ type Tunnel struct {
 	Listen string `json:"listen,omitempty"`
 	// (optional) remote service name
 	Service string `json:"service,omitempty"`
-	// (optional) true for overwritting the global value
-	NoRedial bool `json:"noredial,omitempty"`
-	// (optional) non-zero for overwritting the global value
-	KeepAlive int `json:"keepalive,omitempty"`
-	// (optional) non-zero for overwritting the global value
-	AcceptBacklog int `json:"backlog,omitempty"`
-	// (optional) non-zero for overwritting the global value
-	StreamWindow uint32 `json:"window,omitempty"`
 }
 
 type KeyPair struct {

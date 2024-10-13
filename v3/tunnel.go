@@ -82,8 +82,8 @@ func (t *tunnel) redial() {
 }
 
 func (t *tunnel) scheduleRedial() <-chan time.Time {
-	_, _, c := t.getConfig()
-	if !c.NoRedial || c.MuxDial == "" || t.redialCount < 1 {
+	cfg, _, tuncfg := t.getConfig()
+	if !cfg.NoRedial || tuncfg.MuxDial == "" || t.redialCount < 1 {
 		return make(<-chan time.Time)
 	}
 	n := t.redialCount - 1
@@ -110,7 +110,8 @@ func (t *tunnel) run() {
 		t.mu.Lock()
 		defer t.mu.Unlock()
 		if t.l != nil {
-			t.s.Unlisten(t.l)
+			slog.Infof("listener close: %v", t.l.Addr())
+			ioClose(t.l)
 			t.l = nil
 		}
 		for mux := range t.mux {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"strings"
 	"time"
 
@@ -14,37 +13,6 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 )
-
-func (c *KeyPair) Load() error {
-	if strings.HasPrefix(c.Certificate, "@") {
-		certPEMBlock, err := os.ReadFile(strings.TrimPrefix(c.Certificate, "@"))
-		if err != nil {
-			return err
-		}
-		c.Certificate = string(certPEMBlock)
-	}
-	if strings.HasPrefix(c.PrivateKey, "@") {
-		keyPEMBlock, err := os.ReadFile(strings.TrimPrefix(c.PrivateKey, "@"))
-		if err != nil {
-			return err
-		}
-		c.PrivateKey = string(keyPEMBlock)
-	}
-	return nil
-}
-
-func (p CertPool) Load() error {
-	for i, cert := range p {
-		if strings.HasPrefix(cert, "@") {
-			certPEMBlock, err := os.ReadFile(strings.TrimPrefix(cert, "@"))
-			if err != nil {
-				return err
-			}
-			p[i] = string(certPEMBlock)
-		}
-	}
-	return nil
-}
 
 func (p CertPool) NewX509CertPool() (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
@@ -122,19 +90,12 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 }
 
 // NewMuxConfig creates yamux.Config
-func (c *File) NewMuxConfig(peerName string, isDialed bool) *yamux.Config {
+func (c *File) NewMuxConfig(isDialed bool) *yamux.Config {
 	acceptBacklog := c.AcceptBacklog
 	streamWindow := c.StreamWindow
 	keepAlive := c.ServerKeepAlive
 	if isDialed {
 		keepAlive = c.KeepAlive
-	}
-	if t, ok := c.Peers[peerName]; ok {
-		acceptBacklog = t.AcceptBacklog
-		streamWindow = t.StreamWindow
-		if isDialed {
-			keepAlive = t.KeepAlive
-		}
 	}
 
 	keepAliveInterval := time.Duration(keepAlive) * time.Second
