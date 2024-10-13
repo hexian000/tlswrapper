@@ -16,7 +16,7 @@ echo "+ version: ${VERSION}"
 
 set -e
 MODROOT="./v3"
-PACKAGE="./cmd/tlswrapper"
+PACKAGE="./cmd"
 OUT="$(realpath ./build)/tlswrapper"
 GOFLAGS="-trimpath"
 GCFLAGS=""

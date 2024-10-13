@@ -1,4 +1,4 @@
-package tlswrapper
+package main
 
 import (
 	"crypto/ecdsa"
@@ -19,11 +19,11 @@ import (
 
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
+	"github.com/hexian000/tlswrapper/v3"
 	"github.com/hexian000/tlswrapper/v3/config"
 )
 
-func DumpConfig() {
-	f := &Flags
+func dumpConfig(f *tlswrapper.AppFlags) {
 	cfg, err := config.LoadFile(f.Config)
 	if err != nil {
 		slog.Fatal("dumpconfig: ", formats.Error(err))
@@ -53,7 +53,7 @@ func newCertificate(parent *x509.Certificate, signKey any, sni string, pubKey an
 	now := time.Now()
 	tmpl := x509.Certificate{
 		NotBefore:    now,
-		NotAfter:     now.AddDate(100, 0, 0),
+		NotAfter:     now.AddDate(0, 0, 36500),
 		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
 			Country:            []string{"US"},
@@ -78,7 +78,6 @@ func newCertificate(parent *x509.Certificate, signKey any, sni string, pubKey an
 	}
 	rawCert, err := x509.CreateCertificate(rand.Reader, &tmpl, parent, pubKey, signKey)
 	if err != nil {
-		err = fmt.Errorf("X.509: %s", formats.Error(err))
 		return
 	}
 	certPEM = pem.EncodeToMemory(&pem.Block{
@@ -191,8 +190,7 @@ func writeKeyPair(name string, certPEM, keyPEM []byte) error {
 	return nil
 }
 
-func GenCerts() {
-	f := &Flags
+func genCerts(f *tlswrapper.AppFlags) {
 	wg := &sync.WaitGroup{}
 	keygen, err := makeKeyGenerator(f.KeyType, f.KeySize)
 	if err != nil {

@@ -46,11 +46,11 @@ func main() {
 		os.Exit(1)
 	}
 	if f.DumpConfig {
-		tlswrapper.DumpConfig()
+		dumpConfig(f)
 		return
 	}
 	if f.GenCerts != "" {
-		tlswrapper.GenCerts()
+		genCerts(f)
 		return
 	}
 	cfg, err := config.LoadFile(f.Config)
