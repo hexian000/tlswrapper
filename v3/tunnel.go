@@ -70,7 +70,10 @@ func (t *tunnel) cleanMux() {
 	for ss := range t.mux {
 		if ss.IsClosed() {
 			delete(t.mux, ss)
-		} else if len(t.mux) > 1 && ss.NumStreams() == 0 {
+		}
+	}
+	for ss := range t.mux {
+		if len(t.mux) > 1 && ss.NumStreams() == 0 {
 			ioClose(ss)
 			delete(t.mux, ss)
 		}
@@ -98,6 +101,7 @@ func (t *tunnel) redial() {
 }
 
 func (t *tunnel) maintenance() {
+	t.cleanMux()
 	n := t.NumSessions()
 	if n < 1 {
 		cfg, _, tuncfg := t.getConfig()
@@ -106,7 +110,6 @@ func (t *tunnel) maintenance() {
 		}
 		return
 	}
-	t.cleanMux()
 }
 
 func (t *tunnel) schedule() <-chan time.Time {
