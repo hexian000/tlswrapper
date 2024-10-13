@@ -17,9 +17,10 @@ var (
 type AppFlags struct {
 	Help       bool
 	Config     string
+	ImportCert string
 	ServerName string
 	GenCerts   string
-	ImportCert string
+	Sign       string
 	KeyType    string
 	KeySize    int
 }
