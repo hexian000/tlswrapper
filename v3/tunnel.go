@@ -63,12 +63,15 @@ func (t *tunnel) Stop() error {
 }
 
 func (t *tunnel) redial() {
+	if mux := t.getMux(); mux != nil {
+		return
+	}
 	ctx := t.s.ctx.withTimeout()
 	if ctx == nil {
 		return
 	}
 	defer t.s.ctx.cancel(ctx)
-	_, err := t.dial(ctx)
+	_, err := t.muxDial(ctx)
 	if err != nil && !errors.Is(err, ErrNoDialAddress) && !errors.Is(err, ErrDialInProgress) {
 		redialCount := t.redialCount + 1
 		if redialCount > t.redialCount {
@@ -201,18 +204,15 @@ func (t *tunnel) NumSessions() int {
 	return len(t.mux)
 }
 
-func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
-	if !t.dialMu.TryLock() {
-		return nil, ErrDialInProgress
-	}
-	defer t.dialMu.Unlock()
-	if mux := t.getMux(); mux != nil {
-		return mux, nil
-	}
+func (t *tunnel) muxDial(ctx context.Context) (*yamux.Session, error) {
 	cfg, tlscfg, tuncfg := t.getConfig()
 	if tuncfg.MuxDial == "" {
 		return nil, ErrNoDialAddress
 	}
+	if !t.dialMu.TryLock() {
+		return nil, ErrDialInProgress
+	}
+	defer t.dialMu.Unlock()
 	start := time.Now()
 	conn, err := t.s.dialer.DialContext(ctx, network, tuncfg.MuxDial)
 	if err != nil {
@@ -254,11 +254,11 @@ func (t *tunnel) dial(ctx context.Context) (*yamux.Session, error) {
 	return mux, nil
 }
 
-func (t *tunnel) MuxDial(ctx context.Context) (net.Conn, error) {
+func (t *tunnel) Dial(ctx context.Context) (net.Conn, error) {
 	mux := t.getMux()
 	if mux == nil {
 		var err error
-		if mux, err = t.dial(ctx); err != nil {
+		if mux, err = t.muxDial(ctx); err != nil {
 			return nil, err
 		}
 	}

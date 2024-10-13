@@ -131,7 +131,7 @@ type TunnelHandler struct {
 }
 
 func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
-	dialed, err := h.t.MuxDial(ctx)
+	dialed, err := h.t.Dial(ctx)
 	if err != nil {
 		if errors.Is(err, ErrDialInProgress) {
 			slog.Debugf("%v -> %q: %s", accepted.RemoteAddr(), h.t.peerName, formats.Error(err))
