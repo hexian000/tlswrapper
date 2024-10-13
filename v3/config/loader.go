@@ -2,13 +2,11 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"os"
 	"strings"
 
-	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 )
 
@@ -94,22 +92,7 @@ func rangeCheckInt(key string, value int, min int, max int) error {
 	return nil
 }
 
-func (c *Tunnel) Validate() error {
-	if c.Disabled {
-		return nil
-	}
-	if c.MuxDial == "" && c.Listen == "" && c.Service == "" {
-		return errors.New("empty tunnel config")
-	}
-	return nil
-}
-
 func (c *File) Validate() error {
-	for name, tuncfg := range c.Peers {
-		if err := tuncfg.Validate(); err != nil {
-			return fmt.Errorf("tunnel %q: %s", name, formats.Error(err))
-		}
-	}
 	if err := rangeCheckInt("keepalive", c.KeepAlive, 0, 86400); err != nil {
 		return err
 	}
