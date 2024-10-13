@@ -17,7 +17,7 @@ var (
 type AppFlags struct {
 	Help       bool
 	Config     string
-	ImportCert string
+	DumpConfig bool
 	ServerName string
 	GenCerts   string
 	Sign       string
@@ -29,9 +29,9 @@ func (f *AppFlags) Validate() error {
 	if f.Help {
 		return nil
 	}
-	if f.ImportCert != "" {
+	if f.DumpConfig {
 		if f.Config == "" {
-			return errors.New("`-importcert' requires `-c'")
+			return errors.New("`-dumpconfig' requires `-c'")
 		}
 		return nil
 	}

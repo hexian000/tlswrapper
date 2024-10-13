@@ -23,7 +23,7 @@ func init() {
 func parseFlags(f *tlswrapper.AppFlags) {
 	flag.BoolVar(&f.Help, "h", false, "help")
 	flag.StringVar(&f.Config, "c", "", "config file")
-	flag.StringVar(&f.ImportCert, "importcert", "", "import PEM files and generate a new config file")
+	flag.BoolVar(&f.DumpConfig, "dumpconfig", false, "dump config file to stdout")
 	flag.StringVar(&f.ServerName, "sni", "example.com", "server name")
 	flag.StringVar(&f.GenCerts, "gencerts", "", "comma-separated name list, generate key pairs as <name>-cert.pem, <name>-key.pem")
 	flag.StringVar(&f.Sign, "sign", "", "sign the certificate with <name>-cert.pem, <name>-key.pem")
@@ -45,8 +45,8 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	if f.ImportCert != "" {
-		tlswrapper.ImportCert()
+	if f.DumpConfig {
+		tlswrapper.DumpConfig()
 		return
 	}
 	if f.GenCerts != "" {

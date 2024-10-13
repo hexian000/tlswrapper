@@ -60,7 +60,7 @@ type File struct {
 	// (optional) max concurrent incoming sessions, default to 128
 	MaxSessions int `json:"maxsessions"`
 	// (optional) don't keep tunnels connected, default to false
-	NoRedial bool `json:"noredial"`
+	NoRedial bool `json:"noredial,omitempty"`
 	// (optional) client-side keep alive interval in seconds, 0 for disable, default to 25 (every 25s)
 	KeepAlive int `json:"keepalive"`
 	// (optional) server-side keep alive interval in seconds, 0 for disable, default to 300 (every 5min)
@@ -90,7 +90,6 @@ var Default = File{
 	StartupLimitFull:   60,
 	MaxConn:            16384,
 	MaxSessions:        128,
-	NoRedial:           true,
 	KeepAlive:          25,  // every 25s
 	ServerKeepAlive:    300, // every 5min
 	AcceptBacklog:      256,

@@ -22,30 +22,32 @@ import (
 	"github.com/hexian000/tlswrapper/v3/config"
 )
 
-func importCert(inCfg, outCfg string) error {
+func dumpConfig(inCfg, outCfg string) (string, error) {
 	cfg, err := config.LoadFile(inCfg)
 	if err != nil {
-		return fmt.Errorf("load config: %s", formats.Error(err))
+		return "", fmt.Errorf("load config: %s", formats.Error(err))
 	}
 	b, err := cfg.Dump()
 	if err != nil {
-		return fmt.Errorf("dump config: %s", formats.Error(err))
+		return "", fmt.Errorf("dump config: %s", formats.Error(err))
 	}
-	err = os.WriteFile(outCfg, b, 0600)
-	if err != nil {
-		return fmt.Errorf("write config: %s", formats.Error(err))
-	}
-	return nil
+	return string(b), nil
 }
 
-func ImportCert() {
+func DumpConfig() {
 	f := &Flags
-	err := importCert(f.Config, f.ImportCert)
+	cfg, err := config.LoadFile(f.Config)
 	if err != nil {
-		slog.Fatal("importcert: ", formats.Error(err))
+		slog.Fatal("dumpconfig: ", formats.Error(err))
 		os.Exit(1)
 	}
-	slog.Notice("importcert: ok")
+	b, err := cfg.Dump()
+	if err != nil {
+		slog.Fatal("dumpconfig: ", formats.Error(err))
+		os.Exit(1)
+	}
+	println(string(b))
+	slog.Notice("dumpconfig: ok")
 }
 
 type keyGenerator func() (pubKey any, key any, err error)
