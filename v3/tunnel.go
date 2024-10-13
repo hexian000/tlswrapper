@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"sync"
 	"time"
@@ -62,10 +63,22 @@ func (t *tunnel) Stop() error {
 	return nil
 }
 
-func (t *tunnel) redial() {
-	if mux := t.getMux(); mux != nil {
-		return
+func (t *tunnel) cleanMux() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	num := len(t.mux)
+	for ss := range t.mux {
+		if ss.IsClosed() {
+			delete(t.mux, ss)
+		} else if len(t.mux) > 1 && ss.NumStreams() == 0 {
+			ioClose(ss)
+			delete(t.mux, ss)
+		}
 	}
+	t.s.numSessions.Add(uint32(len(t.mux) - num))
+}
+
+func (t *tunnel) redial() {
 	ctx := t.s.ctx.withTimeout()
 	if ctx == nil {
 		return
@@ -84,10 +97,24 @@ func (t *tunnel) redial() {
 	t.redialCount = 0
 }
 
-func (t *tunnel) scheduleRedial() <-chan time.Time {
+func (t *tunnel) maintenance() {
+	n := t.NumSessions()
+	if n < 1 {
+		cfg, _, tuncfg := t.getConfig()
+		if !cfg.NoRedial && tuncfg.MuxDial != "" {
+			t.redial()
+		}
+		return
+	}
+	t.cleanMux()
+}
+
+func (t *tunnel) schedule() <-chan time.Time {
 	cfg, _, tuncfg := t.getConfig()
-	if !cfg.NoRedial || tuncfg.MuxDial == "" || t.redialCount < 1 {
-		return make(<-chan time.Time)
+	if cfg.NoRedial || tuncfg.MuxDial == "" || t.redialCount < 1 {
+		pause := 10 * time.Minute
+		pause += time.Duration(rand.Int63n(int64(10 * time.Minute)))
+		return time.After(pause)
 	}
 	n := t.redialCount - 1
 	var waitTimeConst = [...]time.Duration{
@@ -123,12 +150,12 @@ func (t *tunnel) run() {
 		}
 	}()
 	for {
-		t.redial()
+		t.maintenance()
 		select {
 		case <-t.closeSig:
 			return
 		case <-t.redialSig:
-		case <-t.scheduleRedial():
+		case <-t.schedule():
 		case <-t.s.g.CloseC():
 			// server shutdown
 			return
@@ -190,12 +217,19 @@ func (t *tunnel) delMux(mux *yamux.Session) {
 func (t *tunnel) getMux() *yamux.Session {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	for mux := range t.mux {
-		if !mux.IsClosed() {
-			return mux
+	var mux *yamux.Session
+	maxNumStreams := 0
+	for ss := range t.mux {
+		if ss.IsClosed() {
+			continue
+		}
+		numStreams := ss.NumStreams()
+		if mux == nil || numStreams > maxNumStreams {
+			mux = ss
+			maxNumStreams = numStreams
 		}
 	}
-	return nil
+	return mux
 }
 
 func (t *tunnel) NumSessions() int {
