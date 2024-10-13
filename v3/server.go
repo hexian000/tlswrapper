@@ -220,16 +220,17 @@ func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service str
 		ioClose(conn)
 		return nil, err
 	}
+	h := &ForwardHandler{s, peerName, service}
 	serveFunc := func() {
 		s.addMux(mux, tag)
 		defer s.delMux(mux)
-		s.Serve(mux, &ForwardHandler{s, peerName, service})
+		s.Serve(mux, h)
 	}
 	if peerTun := s.findTunnel(peerName); peerTun != nil {
 		serveFunc = func() {
 			peerTun.addMux(mux, tag)
 			defer peerTun.delMux(mux)
-			s.Serve(mux, &ForwardHandler{s, peerName, service})
+			s.Serve(mux, h)
 		}
 	}
 	if err := s.g.Go(serveFunc); err != nil {
@@ -249,7 +250,6 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 	return listener, err
 }
 
-// cfgMu is held
 func (s *Server) reloadTunnels(cfg *config.File) error {
 	s.tunnelsMu.Lock()
 	defer s.tunnelsMu.Unlock()
