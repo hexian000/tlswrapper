@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"runtime/debug"
@@ -187,22 +188,27 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 }
 
 func (s *Server) addMux(mux *yamux.Session, tag string) {
-	slog.Infof("%s: mux established", tag)
+	now := time.Now()
+	msg := fmt.Sprintf("%s: session established", tag)
+	slog.Info(msg)
+	s.recentEvents.Add(now, msg)
+
 	s.muxMu.Lock()
 	defer s.muxMu.Unlock()
 	s.mux[mux] = tag
 }
 
-func (s *Server) getMuxTag(mux *yamux.Session) (string, bool) {
-	s.muxMu.RLock()
-	defer s.muxMu.RUnlock()
-	tag, ok := s.mux[mux]
-	return tag, ok
-}
-
 func (s *Server) delMux(mux *yamux.Session) {
-	if tag, ok := s.getMuxTag(mux); ok {
-		slog.Infof("%s: mux connection lost", tag)
+	now := time.Now()
+	if tag, ok := func() (string, bool) {
+		s.muxMu.RLock()
+		defer s.muxMu.RUnlock()
+		tag, ok := s.mux[mux]
+		return tag, ok
+	}(); ok {
+		msg := fmt.Sprintf("%s: session closed", tag)
+		slog.Info(msg)
+		s.recentEvents.Add(now, msg)
 	}
 	s.muxMu.Lock()
 	defer s.muxMu.Unlock()

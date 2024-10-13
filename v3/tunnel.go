@@ -170,7 +170,7 @@ func (t *tunnel) run() {
 
 func (t *tunnel) addMux(mux *yamux.Session, tag string) {
 	now := time.Now()
-	msg := fmt.Sprintf("%s: tunnel established", tag)
+	msg := fmt.Sprintf("%s: session established", tag)
 	slog.Info(msg)
 	t.s.recentEvents.Add(now, msg)
 
@@ -195,7 +195,7 @@ func (t *tunnel) delMux(mux *yamux.Session) {
 		tag, ok := t.mux[mux]
 		return tag, ok
 	}(); ok {
-		msg := fmt.Sprintf("%s: tunnel connection closed", tag)
+		msg := fmt.Sprintf("%s: session closed", tag)
 		slog.Info(msg)
 		t.s.recentEvents.Add(now, msg)
 	}
