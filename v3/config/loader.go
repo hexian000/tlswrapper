@@ -1,93 +1,49 @@
 package config
 
 import (
-	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 )
 
-func ParsePEM(data []byte, blockType string) []byte {
-	var p *pem.Block
-	b := data
-	for {
-		p, b = pem.Decode(b)
-		if p == nil || p.Type == blockType {
-			return p.Bytes
-		}
-	}
-}
-
-func readX509File(path string, blockType string) ([]byte, error) {
-	switch filepath.Ext(path) {
-	case ".pem":
-		certPEM, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		certDER := ParsePEM(certPEM, blockType)
-		if certDER == nil {
-			return nil, fmt.Errorf("%s: %q not found", blockType, path)
-		}
-		return certDER, nil
-	case ".der":
-		certDER, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		return certDER, nil
-	}
-	return nil, fmt.Errorf("%s: supported formats are .pem, .der", path)
-
-}
-
-func loadX509(s string, blockType string) ([]byte, error) {
-	if strings.HasPrefix(s, "=") {
-		return base64.StdEncoding.DecodeString(strings.TrimPrefix(s, "="))
-	}
+func loadPEM(s string) (string, error) {
 	if strings.HasPrefix(s, "@") {
-		certDER, err := readX509File(strings.TrimPrefix(s, "@"), blockType)
+		certPEM, err := os.ReadFile(strings.TrimPrefix(s, "@"))
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		return certDER, nil
+		return string(certPEM), nil
 	}
-	certDER := ParsePEM([]byte(s), blockType)
-	if certDER == nil {
-		return nil, errors.New("unable to parse PEM")
-	}
-	return certDER, nil
+	return s, nil
 }
 
 func (c *KeyPair) Load() error {
-	certDER, err := loadX509(c.Certificate, "CERTIFICATE")
+	certPEM, err := loadPEM(c.Certificate)
 	if err != nil {
 		return err
 	}
-	keyDER, err := loadX509(c.PrivateKey, "PRIVATE KEY")
+	c.Certificate = certPEM
+	keyPEM, err := loadPEM(c.PrivateKey)
 	if err != nil {
 		return err
 	}
-	c.Certificate = "=" + base64.StdEncoding.EncodeToString(certDER)
-	c.PrivateKey = "=" + base64.StdEncoding.EncodeToString(keyDER)
+	c.PrivateKey = keyPEM
 	return nil
 }
 
 func (p CertPool) Load() error {
 	for i, cert := range p {
-		certDER, err := loadX509(cert, "CERTIFICATE")
+		certPEM, err := loadPEM(cert)
 		if err != nil {
 			return err
 		}
-		p[i] = "=" + base64.StdEncoding.EncodeToString(certDER)
+		p[i] = certPEM
 	}
 	return nil
 }

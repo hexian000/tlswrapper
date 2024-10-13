@@ -138,13 +138,24 @@ func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
 	return nil, errors.New("invalid key type")
 }
 
+func parsePEM(data []byte, blockType string) []byte {
+	var p *pem.Block
+	b := data
+	for {
+		p, b = pem.Decode(b)
+		if p == nil || p.Type == blockType {
+			return p.Bytes
+		}
+	}
+}
+
 func readKeyPair(name string) (*x509.Certificate, any, error) {
 	certFile, keyFile := name+"-cert.pem", name+"-key.pem"
 	certPEM, err := os.ReadFile(certFile)
 	if err != nil {
 		return nil, nil, err
 	}
-	certDER := config.ParsePEM(certPEM, "CERTIFICATE")
+	certDER := parsePEM(certPEM, "CERTIFICATE")
 	if certDER == nil {
 		return nil, nil, fmt.Errorf("%s: certificate not found", certFile)
 	}
@@ -156,7 +167,7 @@ func readKeyPair(name string) (*x509.Certificate, any, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	keyDER := config.ParsePEM(keyPEM, "PRIVATE KEY")
+	keyDER := parsePEM(keyPEM, "PRIVATE KEY")
 	if keyDER == nil {
 		return nil, nil, fmt.Errorf("%s: private key not found", keyFile)
 	}
