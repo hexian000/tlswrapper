@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -13,6 +14,23 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 )
+
+func (cfg *File) SetLogger(l *slog.Logger) error {
+	switch cfg.Log {
+	case "discard":
+		l.SetOutput(slog.OutputDiscard)
+	case "stdout":
+		l.SetOutput(slog.OutputWriter, os.Stdout)
+	case "stderr":
+		l.SetOutput(slog.OutputWriter, os.Stderr)
+	case "syslog":
+		l.SetOutput(slog.OutputSyslog, "tlswrapper")
+	default:
+		return fmt.Errorf("unknown log output: %s", cfg.Log)
+	}
+	l.SetLevel(cfg.LogLevel)
+	return nil
+}
 
 func (p CertPool) NewX509CertPool() (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
@@ -80,11 +98,11 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 	const calldepth = 4
 	raw := strings.TrimSuffix(string(p), "\n")
 	if msg := strings.TrimPrefix(raw, "[ERR] "); len(msg) != len(raw) {
-		w.Output(calldepth, slog.LevelError, []byte(msg))
+		w.Output(calldepth, slog.LevelError, msg)
 	} else if msg := strings.TrimPrefix(raw, "[WARN] "); len(msg) != len(raw) {
-		w.Output(calldepth, slog.LevelWarning, []byte(msg))
+		w.Output(calldepth, slog.LevelWarning, msg)
 	} else {
-		w.Output(calldepth, slog.LevelError, p)
+		w.Output(calldepth, slog.LevelError, string(p))
 	}
 	return len(p), nil
 }

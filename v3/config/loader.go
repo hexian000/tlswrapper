@@ -70,8 +70,7 @@ func Load(b []byte) (*File, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	slog.Default().SetLevel(cfg.LogLevel)
-	if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
+	if err := cfg.SetLogger(slog.Default()); err != nil {
 		return nil, err
 	}
 	if slog.CheckLevel(slog.LevelVeryVerbose) {

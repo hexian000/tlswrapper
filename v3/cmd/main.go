@@ -16,8 +16,10 @@ import (
 )
 
 func init() {
-	slog.Default().SetFilePrefix("github.com/hexian000/tlswrapper/v3/")
-	slog.Default().SetOutputConfig("stdout", "tlswrapper")
+	std := slog.Default()
+	std.SetFilePrefix("github.com/hexian000/tlswrapper/v3/")
+	std.SetOutput(slog.OutputWriter, os.Stdout)
+	std.SetLevel(slog.LevelVerbose)
 }
 
 func parseFlags(f *tlswrapper.AppFlags) {
