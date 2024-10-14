@@ -369,10 +369,13 @@ func (s *Server) LoadConfig(cfg *config.File) error {
 		return err
 	}
 	s.reloadTunnels(cfg)
-	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-	s.cfg = cfg
-	s.tlscfg = tlscfg
+	func() {
+		s.cfgMu.Lock()
+		defer s.cfgMu.Unlock()
+		s.cfg = cfg
+		s.tlscfg = tlscfg
+	}()
+	s.recentEvents.Add(time.Now(), "config reloaded")
 	return nil
 }
 

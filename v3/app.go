@@ -29,18 +29,14 @@ func (f *AppFlags) Validate() error {
 	if f.Help {
 		return nil
 	}
-	if f.DumpConfig {
-		if f.Config == "" {
-			return errors.New("`-dumpconfig' requires `-c'")
-		}
-		return nil
-	}
 	if f.GenCerts != "" {
 		return nil
 	}
-	// server mode
 	if f.Config == "" {
 		return errors.New("config file is not specified")
+	}
+	if f.DumpConfig {
+		return nil
 	}
 	return nil
 }
@@ -50,6 +46,6 @@ var Flags AppFlags
 func ioClose(c io.Closer) {
 	if err := c.Close(); err != nil {
 		msg := fmt.Sprintf("close: %s", formats.Error(err))
-		slog.Output(2, slog.LevelWarning, []byte(msg))
+		slog.Output(2, slog.LevelWarning, msg)
 	}
 }

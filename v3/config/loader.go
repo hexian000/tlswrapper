@@ -74,6 +74,11 @@ func Load(b []byte) (*File, error) {
 	if err := slog.Default().SetOutputConfig(cfg.Log, "tlswrapper"); err != nil {
 		return nil, err
 	}
+	if slog.CheckLevel(slog.LevelVeryVerbose) {
+		if b, err := cfg.Dump(); err == nil {
+			slog.Text(slog.LevelVeryVerbose, string(b), "load config")
+		}
+	}
 	return &cfg, nil
 }
 

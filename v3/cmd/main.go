@@ -45,12 +45,12 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	if f.DumpConfig {
-		dumpConfig(f)
-		return
-	}
 	if f.GenCerts != "" {
 		genCerts(f)
+		return
+	}
+	if f.DumpConfig {
+		dumpConfig(f)
 		return
 	}
 	cfg, err := config.LoadFile(f.Config)
