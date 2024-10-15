@@ -46,6 +46,6 @@ var Flags AppFlags
 func ioClose(c io.Closer) {
 	if err := c.Close(); err != nil {
 		msg := fmt.Sprintf("close: %s", formats.Error(err))
-		slog.Output(2, slog.LevelWarning, msg)
+		slog.Output(2, slog.LevelWarning, nil, msg)
 	}
 }

@@ -98,11 +98,11 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 	const calldepth = 4
 	raw := strings.TrimSuffix(string(p), "\n")
 	if msg := strings.TrimPrefix(raw, "[ERR] "); len(msg) != len(raw) {
-		w.Output(calldepth, slog.LevelError, msg)
+		w.Output(calldepth, slog.LevelError, nil, msg)
 	} else if msg := strings.TrimPrefix(raw, "[WARN] "); len(msg) != len(raw) {
-		w.Output(calldepth, slog.LevelWarning, msg)
+		w.Output(calldepth, slog.LevelWarning, nil, msg)
 	} else {
-		w.Output(calldepth, slog.LevelError, string(p))
+		w.Output(calldepth, slog.LevelError, nil, string(p))
 	}
 	return len(p), nil
 }
