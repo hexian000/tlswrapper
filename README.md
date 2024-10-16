@@ -23,7 +23,7 @@ Status: **Stable**
     - [client.json](#clientjson-1)
     - [Options](#options)
   - [Start](#start)
-- [Building from Source](#building-from-source)
+- [Building/Installing from Source](#buildinginstalling-from-source)
 - [Credits](#credits)
 
 ## Features
@@ -205,15 +205,19 @@ See [config.json](config.json) for example config file.
 ./tlswrapper -c client.json
 ```
 
-## Building from Source
+## Building/Installing from Source
 
 ```sh
 # get source code
 git clone https://github.com/hexian000/tlswrapper.git
 cd tlswrapper
-git checkout <some version>
-# build an executable for local system
+# checkout tagged version
+git checkout v2.0.4
+# build release executable
 ./make.sh r
+
+# or install the latest development version
+go install github.com/hexian000/tlswrapper/v3/cmd/tlswrapper@latest
 ```
 
 ## Credits

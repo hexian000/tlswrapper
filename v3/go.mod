@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/hashicorp/yamux v0.1.2
-	github.com/hexian000/gosnippets v0.0.0-20241015120856-8001dcb5a2b3
+	github.com/hexian000/gosnippets v0.0.0-20241016005926-0cf7e5469cb1
 )
 
 require (

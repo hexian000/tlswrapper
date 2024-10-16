@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
@@ -13,6 +16,15 @@ var (
 	Version  = "dev"
 	Homepage = "https://github.com/hexian000/tlswrapper"
 )
+
+func init() {
+	std := slog.Default()
+	if _, file, _, ok := runtime.Caller(0); ok {
+		std.SetFilePrefix(filepath.Dir(file) + "/")
+	}
+	std.SetOutput(slog.OutputWriter, os.Stdout)
+	std.SetLevel(slog.LevelVerbose)
+}
 
 type AppFlags struct {
 	Help       bool

@@ -15,13 +15,6 @@ import (
 	"github.com/hexian000/tlswrapper/v3/config"
 )
 
-func init() {
-	std := slog.Default()
-	std.SetFilePrefix("github.com/hexian000/tlswrapper/v3/")
-	std.SetOutput(slog.OutputWriter, os.Stdout)
-	std.SetLevel(slog.LevelVerbose)
-}
-
 func parseFlags(f *tlswrapper.AppFlags) {
 	flag.BoolVar(&f.Help, "h", false, "help")
 	flag.StringVar(&f.Config, "c", "", "config file")
