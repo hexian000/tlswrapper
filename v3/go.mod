@@ -4,8 +4,10 @@ go 1.21
 
 require (
 	github.com/hashicorp/yamux v0.1.2
-	github.com/hexian000/gosnippets v0.0.0-20241016005926-0cf7e5469cb1
+	github.com/hexian000/gosnippets v0.0.0-20241016081842-b6b5f48362a6
 )
+
+// replace github.com/hexian000/gosnippets => ../../gosnippets
 
 require (
 	github.com/mattn/go-runewidth v0.0.16 // indirect

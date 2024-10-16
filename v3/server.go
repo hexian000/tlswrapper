@@ -81,7 +81,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 		cfg, _ := s.getConfig()
 		return cfg.Timeout()
 	}
-	tlscfg, err := cfg.NewTLSConfig(Flags.ServerName)
+	tlscfg, err := cfg.NewTLSConfig(appFlags.ServerName)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +364,7 @@ func (s *Server) Shutdown() error {
 
 // LoadConfig reloads the configuration file
 func (s *Server) LoadConfig(cfg *config.File) error {
-	tlscfg, err := cfg.NewTLSConfig(Flags.ServerName)
+	tlscfg, err := cfg.NewTLSConfig(appFlags.ServerName)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package main
+package tlswrapper
 
 import (
 	"crypto/ecdsa"
@@ -11,30 +11,38 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
+	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
-	"github.com/hexian000/tlswrapper/v3"
 	"github.com/hexian000/tlswrapper/v3/config"
 )
 
-func dumpConfig(f *tlswrapper.AppFlags) {
+func ioClose(c io.Closer) {
+	if err := c.Close(); err != nil {
+		msg := fmt.Sprintf("close: %s", formats.Error(err))
+		slog.Output(2, slog.LevelWarning, nil, msg)
+	}
+}
+
+func dumpConfig(f *AppFlags) int {
 	cfg, err := config.LoadFile(f.Config)
 	if err != nil {
 		slog.Fatal("dumpconfig: ", formats.Error(err))
-		os.Exit(1)
+		return 1
 	}
 	b, err := cfg.Dump()
 	if err != nil {
 		slog.Fatal("dumpconfig: ", formats.Error(err))
-		os.Exit(1)
+		return 1
 	}
 	println(string(b))
+	return 0
 }
 
 type keyGenerator func() (pubKey any, key any, err error)
@@ -190,42 +198,43 @@ func writeKeyPair(name string, certPEM, keyPEM []byte) error {
 	return nil
 }
 
-func genCerts(f *tlswrapper.AppFlags) {
-	wg := &sync.WaitGroup{}
+func genCerts(f *AppFlags) int {
 	keygen, err := makeKeyGenerator(f.KeyType, f.KeySize)
 	if err != nil {
-		slog.Errorf("gencerts: %s", formats.Error(err))
-		return
+		slog.Fatalf("gencerts: %s", formats.Error(err))
+		return 1
 	}
 	var parent *x509.Certificate
 	var signKey any
 	if f.Sign != "" {
 		parent, signKey, err = readKeyPair(f.Sign)
 		if err != nil {
-			slog.Errorf("gencerts: read certificate: %s", formats.Error(err))
-			return
+			slog.Fatalf("gencerts: read certificate: %s", formats.Error(err))
+			return 1
 		}
 	}
+	g := routines.NewGroup()
 	for _, name := range strings.Split(f.GenCerts, ",") {
-		wg.Add(1)
-		go func(name string) {
-			defer wg.Done()
+		name := name
+		if err := g.Go(func() {
 			pubKey, key, err := keygen()
 			if err != nil {
-				slog.Errorf("generate key: %s", formats.Error(err))
-				return
+				panic(fmt.Sprintf("generate key: %s", formats.Error(err)))
 			}
 			certPEM, keyPEM, err := newCertificate(parent, signKey, f.ServerName, pubKey, key)
 			if err != nil {
-				slog.Errorf("gencerts %q: %s", name, formats.Error(err))
-				return
+				panic(fmt.Sprintf("gencerts %q: %s", name, formats.Error(err)))
 			}
 			if err := writeKeyPair(name, certPEM, keyPEM); err != nil {
-				slog.Errorf("gencerts: %s", formats.Error(err))
-				return
+				panic(fmt.Sprintf("gencerts %q: %s", name, formats.Error(err)))
 			}
-		}(name)
+		}); err != nil {
+			panic(err)
+		}
 	}
-	wg.Wait()
+	if err := g.Wait(); err != nil {
+		return 1
+	}
 	slog.Notice("gencerts: ok")
+	return 0
 }
