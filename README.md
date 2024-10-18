@@ -15,13 +15,8 @@ Status: **Stable**
 - [Authentication Model](#authentication-model)
 - [Quick Start](#quick-start)
   - [Generating Key Pair](#generating-key-pair)
-  - [Creating Config Files (Forward Case)](#creating-config-files-forward-case)
-    - [server.json](#serverjson)
-    - [client.json](#clientjson)
-  - [Creating Config Files (Reverse Case)](#creating-config-files-reverse-case)
-    - [server.json](#serverjson-1)
-    - [client.json](#clientjson-1)
-    - [Options](#options)
+  - [Creating Config Files](#creating-config-files)
+    - [Notes](#notes)
   - [Start](#start)
 - [Building/Installing from Source](#buildinginstalling-from-source)
 - [Credits](#credits)
@@ -76,26 +71,39 @@ TLS behavior is based on "crypto/tls" library in [Go](https://github.com/golang/
 # ca-cert.pem, ca-key.pem
 
 # generate peer certificates
-./tlswrapper -gencerts client,server -sign ca
-# client-cert.pem, client-key.pem, server-cert.pem, server-key.pem
+./tlswrapper -gencerts peer0,peer1,peer2 -sign ca
+# peerN-cert.pem, peerN-key.pem
 ```
 
 Adding a certificate to `"authcerts"` will allow all certificates signed by it (including itself).
 
-### Creating Config Files (Forward Case)
+### Creating Config Files
 
-#### server.json
+Example:
+
+`client -> peer1 -> peer0 <- peer2 -> server`
+
+For simpler cases, just remove the unused fragments.
+
+**peer0.json**: If peer name is `peer2`, ask for `myhttp` service.
 
 ```json
 {
+  "peername": "peer0",
   "muxlisten": "0.0.0.0:38000",
   "services": {
-    "http": "127.0.0.1:8080"
+    "myhttp-peer2": "127.0.0.1:8080"
+  },
+  "peers": {
+    "peer2": {
+      "listen": "127.0.0.1:8080",
+      "service": "myhttp"
+    }
   },
   "certs": [
     {
-      "cert": "@server-cert.pem",
-      "key": "@server-key.pem"
+      "cert": "@peer0-cert.pem",
+      "key": "@peer0-key.pem"
     }
   ],
   "authcerts": [
@@ -104,21 +112,22 @@ Adding a certificate to `"authcerts"` will allow all certificates signed by it (
 }
 ```
 
-#### client.json
+**peer1.json**: Ask `peer0` for `myhttp-peer2` service.
 
 ```json
 {
+  "peername": "peer1",
   "peers": {
-    "server": {
+    "peer0": {
       "addr": "example.com:38000",
       "listen": "127.0.0.1:8080",
-      "service": "http"
+      "service": "myhttp-peer2"
     }
   },
   "certs": [
     {
-      "cert": "@client-cert.pem",
-      "key": "@client-key.pem"
+      "cert": "@peer1-cert.pem",
+      "key": "@peer1-key.pem"
     }
   ],
   "authcerts": [
@@ -127,48 +136,23 @@ Adding a certificate to `"authcerts"` will allow all certificates signed by it (
 }
 ```
 
-### Creating Config Files (Reverse Case)
-
-#### server.json
+**peer2.json**: Connect to `peer0`.
 
 ```json
 {
-  "muxlisten": "0.0.0.0:38000",
-  "peers": {
-    "client": {
-      "listen": "127.0.0.1:8080",
-      "service": "http"
-    }
-  },
-  "certs": [
-    {
-      "cert": "@server-cert.pem",
-      "key": "@server-key.pem"
-    }
-  ],
-  "authcerts": [
-    "@ca-cert.pem"
-  ]
-}
-```
-
-#### client.json
-
-```json
-{
-  "peername": "client",
+  "peername": "peer2",
   "services": {
-    "http": "127.0.0.1:8080"
+    "myhttp": "127.0.0.1:8080"
   },
   "peers": {
-    "server": {
+    "peer0": {
       "addr": "example.com:38000"
     }
   },
   "certs": [
     {
-      "cert": "@client-cert.pem",
-      "key": "@client-key.pem"
+      "cert": "@peer2-cert.pem",
+      "key": "@peer2-key.pem"
     }
   ],
   "authcerts": [
@@ -177,7 +161,9 @@ Adding a certificate to `"authcerts"` will allow all certificates signed by it (
 }
 ```
 
-#### Options
+#### Notes
+
+Feel free to add more services/peers, or bring up forwards/reverses between the same instances.
 
 - "peername": local peer name
 - "muxlisten": listener bind address
