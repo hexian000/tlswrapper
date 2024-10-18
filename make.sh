@@ -27,7 +27,19 @@ case "$1" in
 "all")
     # cross build for all supported platforms
     # not listed platforms are likely to work
-
+    GOFLAGS="${GOFLAGS} -buildmode=pie"
+    LDFLAGS="${LDFLAGS} -s -w"
+    CGO_ENABLED=1
+    set -x
+    GOOS="linux" GOARCH="arm64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-arm64" "${PACKAGE}"
+    GOOS="linux" GOARCH="amd64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-amd64" "${PACKAGE}"
+    GOOS="windows" GOARCH="amd64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
     # static
     GOFLAGS="${GOFLAGS} -buildmode=exe"
     LDFLAGS="${LDFLAGS} -s -w"
@@ -47,20 +59,6 @@ case "$1" in
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.linux-amd64" "${PACKAGE}"
 
-    # pie
-    GOFLAGS="${GOFLAGS} -buildmode=pie"
-    LDFLAGS="${LDFLAGS} -s -w"
-    CGO_ENABLED=1
-    set -x
-    GOOS="linux" GOARCH="arm64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-arm64" "${PACKAGE}"
-    GOOS="linux" GOARCH="amd64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-amd64" "${PACKAGE}"
-    GOOS="windows" GOARCH="amd64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
     ;;
 "x")
     # external toolchain, environment vars need to be set
