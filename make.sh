@@ -31,12 +31,6 @@ case "$1" in
     LDFLAGS="${LDFLAGS} -s -w"
     CGO_ENABLED=1
     set -x
-    GOOS="linux" GOARCH="arm64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-arm64" "${PACKAGE}"
-    GOOS="linux" GOARCH="amd64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-amd64" "${PACKAGE}"
     GOOS="windows" GOARCH="amd64" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
@@ -44,7 +38,6 @@ case "$1" in
     GOFLAGS="${GOFLAGS} -buildmode=exe"
     LDFLAGS="${LDFLAGS} -s -w"
     CGO_ENABLED=0
-    OUT="${OUT}-static"
     set -x
     GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
@@ -79,22 +72,22 @@ case "$1" in
     ls -lh "${OUT}"
     ;;
 "r")
-    GOFLAGS="${GOFLAGS} -buildmode=exe"
+    GOFLAGS="${GOFLAGS} -buildmode=pie"
     LDFLAGS="${LDFLAGS} -s -w"
+    CGO_ENABLED=1
     set -x
     nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
 "p")
-    GOFLAGS="${GOFLAGS} -buildmode=exe"
     set -x
     nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
 "d")
-    GOFLAGS="${GOFLAGS} -buildmode=exe -race"
+    GOFLAGS="${GOFLAGS} -race"
     GCFLAGS="${GCFLAGS} -N -l"
     set -x
     go mod tidy && go fmt ./...
@@ -103,7 +96,6 @@ case "$1" in
     ls -lh "${OUT}"
     ;;
 *)
-    GOFLAGS="${GOFLAGS} -buildmode=exe"
     set -x
     nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
