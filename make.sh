@@ -25,73 +25,95 @@ LDFLAGS="-X github.com/hexian000/tlswrapper/v3.Version=${VERSION}"
 cd "${MODROOT}" && go mod vendor
 case "$1" in
 "x")
-    # cross build for all supported targets
-    # not listed targets are likely to work
+    # cross pie build for all supported platforms
+    GOFLAGS="${GOFLAGS} -buildmode=pie"
     LDFLAGS="${LDFLAGS} -s -w"
     set -x
-    CGO_ENABLED=0 GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-mipsle" "${PACKAGE}"
-    CGO_ENABLED=0 GOOS="linux" GOARCH="arm" GOARM=7 \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-armv7" "${PACKAGE}"
-    CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" \
+    GOOS="linux" GOARCH="arm64" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.linux-arm64" "${PACKAGE}"
-    CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" \
+    GOOS="linux" GOARCH="amd64" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.linux-amd64" "${PACKAGE}"
-    CGO_ENABLED=0 GOOS="windows" GOARCH="amd64" \
+    GOOS="windows" GOARCH="amd64" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
     ;;
+"xs")
+    # cross static build for all supported platforms
+    # not listed platforms are likely to work
+    GOFLAGS="${GOFLAGS} -buildmode=exe"
+    LDFLAGS="${LDFLAGS} -s -w"
+    CGO_ENABLED=0
+    OUT="${OUT}-static"
+    set -x
+    GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-mipsle" "${PACKAGE}"
+    GOOS="linux" GOARCH="arm" GOARM=7 \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-armv7" "${PACKAGE}"
+    GOOS="linux" GOARCH="arm64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-arm64" "${PACKAGE}"
+    GOOS="linux" GOARCH="amd64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-amd64" "${PACKAGE}"
+    ;;
+"s")
+    GOFLAGS="${GOFLAGS} -buildmode=exe"
+    LDFLAGS="${LDFLAGS} -s -w"
+    CGO_ENABLED=0
+    set -x
+    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}" "${PACKAGE}"
+    ls -lh "${OUT}"
+    ;;
 "r")
+    GOFLAGS="${GOFLAGS} -buildmode=exe"
     LDFLAGS="${LDFLAGS} -s -w"
     set -x
-    CGO_ENABLED=0 \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
 "p")
+    GOFLAGS="${GOFLAGS} -buildmode=exe"
     set -x
-    CGO_ENABLED=0 \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}" "${PACKAGE}"
+    ls -lh "${OUT}"
+    ;;
+"pie")
+    GOFLAGS="${GOFLAGS} -buildmode=pie"
+    LDFLAGS="${LDFLAGS} -s -w"
+    set -x
+    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
 "sdk")
     # external toolchain, environment vars need to be set
+    GOFLAGS="${GOFLAGS} -buildmode=exe"
     LDFLAGS="${LDFLAGS} -s -w"
     set -x
-    CGO_ENABLED=1 \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.${OUTEXT}" "${PACKAGE}"
     ;;
-"a")
-    set -x
-    go fmt ./...
-    GOFLAGS="${GOFLAGS} -a -race"
-    GCFLAGS="${GCFLAGS} -N -l"
-    CGO_ENABLED=1 \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}" "${PACKAGE}"
-    ls -lh "${OUT}"
-    ;;
 "d")
-    set -x
-    go fmt ./...
+    GOFLAGS="${GOFLAGS} -buildmode=exe"
     GOFLAGS="${GOFLAGS} -race"
     GCFLAGS="${GCFLAGS} -N -l"
-    CGO_ENABLED=1 \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+    set -x
+    go mod tidy && go fmt ./...
+    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
 *)
+    GOFLAGS="${GOFLAGS} -buildmode=exe"
     set -x
-    CGO_ENABLED=0 \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
