@@ -24,24 +24,11 @@ LDFLAGS="-X github.com/hexian000/tlswrapper/v3.Version=${VERSION}"
 
 cd "${MODROOT}" && go mod vendor
 case "$1" in
-"x")
-    # cross pie build for all supported platforms
-    GOFLAGS="${GOFLAGS} -buildmode=pie"
-    LDFLAGS="${LDFLAGS} -s -w"
-    set -x
-    GOOS="linux" GOARCH="arm64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-arm64" "${PACKAGE}"
-    GOOS="linux" GOARCH="amd64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-amd64" "${PACKAGE}"
-    GOOS="windows" GOARCH="amd64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
-    ;;
-"xs")
-    # cross static build for all supported platforms
+"all")
+    # cross build for all supported platforms
     # not listed platforms are likely to work
+
+    # static
     GOFLAGS="${GOFLAGS} -buildmode=exe"
     LDFLAGS="${LDFLAGS} -s -w"
     CGO_ENABLED=0
@@ -59,6 +46,30 @@ case "$1" in
     GOOS="linux" GOARCH="amd64" \
         nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUT}.linux-amd64" "${PACKAGE}"
+
+    # pie
+    GOFLAGS="${GOFLAGS} -buildmode=pie"
+    LDFLAGS="${LDFLAGS} -s -w"
+    CGO_ENABLED=1
+    set -x
+    GOOS="linux" GOARCH="arm64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-arm64" "${PACKAGE}"
+    GOOS="linux" GOARCH="amd64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.linux-amd64" "${PACKAGE}"
+    GOOS="windows" GOARCH="amd64" \
+        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
+    ;;
+"x")
+    # external toolchain, environment vars need to be set
+    GOFLAGS="${GOFLAGS} -buildmode=pie"
+    LDFLAGS="${LDFLAGS} -s -w"
+    CGO_ENABLED=1
+    set -x
+    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUT}.${OUTEXT}" "${PACKAGE}"
     ;;
 "s")
     GOFLAGS="${GOFLAGS} -buildmode=exe"
@@ -84,25 +95,8 @@ case "$1" in
         -o "${OUT}" "${PACKAGE}"
     ls -lh "${OUT}"
     ;;
-"pie")
-    GOFLAGS="${GOFLAGS} -buildmode=pie"
-    LDFLAGS="${LDFLAGS} -s -w"
-    set -x
-    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}" "${PACKAGE}"
-    ls -lh "${OUT}"
-    ;;
-"sdk")
-    # external toolchain, environment vars need to be set
-    GOFLAGS="${GOFLAGS} -buildmode=exe"
-    LDFLAGS="${LDFLAGS} -s -w"
-    set -x
-    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.${OUTEXT}" "${PACKAGE}"
-    ;;
 "d")
-    GOFLAGS="${GOFLAGS} -buildmode=exe"
-    GOFLAGS="${GOFLAGS} -race"
+    GOFLAGS="${GOFLAGS} -buildmode=exe -race"
     GCFLAGS="${GCFLAGS} -N -l"
     set -x
     go mod tidy && go fmt ./...
