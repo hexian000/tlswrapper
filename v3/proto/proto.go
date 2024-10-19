@@ -13,12 +13,10 @@ import (
 )
 
 var (
-	versionStr = "3"
+	mimeType    = "application/x-tlswrapper-proto"
+	mimeVersion = "3"
 
-	mimeType   = "application/x-tlswrapper-proto"
-	mimeParams = map[string]string{"version": versionStr}
-
-	Type = mime.FormatMediaType(mimeType, mimeParams)
+	Type = mime.FormatMediaType(mimeType, map[string]string{"version": mimeVersion})
 )
 
 const (
@@ -83,7 +81,7 @@ func checkType(s string) error {
 	if !ok {
 		return ErrUnsupportedProtocol
 	}
-	if version != versionStr {
+	if version != mimeVersion {
 		return ErrIncompatiableVersion
 	}
 	return nil
@@ -98,6 +96,7 @@ func Roundtrip(conn net.Conn, req *Message) (*Message, error) {
 		return nil, err
 	}
 	if err := checkType(rsp.Type); err != nil {
+		slog.Verbosef("type: %q", rsp.Type)
 		return nil, err
 	}
 	return rsp, nil
@@ -109,6 +108,7 @@ func Read(r io.Reader) (*Message, error) {
 		return nil, err
 	}
 	if err := checkType(req.Type); err != nil {
+		slog.Verbosef("type: %q", req.Type)
 		return nil, err
 	}
 	return req, nil

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"mime"
 	"os"
 	"strings"
 
@@ -47,6 +48,10 @@ func (p CertPool) Load() error {
 }
 
 func (cfg *File) load() error {
+	if cfg.Type == "" {
+		/* type check is not enforced */
+		cfg.Type = Type
+	}
 	for i, pair := range cfg.Certificates {
 		if err := pair.Load(); err != nil {
 			return err
@@ -96,7 +101,28 @@ func rangeCheckInt(key string, value int, min int, max int) error {
 	return nil
 }
 
+func checkType(s string) error {
+	mediatype, params, err := mime.ParseMediaType(s)
+	if err != nil {
+		return fmt.Errorf("invalid config type: %q", s)
+	}
+	if mediatype != mimeType {
+		return fmt.Errorf("invalid config type: %q", s)
+	}
+	version, ok := params["version"]
+	if !ok {
+		return fmt.Errorf("invalid config type: %q", s)
+	}
+	if version != mimeVersion {
+		return fmt.Errorf("incompatible config version: %q", version)
+	}
+	return nil
+}
+
 func (c *File) Validate() error {
+	if err := checkType(c.Type); err != nil {
+		return err
+	}
 	if err := rangeCheckInt("keepalive", c.KeepAlive, 0, 86400); err != nil {
 		return err
 	}

@@ -1,6 +1,17 @@
 package config
 
-import "github.com/hexian000/gosnippets/slog"
+import (
+	"mime"
+
+	"github.com/hexian000/gosnippets/slog"
+)
+
+var (
+	mimeType    = "application/x-tlswrapper-config"
+	mimeVersion = "3"
+
+	Type = mime.FormatMediaType(mimeType, map[string]string{"version": mimeVersion})
+)
 
 // Tunnel represents a "fixed" tunnel between 2 peers
 type Tunnel struct {
@@ -25,6 +36,8 @@ type CertPool []string
 
 // File config file
 type File struct {
+	// optioanl type identifier
+	Type string `json:"type,omitempty"`
 	// local peer name
 	PeerName string `json:"peername,omitempty"`
 	// mux listen address
