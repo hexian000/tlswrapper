@@ -8,12 +8,14 @@ import (
 	"math"
 	"mime"
 	"net"
+
+	"github.com/hexian000/gosnippets/slog"
 )
 
 var (
 	versionStr = "3"
 
-	mimeType   = "application/x-tlswrapper"
+	mimeType   = "application/x-tlswrapper-proto"
 	mimeParams = map[string]string{"version": versionStr}
 
 	Type = mime.FormatMediaType(mimeType, mimeParams)
@@ -62,6 +64,7 @@ func recvmsg(r io.Reader, msg interface{}) error {
 	if err != nil {
 		return err
 	}
+	slog.Binaryf(slog.LevelVeryVerbose, b, "recvmsg: %d bytes", len(b))
 	if err := json.Unmarshal(b, msg); err != nil {
 		return err
 	}
