@@ -36,8 +36,8 @@ type CertPool []string
 
 // File config file
 type File struct {
-	// optioanl type identifier
-	Type string `json:"type,omitempty"`
+	// type identifier
+	Type string `json:"type"`
 	// local peer name
 	PeerName string `json:"peername,omitempty"`
 	// mux listen address
@@ -89,6 +89,7 @@ type File struct {
 }
 
 var Default = File{
+	Type:            Type,
 	Services:        map[string]string{},
 	Peers:           map[string]Tunnel{},
 	Certificates:    []KeyPair{},

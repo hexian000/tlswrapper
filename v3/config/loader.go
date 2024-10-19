@@ -48,10 +48,6 @@ func (p CertPool) Load() error {
 }
 
 func (cfg *File) load() error {
-	if cfg.Type == "" {
-		/* type check is not enforced */
-		cfg.Type = Type
-	}
 	for i, pair := range cfg.Certificates {
 		if err := pair.Load(); err != nil {
 			return err
