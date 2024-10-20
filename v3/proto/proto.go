@@ -37,7 +37,7 @@ var (
 	ErrIncompatiableVersion = errors.New("incompatible protocol version")
 )
 
-func sendmsg(w io.Writer, msg interface{}) error {
+func sendmsg(w io.Writer, msg any) error {
 	b, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func sendmsg(w io.Writer, msg interface{}) error {
 	return err
 }
 
-func recvmsg(r io.Reader, msg interface{}) error {
+func recvmsg(r io.Reader, msg any) error {
 	hdr := make([]byte, 2)
 	_, err := io.ReadFull(r, hdr)
 	if err != nil {

@@ -28,7 +28,7 @@ func setRespHeader(h http.Header, mimeType string, nocache bool) {
 	}
 }
 
-func fprintf(w io.Writer, format string, v ...interface{}) {
+func fprintf(w io.Writer, format string, v ...any) {
 	_, err := w.Write([]byte(fmt.Sprintf(format, v...)))
 	if err != nil {
 		panic(err)
