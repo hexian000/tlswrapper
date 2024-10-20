@@ -45,9 +45,10 @@ func sendmsg(w io.Writer, msg any) error {
 	if len(b) > math.MaxUint16 {
 		return ErrMsgTooLong
 	}
-	hdr := make([]byte, 2, 2+len(b))
-	binary.BigEndian.PutUint16(hdr, uint16(len(b)))
-	_, err = w.Write(append(hdr, b...))
+	pkt := make([]byte, 2+len(b))
+	binary.BigEndian.PutUint16(pkt[:2], uint16(len(b)))
+	_ = copy(pkt[2:], b)
+	_, err = w.Write(pkt)
 	return err
 }
 
