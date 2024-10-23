@@ -5,6 +5,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/hexian000/gosnippets/slog"
 )
 
 type Recent interface {
@@ -70,9 +72,9 @@ func (p *recent) Format(w io.Writer, n int) error {
 		entry := p.elements[pos]
 		var s string
 		if entry.count == 1 {
-			s = fmt.Sprintf("%s %s\n", entry.tstamp.Format(time.RFC3339), entry.message)
+			s = fmt.Sprintf("%s %s\n", entry.tstamp.Format(slog.TimeLayout), entry.message)
 		} else {
-			s = fmt.Sprintf("%s %s (x%d)\n", entry.tstamp.Format(time.RFC3339), entry.message, entry.count)
+			s = fmt.Sprintf("%s %s (x%d)\n", entry.tstamp.Format(slog.TimeLayout), entry.message, entry.count)
 		}
 		_, err := w.Write([]byte(s))
 		if err != nil {

@@ -180,7 +180,7 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	setRespHeader(w.Header(), "text/plain", stateless)
 	w.WriteHeader(http.StatusOK)
 	fprintf(w, "tlswrapper %s\n  %s\n\n", Version, Homepage)
-	fprintf(w, "%-20s: %s\n", "Server Time", now.Format(time.RFC3339))
+	fprintf(w, "%-20s: %s\n", "Server Time", now.Format(slog.TimeLayout))
 	fprintf(w, "%-20s: %s\n", "Uptime", formats.Duration(uptime))
 	if rt {
 		fprintf(w, "%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
@@ -232,7 +232,7 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if t.NumSessions > 0 {
 				s = fmt.Sprintf("%d (%d streams)", t.NumSessions, t.NumStreams)
 			}
-			fprintf(w, "%-20q: %s %s\n", t.Name, t.LastChanged.Format(time.RFC3339), s)
+			fprintf(w, "%-20q: %s %s\n", t.Name, t.LastChanged.Format(slog.TimeLayout), s)
 		} else {
 			fprintf(w, "%-20q: never seen\n", t.Name)
 		}
