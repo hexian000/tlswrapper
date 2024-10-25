@@ -1,6 +1,5 @@
 #!/bin/sh
 cd "$(dirname "$0")"
-mkdir -p build
 
 VERSION="dev"
 if git rev-parse --git-dir >/dev/null 2>&1; then
@@ -12,93 +11,93 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
         VERSION="${VERSION}+"
     fi
 fi
-echo "+ version: ${VERSION}"
+
+if ! [ -d "${OUTDIR}" ]; then
+    OUTDIR="$(realpath ./build)"
+    mkdir -p "${OUTDIR}"
+fi
+
+if [ -z "${OUT}" ]; then
+    OUT="tlswrapper"
+fi
 
 set -e
 MODROOT="./v3"
 PACKAGE="./cmd/tlswrapper"
-OUT="$(realpath ./build)/tlswrapper"
-GOFLAGS="-trimpath"
-GCFLAGS=""
+GOFLAGS="${GOFLAGS} -trimpath"
+GCFLAGS="${GCFLAGS}"
 LDFLAGS="-X github.com/hexian000/tlswrapper/v3.Version=${VERSION}"
 
-cd "${MODROOT}" && go mod vendor
+cd "${MODROOT}"
 case "$1" in
-"all")
-    # cross build for all supported platforms
-    # not listed platforms are likely to work
-    GOFLAGS="${GOFLAGS} -buildmode=pie"
+"tlswrapper.android-arm64")
+    GOFLAGS="-buildmode=pie ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
-    CGO_ENABLED=1
-    set -x
-    GOOS="windows" GOARCH="amd64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.windows-amd64.exe" "${PACKAGE}"
-    # static
-    GOFLAGS="${GOFLAGS} -buildmode=exe"
-    LDFLAGS="${LDFLAGS} -s -w"
-    CGO_ENABLED=0
-    set -x
-    GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-mipsle" "${PACKAGE}"
-    GOOS="linux" GOARCH="arm" GOARM=7 \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-armv7" "${PACKAGE}"
-    GOOS="linux" GOARCH="arm64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-arm64" "${PACKAGE}"
-    GOOS="linux" GOARCH="amd64" \
-        nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.linux-amd64" "${PACKAGE}"
-
+    CGO_ENABLED=1 GOOS="android" GOARCH="arm64" \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/$1" "${PACKAGE}"
     ;;
-"x")
-    # external toolchain, environment vars need to be set
-    GOFLAGS="${GOFLAGS} -buildmode=pie"
+"tlswrapper.linux-amd64")
+    GOFLAGS="-buildmode=pie ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
-    CGO_ENABLED=1
-    set -x
-    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}.${OUTEXT}" "${PACKAGE}"
+    CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/$1" "${PACKAGE}"
     ;;
-"s")
-    GOFLAGS="${GOFLAGS} -buildmode=exe"
+"tlswrapper.linux-arm64")
+    GOFLAGS="-buildmode=pie ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
-    CGO_ENABLED=0
-    set -x
-    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}" "${PACKAGE}"
-    ls -lh "${OUT}"
+    CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/$1" "${PACKAGE}"
     ;;
-"r")
-    GOFLAGS="${GOFLAGS} -buildmode=pie"
+"tlswrapper.linux-armv7")
+    GOFLAGS="-buildmode=exe ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
-    CGO_ENABLED=1
-    set -x
-    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}" "${PACKAGE}"
-    ls -lh "${OUT}"
+    CGO_ENABLED=0 GOOS="linux" GOARCH="arm" GOARM=7 \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/$1" "${PACKAGE}"
     ;;
-"p")
-    set -x
-    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}" "${PACKAGE}"
-    ls -lh "${OUT}"
+"tlswrapper.linux-mipsle")
+    GOFLAGS="-buildmode=exe ${GOFLAGS}"
+    LDFLAGS="${LDFLAGS} -s -w"
+    CGO_ENABLED=0 GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/$1" "${PACKAGE}"
+    ;;
+"tlswrapper.windows-amd64.exe")
+    GOFLAGS="-buildmode=pie ${GOFLAGS}"
+    LDFLAGS="${LDFLAGS} -s -w"
+    CGO_ENABLED=1 GOOS="windows" GOARCH="amd64" \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/$1" "${PACKAGE}"
+    ;;
+"tlswrapper-debug.linux-amd64")
+    GOFLAGS="-buildmode=exe -race ${GOFLAGS}"
+    GCFLAGS="${GCFLAGS} -N -l"
+    CGO_ENABLED=1 GOOS="linux" GOARCH="amd64" \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/$1" "${PACKAGE}"
+    ;;
+"tlswrapper-debug.linux-arm64")
+    GOFLAGS="-buildmode=exe -race ${GOFLAGS}"
+    GCFLAGS="${GCFLAGS} -N -l"
+    CGO_ENABLED=1 GOOS="linux" GOARCH="arm64" \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/$1" "${PACKAGE}"
     ;;
 "d")
-    GOFLAGS="${GOFLAGS} -race"
+    GOFLAGS="-buildmode=exe -race ${GOFLAGS}"
     GCFLAGS="${GCFLAGS} -N -l"
-    set -x
     go mod tidy && go fmt ./...
-    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}" "${PACKAGE}"
-    ls -lh "${OUT}"
+    CGO_ENABLED=1 \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/${OUT}" "${PACKAGE}"
+    ls -lh "${OUTDIR}/${OUT}"
     ;;
 *)
-    set -x
-    nice go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
-        -o "${OUT}" "${PACKAGE}"
-    ls -lh "${OUT}"
+    go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/${OUT}" "${PACKAGE}"
+    ls -lh "${OUTDIR}/${OUT}"
     ;;
 esac
