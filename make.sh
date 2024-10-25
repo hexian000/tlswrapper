@@ -38,14 +38,14 @@ case "$1" in
         -o "${OUTDIR}/$1" "${PACKAGE}"
     ;;
 "tlswrapper.linux-amd64")
-    GOFLAGS="-buildmode=pie ${GOFLAGS}"
+    GOFLAGS="-buildmode=exe ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
     CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/$1" "${PACKAGE}"
     ;;
 "tlswrapper.linux-arm64")
-    GOFLAGS="-buildmode=pie ${GOFLAGS}"
+    GOFLAGS="-buildmode=exe ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
     CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
