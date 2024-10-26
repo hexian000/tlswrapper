@@ -198,7 +198,7 @@ See [config.json](config.json) for example config file.
 git clone https://github.com/hexian000/tlswrapper.git
 cd tlswrapper
 # checkout tagged version
-git checkout v2.0.4
+git checkout v3.0
 # build with default configuration
 ./make.sh
 
