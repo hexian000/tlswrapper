@@ -142,7 +142,7 @@ Feel free to add more services/peers, or bring up forwards/reverses between the 
 - "authcerts": peer authorized certificates list, bundles are supported
 - "authcerts[\*].cert": PEM encoded certificate
 
-See [source code](v3/config.go) for a complete list of all available options.
+See [source code](v3/config/config.go) for a complete list of all available options.
 
 See [config.json](config.json) for example config file.
 
