@@ -66,100 +66,63 @@ TLS behavior is based on "crypto/tls" library in [Go](https://github.com/golang/
 ### Generating Key Pair
 
 ```sh
-# generate private root certificate
-./tlswrapper -gencerts ca
-# ca-cert.pem, ca-key.pem
-
-# generate peer certificates
-./tlswrapper -gencerts peer0,peer1,peer2 -sign ca
-# peerN-cert.pem, peerN-key.pem
+# generate self-signed certificates
+./tlswrapper -gencerts client,server
+# client-cert.pem, client-key.pem, server-cert.pem, server-key.pem
 ```
 
-Adding a certificate to `"authcerts"` will allow all certificates signed by it (including itself).
+Adding a certificate to `"authcerts"` will allow all certificates signed by it.
 
 ### Creating Config Files
 
-Example:
+**Connection Graph**
 
-`client -> peer1 -> peer0 <- peer2 -> server`
+`http client -> tlswrapper client -> tlswrapper server -> http server`
 
-For simpler cases, just remove the unused fragments.
-
-**peer0.json**: If peer name is `peer2`, ask for `myhttp` service.
+**client.json**
 
 ```json
 {
-  "peername": "peer0",
-  "muxlisten": "0.0.0.0:38000",
-  "services": {
-    "myhttp-peer2": "127.0.0.1:8080"
-  },
-  "peers": {
-    "peer2": {
-      "listen": "127.0.0.1:8080",
-      "service": "myhttp"
-    }
-  },
-  "certs": [
-    {
-      "cert": "@peer0-cert.pem",
-      "key": "@peer0-key.pem"
-    }
-  ],
-  "authcerts": [
-    "@ca-cert.pem"
-  ]
+    "peers": {
+        "tlswrapper server": {
+            "addr": "example.com:38000",
+            "listen": "127.0.0.1:8080",
+            "service": "myhttp"
+        }
+    },
+    "certs": [
+        {
+            "cert": "@client-cert.pem",
+            "key": "@client-key.pem"
+        }
+    ],
+    "authcerts": [
+        "@server-cert.pem"
+    ]
 }
 ```
 
-**peer1.json**: Ask `peer0` for `myhttp-peer2` service.
+**server.json**
 
 ```json
 {
-  "peername": "peer1",
-  "peers": {
-    "peer0": {
-      "addr": "example.com:38000",
-      "listen": "127.0.0.1:8080",
-      "service": "myhttp-peer2"
-    }
-  },
-  "certs": [
-    {
-      "cert": "@peer1-cert.pem",
-      "key": "@peer1-key.pem"
-    }
-  ],
-  "authcerts": [
-    "@ca-cert.pem"
-  ]
+    "muxlisten": "0.0.0.0:38000",
+    "services": {
+        "myhttp": "127.0.0.1:80"
+    },
+    "certs": [
+        {
+            "cert": "@server-cert.pem",
+            "key": "@server-key.pem"
+        }
+    ],
+    "authcerts": [
+        "@client-cert.pem"
+    ]
 }
 ```
 
-**peer2.json**: Connect to `peer0`.
-
-```json
-{
-  "peername": "peer2",
-  "services": {
-    "myhttp": "127.0.0.1:8080"
-  },
-  "peers": {
-    "peer0": {
-      "addr": "example.com:38000"
-    }
-  },
-  "certs": [
-    {
-      "cert": "@peer2-cert.pem",
-      "key": "@peer2-key.pem"
-    }
-  ],
-  "authcerts": [
-    "@ca-cert.pem"
-  ]
-}
-```
+For complex cases, see the [full example](https://github.com/hexian000/tlswrapper/wiki/Configuration-Example).
 
 #### Notes
 
