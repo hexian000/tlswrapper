@@ -199,8 +199,8 @@ git clone https://github.com/hexian000/tlswrapper.git
 cd tlswrapper
 # checkout tagged version
 git checkout v2.0.4
-# build release executable
-./make.sh r
+# build with default configuration
+./make.sh
 
 # or install the latest development version
 go install github.com/hexian000/tlswrapper/v3/cmd/tlswrapper@latest
