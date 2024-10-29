@@ -29,10 +29,12 @@ GCFLAGS="${GCFLAGS}"
 LDFLAGS="-X github.com/hexian000/tlswrapper/v3.Version=${VERSION}"
 
 cd "${MODROOT}"
+go mod vendor
 case "$1" in
 "tlswrapper.android-arm64")
     GOFLAGS="-buildmode=pie ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
+    set -x
     CGO_ENABLED=1 GOOS="android" GOARCH="arm64" \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/$1" "${PACKAGE}"
@@ -40,6 +42,7 @@ case "$1" in
 "tlswrapper.linux-amd64")
     GOFLAGS="-buildmode=exe ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
+    set -x
     CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/$1" "${PACKAGE}"
@@ -47,6 +50,7 @@ case "$1" in
 "tlswrapper.linux-arm64")
     GOFLAGS="-buildmode=exe ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
+    set -x
     CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/$1" "${PACKAGE}"
@@ -54,6 +58,7 @@ case "$1" in
 "tlswrapper.linux-armv7")
     GOFLAGS="-buildmode=exe ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
+    set -x
     CGO_ENABLED=0 GOOS="linux" GOARCH="arm" GOARM=7 \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/$1" "${PACKAGE}"
@@ -61,6 +66,7 @@ case "$1" in
 "tlswrapper.linux-mipsle")
     GOFLAGS="-buildmode=exe ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
+    set -x
     CGO_ENABLED=0 GOOS="linux" GOARCH="mipsle" GOMIPS="softfloat" \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/$1" "${PACKAGE}"
@@ -68,6 +74,7 @@ case "$1" in
 "tlswrapper.windows-amd64.exe")
     GOFLAGS="-buildmode=pie ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
+    set -x
     CGO_ENABLED=1 GOOS="windows" GOARCH="amd64" \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/$1" "${PACKAGE}"
@@ -75,6 +82,7 @@ case "$1" in
 "tlswrapper-debug.linux-amd64")
     GOFLAGS="-buildmode=exe -race ${GOFLAGS}"
     GCFLAGS="${GCFLAGS} -N -l"
+    set -x
     CGO_ENABLED=1 GOOS="linux" GOARCH="amd64" \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/$1" "${PACKAGE}"
@@ -82,6 +90,7 @@ case "$1" in
 "tlswrapper-debug.linux-arm64")
     GOFLAGS="-buildmode=exe -race ${GOFLAGS}"
     GCFLAGS="${GCFLAGS} -N -l"
+    set -x
     CGO_ENABLED=1 GOOS="linux" GOARCH="arm64" \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/$1" "${PACKAGE}"
@@ -89,13 +98,20 @@ case "$1" in
 "d")
     GOFLAGS="-buildmode=exe -race ${GOFLAGS}"
     GCFLAGS="${GCFLAGS} -N -l"
-    go mod tidy && go fmt ./...
+    set -x
+    go fmt ./... && go mod tidy
     CGO_ENABLED=1 \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/${OUT}" "${PACKAGE}"
     ls -lh "${OUTDIR}/${OUT}"
     ;;
+"t")
+    set -x
+    go fmt ./... && go mod tidy
+    go test ./...
+    ;;
 *)
+    set -x
     go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/${OUT}" "${PACKAGE}"
     ls -lh "${OUTDIR}/${OUT}"
