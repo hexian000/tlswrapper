@@ -160,10 +160,10 @@ See [config.json](config.json) for example config file.
 # get source code
 git clone https://github.com/hexian000/tlswrapper.git
 cd tlswrapper
-# checkout tagged version
+# checkout a tagged version
 git checkout v3.0
-# build with default configuration
-./make.sh
+# build release binary
+./make.sh r
 
 # or install the latest development version
 go install github.com/hexian000/tlswrapper/v3/cmd/tlswrapper@latest

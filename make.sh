@@ -1,4 +1,5 @@
 #!/bin/sh
+# make.sh: in-tree build script for convenience
 cd "$(dirname "$0")"
 
 VERSION="dev"
@@ -16,7 +17,7 @@ set -e
 OUTDIR="$(realpath ./build)"
 MODROOT="./v3"
 PACKAGE="./cmd/tlswrapper"
-GOFLAGS="${GOFLAGS} -v -trimpath"
+GOFLAGS="${GOFLAGS} -mod=readonly -trimpath -v"
 GCFLAGS="${GCFLAGS}"
 LDFLAGS="-X github.com/hexian000/tlswrapper/v3.Version=${VERSION}"
 
