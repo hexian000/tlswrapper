@@ -375,7 +375,8 @@ func (s *Server) LoadConfig(cfg *config.File) error {
 		s.cfg = cfg
 		s.tlscfg = tlscfg
 	}()
-	s.recentEvents.Add(time.Now(), "config reloaded")
+	s.recentEvents.Add(time.Now(), "config loaded")
+	slog.Notice("config loaded")
 	return nil
 }
 

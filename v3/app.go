@@ -117,7 +117,6 @@ func AppMain(f *AppFlags) int {
 			continue
 		}
 		_, _ = sd.Notify(sd.Ready)
-		slog.Notice("config successfully reloaded")
 	}
 
 	slog.Notice("server stop")
