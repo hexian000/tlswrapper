@@ -162,6 +162,12 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Debugf("uri: %s", formats.Error(err))
 		return
 	}
+	nobanner := false
+	if s := query.Get("nobanner"); s != "" {
+		if b, err := strconv.ParseBool(s); err == nil {
+			nobanner = b
+		}
+	}
 	rt := false
 	if s := query.Get("runtime"); s != "" {
 		if b, err := strconv.ParseBool(s); err == nil {
@@ -179,7 +185,9 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uptime := now.Sub(h.s.started)
 	setRespHeader(w.Header(), "text/plain", stateless)
 	w.WriteHeader(http.StatusOK)
-	fprintf(w, "tlswrapper %s\n  %s\n\n", Version, Homepage)
+	if !nobanner {
+		fprintf(w, "tlswrapper %s\n  %s\n\n", Version, Homepage)
+	}
 	fprintf(w, "%-20s: %s\n", "Server Time", now.Format(slog.TimeLayout))
 	fprintf(w, "%-20s: %s\n", "Uptime", formats.Duration(uptime))
 	if rt {
