@@ -256,9 +256,10 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 	return listener, err
 }
 
-func (s *Server) reloadTunnels(cfg *config.File) error {
+func (s *Server) loadTunnels(cfg *config.File) error {
 	s.tunnelsMu.Lock()
 	defer s.tunnelsMu.Unlock()
+	// 1. remove
 	for name, t := range s.tunnels {
 		if tuncfg, ok := cfg.Peers[name]; !ok || tuncfg.Disabled {
 			if err := t.Stop(); err != nil {
@@ -267,6 +268,7 @@ func (s *Server) reloadTunnels(cfg *config.File) error {
 			delete(s.tunnels, name)
 		}
 	}
+	// 2. add
 	for name, tuncfg := range cfg.Peers {
 		if tuncfg.Disabled {
 			continue
@@ -326,7 +328,7 @@ func (s *Server) Start() error {
 		}
 		s.apiListener = l
 	}
-	if err := s.reloadTunnels(s.cfg); err != nil {
+	if err := s.loadTunnels(s.cfg); err != nil {
 		return err
 	}
 	s.started = time.Now()
@@ -368,7 +370,7 @@ func (s *Server) LoadConfig(cfg *config.File) error {
 	if err != nil {
 		return err
 	}
-	s.reloadTunnels(cfg)
+	s.loadTunnels(cfg)
 	func() {
 		s.cfgMu.Lock()
 		defer s.cfgMu.Unlock()
