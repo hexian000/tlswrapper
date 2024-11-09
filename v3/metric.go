@@ -39,7 +39,10 @@ type apiConfigHandler struct {
 	s *Server
 }
 
-func (h *apiConfigHandler) Post(w http.ResponseWriter, r *http.Request) {
+func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 	if r.ContentLength > maxContentLength {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
 		return
@@ -61,35 +64,6 @@ func (h *apiConfigHandler) Post(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(formats.Error(err)))
 		return
-	}
-}
-
-func (h *apiConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
-	if true {
-		// TOTHINK: private key is in config file
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-	cfg, _ := h.s.getConfig()
-	b, err := cfg.Dump()
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(formats.Error(err)))
-		return
-	}
-	setRespHeader(w.Header(), "application/json", true)
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(b)
-}
-
-func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		h.Get(w, r)
-	case http.MethodPost:
-		h.Post(w, r)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
