@@ -163,7 +163,7 @@ cd tlswrapper
 # checkout a tagged version
 git checkout v3.0
 # build release binary
-./make.sh r
+./m.sh r
 
 # or install the latest development version
 go install github.com/hexian000/tlswrapper/v3/cmd/tlswrapper@latest

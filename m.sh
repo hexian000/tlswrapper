@@ -24,7 +24,21 @@ LDFLAGS="-X github.com/hexian000/tlswrapper/v3.Version=${VERSION}"
 cd "${MODROOT}"
 go mod vendor
 case "$1" in
+"c")
+    # clean artifacts
+    rm -rf "build"
+    ;;
+"p")
+    # build for profiling
+    GOFLAGS="-buildmode=exe ${GOFLAGS}"
+    set -x
+    CGO_ENABLED=0 \
+        go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
+        -o "${OUTDIR}/" "${PACKAGE}"
+    ls -lh "${OUTDIR}/"
+    ;;
 "r")
+    # build for release
     GOFLAGS="-buildmode=exe ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
     set -x
@@ -34,6 +48,7 @@ case "$1" in
     ls -lh "${OUTDIR}/"
     ;;
 "d")
+    # build for debug
     GOFLAGS="-buildmode=exe -race ${GOFLAGS}"
     GCFLAGS="${GCFLAGS} -N -l"
     set -x
