@@ -79,6 +79,26 @@ Adding a certificate to `"authcerts"` will allow all certificates signed by it.
 
 `http client -> tlswrapper client -> tlswrapper server -> http server`
 
+**server.json**
+
+```json
+{
+    "muxlisten": "0.0.0.0:38000",
+    "services": {
+        "myhttp": "127.0.0.1:80"
+    },
+    "certs": [
+        {
+            "cert": "@server-cert.pem",
+            "key": "@server-key.pem"
+        }
+    ],
+    "authcerts": [
+        "@client-cert.pem"
+    ]
+}
+```
+
 **client.json**
 
 ```json
@@ -98,26 +118,6 @@ Adding a certificate to `"authcerts"` will allow all certificates signed by it.
     ],
     "authcerts": [
         "@server-cert.pem"
-    ]
-}
-```
-
-**server.json**
-
-```json
-{
-    "muxlisten": "0.0.0.0:38000",
-    "services": {
-        "myhttp": "127.0.0.1:80"
-    },
-    "certs": [
-        {
-            "cert": "@server-cert.pem",
-            "key": "@server-key.pem"
-        }
-    ],
-    "authcerts": [
-        "@client-cert.pem"
     ]
 }
 ```
@@ -160,13 +160,11 @@ See [config.json](config.json) for example config file.
 # get source code
 git clone https://github.com/hexian000/tlswrapper.git
 cd tlswrapper
-# checkout a tagged version
-git checkout v3.0
-# build release binary
-./m.sh r
+# build for debug
+./m.sh d
 
 # or install the latest development version
-go install github.com/hexian000/tlswrapper/v3/cmd/tlswrapper@latest
+go install github.com/hexian000/tlswrapper/v3/cmd/tlswrapper@master
 ```
 
 ## Credits
