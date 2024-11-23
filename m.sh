@@ -17,7 +17,7 @@ set -e
 OUTDIR="$(realpath ./build)"
 MODROOT="./v3"
 PACKAGE="./cmd/tlswrapper"
-GOFLAGS="${GOFLAGS} -mod=readonly -trimpath -v"
+GOFLAGS="${GOFLAGS} -buildmode=exe -mod=readonly -trimpath -v"
 GCFLAGS="${GCFLAGS}"
 LDFLAGS="-X github.com/hexian000/tlswrapper/v3.Version=${VERSION}"
 
@@ -26,11 +26,10 @@ go mod vendor
 case "$1" in
 "c")
     # clean artifacts
-    rm -rf "build"
+    rm -rf build
     ;;
 "p")
     # build for profiling
-    GOFLAGS="-buildmode=exe ${GOFLAGS}"
     set -x
     CGO_ENABLED=0 \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
@@ -39,7 +38,6 @@ case "$1" in
     ;;
 "r")
     # build for release
-    GOFLAGS="-buildmode=exe ${GOFLAGS}"
     LDFLAGS="${LDFLAGS} -s -w"
     set -x
     CGO_ENABLED=0 \
@@ -49,7 +47,7 @@ case "$1" in
     ;;
 "d")
     # build for debug
-    GOFLAGS="-buildmode=exe -race ${GOFLAGS}"
+    GOFLAGS="${GOFLAGS} -race"
     GCFLAGS="${GCFLAGS} -N -l"
     set -x
     go fmt ./... && go mod tidy
