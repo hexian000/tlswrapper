@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -153,7 +152,7 @@ func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) 
 func (s *Server) serveOne(accepted net.Conn, handler Handler) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Errorf("panic: %v\n%s", r, string(debug.Stack()))
+			slog.Stackf(slog.LevelError, 0, "panic: %v", r)
 		}
 	}()
 	ctx := s.ctx.withTimeout()
