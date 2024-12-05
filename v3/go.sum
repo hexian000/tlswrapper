@@ -1,7 +1,7 @@
 github.com/hashicorp/yamux v0.1.2 h1:XtB8kyFOyHXYVFnwT5C3+Bdo8gArse7j2AQ0DA0Uey8=
 github.com/hashicorp/yamux v0.1.2/go.mod h1:C+zze2n6e/7wshOZep2A70/aQU6QBRWJO/G6FT1wIns=
-github.com/hexian000/gosnippets v0.0.0-20241123101513-01a893c5a793 h1:yI4zQKNO9UXqLa3bbu7LhA+13Of3UtrDZnA7oqIAjAo=
-github.com/hexian000/gosnippets v0.0.0-20241123101513-01a893c5a793/go.mod h1:4SH+GMxjXOEOZF9i8GBcxfJfTSI/TV9pOklzqU8D7Jk=
+github.com/hexian000/gosnippets v0.0.0-20241201051153-4294e01cbffb h1:hxwuZFhNdXi7MNwAYsAYF6soLlMtcT5fts9ihASEWFI=
+github.com/hexian000/gosnippets v0.0.0-20241201051153-4294e01cbffb/go.mod h1:4SH+GMxjXOEOZF9i8GBcxfJfTSI/TV9pOklzqU8D7Jk=
 github.com/mattn/go-runewidth v0.0.16 h1:E5ScNMtiwvlvB5paMFdw9p4kSQzbXFikJ5SQO6TULQc=
 github.com/mattn/go-runewidth v0.0.16/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/rivo/uniseg v0.2.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJtxc=
