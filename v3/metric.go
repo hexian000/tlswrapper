@@ -173,16 +173,12 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fprintf(w, "%-20s: %d (%d streams)\n", "Num Sessions", stats.NumSessions, stats.NumStreams)
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Traffic",
 		formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
-	uptimeHrs := uptime.Hours()
-	fprintf(w, "%-20s: Rx %s/hrs, Tx %s/hrs\n", "Avg Bandwidth",
-		formats.IECBytes(float64(stats.Rx)/uptimeHrs),
-		formats.IECBytes(float64(stats.Tx)/uptimeHrs))
 	rejected := stats.Accepted - stats.Served
 	fprintf(w, "%-20s: %d (%+d rejected)\n", "Listener Accepts",
 		stats.Served, rejected)
 	fprintf(w, "%-20s: %d (%+d)\n", "Authorizations",
 		stats.Authorized, stats.Served-stats.Authorized)
-	fprintf(w, "%-20s: %d (%+d)\n", "Stream Requests",
+	fprintf(w, "%-20s: %d (%+d)\n", "Requests",
 		stats.ReqSuccess, stats.ReqTotal-stats.ReqSuccess)
 
 	if !stateless {
