@@ -70,7 +70,7 @@ func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func printMemStats(w io.Writer, lastGC bool) {
 	var memstats runtime.MemStats
 	runtime.ReadMemStats(&memstats)
-	fprintf(w, "%-20s: %s ≤ %s\n", "Heap Next GC",
+	fprintf(w, "%-20s: %s < %s\n", "Heap Next GC",
 		formats.IECBytes(float64(memstats.HeapAlloc)),
 		formats.IECBytes(float64(memstats.NextGC)))
 	fprintf(w, "%-20s: %s ≤ %s\n", "Heap In-use",
