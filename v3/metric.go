@@ -73,9 +73,10 @@ func printMemStats(w io.Writer, lastGC bool) {
 	fprintf(w, "%-20s: %s < %s\n", "Heap Next GC",
 		formats.IECBytes(float64(memstats.HeapAlloc)),
 		formats.IECBytes(float64(memstats.NextGC)))
-	fprintf(w, "%-20s: %s ≤ %s\n", "Heap In-use",
+	fprintf(w, "%-20s: %s ≤ %s (%s objects)\n", "Heap In-use",
 		formats.IECBytes(float64(memstats.HeapInuse)),
-		formats.IECBytes(float64(memstats.HeapSys-memstats.HeapReleased)))
+		formats.IECBytes(float64(memstats.HeapSys-memstats.HeapReleased)),
+		formats.SIPrefix(float64(memstats.HeapObjects)))
 	fprintf(w, "%-20s: %s ≤ %s\n", "Stack In-use",
 		formats.IECBytes(float64(memstats.StackInuse)),
 		formats.IECBytes(float64(memstats.StackSys)))
