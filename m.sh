@@ -35,6 +35,7 @@ case "$1" in
     CGO_ENABLED=0 \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/" "${PACKAGE}"
+    (cd "${OUTDIR}" && go tool objdump -S tlswrapper >tlswrapper.S)
     ls -lh "${OUTDIR}/"
     ;;
 "r")
