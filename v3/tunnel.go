@@ -34,6 +34,15 @@ type tunnel struct {
 	lastChanged time.Time
 }
 
+func newTunnel(peerName string, s *Server) *tunnel {
+	return &tunnel{
+		peerName: peerName, s: s,
+		mux:       make(map[*yamux.Session]string),
+		closeSig:  make(chan struct{}),
+		redialSig: make(chan struct{}, 1),
+	}
+}
+
 func (t *tunnel) getConfig() (*config.File, *tls.Config, *config.Tunnel) {
 	cfg, tlscfg := t.s.getConfig()
 	return cfg, tlscfg, cfg.GetTunnel(t.peerName)

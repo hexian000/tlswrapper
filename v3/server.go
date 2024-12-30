@@ -107,14 +107,6 @@ func (s *Server) getAllTunnels() []*tunnel {
 	return tunnels
 }
 
-func (s *Server) stopAllTunnels() {
-	s.tunnelsMu.RLock()
-	defer s.tunnelsMu.RUnlock()
-	for _, t := range s.tunnels {
-		_ = t.Stop()
-	}
-}
-
 type ServerStats struct {
 	NumSessions int
 	NumStreams  int
@@ -275,12 +267,7 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 		if tuncfg.Disabled {
 			continue
 		}
-		t := &tunnel{
-			peerName: name, s: s,
-			mux:       make(map[*yamux.Session]string),
-			closeSig:  make(chan struct{}, 1),
-			redialSig: make(chan struct{}, 1),
-		}
+		t := newTunnel(name, s)
 		s.tunnels[name] = t
 		if err := t.Start(); err != nil {
 			return err
@@ -337,17 +324,9 @@ func (s *Server) Start() error {
 	return nil
 }
 
-func (s *Server) closeAllMux() {
-	s.muxMu.Lock()
-	defer s.muxMu.Unlock()
-	for mux := range s.mux {
-		ioClose(mux)
-		delete(s.mux, mux)
-	}
-}
-
 // Shutdown gracefully
 func (s *Server) Shutdown() error {
+	// stop all listeners
 	if s.l != nil {
 		ioClose(s.l)
 		s.l = nil
@@ -356,11 +335,21 @@ func (s *Server) Shutdown() error {
 		ioClose(s.apiListener)
 		s.apiListener = nil
 	}
+	// cancel all contexts
 	s.ctx.close()
-	s.stopAllTunnels()
-	s.closeAllMux()
-	s.f.Close()
+	// stop all tunnels
 	s.g.Close()
+	// close all mux
+	func() {
+		s.muxMu.Lock()
+		defer s.muxMu.Unlock()
+		for mux := range s.mux {
+			ioClose(mux)
+			delete(s.mux, mux)
+		}
+	}()
+	// close all forwards
+	s.f.Close()
 	slog.Info("waiting for unfinished connections")
 	s.g.Wait()
 	return nil

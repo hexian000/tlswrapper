@@ -29,14 +29,12 @@ type forwarder struct {
 	g       routines.Group
 	conn    map[net.Conn]struct{}
 	counter chan struct{}
-	closeCh chan struct{}
 }
 
 func New(maxConn int, g routines.Group) Forwarder {
 	return &forwarder{
 		conn:    make(map[net.Conn]struct{}),
 		counter: make(chan struct{}, maxConn),
-		closeCh: make(chan struct{}),
 		g:       g,
 	}
 }
@@ -79,7 +77,7 @@ func (f *forwarder) connCopy(dst net.Conn, src net.Conn) {
 
 func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 	select {
-	case <-f.closeCh:
+	case <-f.g.CloseC():
 		return routines.ErrClosed
 	case f.counter <- struct{}{}:
 	default:
@@ -113,7 +111,6 @@ func (f *forwarder) Count() int {
 }
 
 func (f *forwarder) Close() {
-	close(f.closeCh)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for conn := range f.conn {
