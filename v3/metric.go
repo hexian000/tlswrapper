@@ -4,14 +4,18 @@
 package tlswrapper
 
 import (
+	"bytes"
+	"cmp"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net"
 	"net/http"
 	"net/url"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -70,12 +74,9 @@ func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func printMemStats(w io.Writer, lastGC bool) {
+func printMemStats(w io.Writer) {
 	var memstats runtime.MemStats
 	runtime.ReadMemStats(&memstats)
-	fprintf(w, "%-20s: %s < %s\n", "Heap Next GC",
-		formats.IECBytes(float64(memstats.HeapAlloc)),
-		formats.IECBytes(float64(memstats.NextGC)))
 	fprintf(w, "%-20s: %s ≤ %s (%s objects)\n", "Heap In-use",
 		formats.IECBytes(float64(memstats.HeapInuse)),
 		formats.IECBytes(float64(memstats.HeapSys-memstats.HeapReleased)),
@@ -88,20 +89,52 @@ func printMemStats(w io.Writer, lastGC bool) {
 	fprintf(w, "%-20s: %s (+%s)\n", "Total Allocated",
 		formats.IECBytes(float64(memstats.Sys-memstats.HeapReleased)),
 		formats.IECBytes(float64(memstats.HeapReleased)))
-	fprintf(w, "%-20s: %.07f%%\n", "GC CPU Fraction",
-		memstats.GCCPUFraction*100.0/float64(runtime.GOMAXPROCS(0)))
-	if !lastGC {
-		return
-	}
-	if memstats.LastGC > 0 {
-		lastGC := time.Since(time.Unix(0, int64(memstats.LastGC)))
-		fprintf(w, "%-20s: %s ago\n", "Last GC", formats.Duration(lastGC))
-		lastPause := time.Duration(memstats.PauseNs[(memstats.NumGC+255)%256])
-		fprintf(w, "%-20s: %s\n", "Last GC pause", formats.Duration(lastPause))
+	fprintf(w, "%-20s: %s < %s\n", "Next GC",
+		formats.IECBytes(float64(memstats.HeapAlloc)),
+		formats.IECBytes(float64(memstats.NextGC)))
+	numGC := memstats.NumGC
+	if numGC > 0 {
+		numStats := uint32(len(memstats.PauseNs))
+		if numGC > numStats {
+			numGC = numStats
+		}
+		t := time.Now().UnixNano()
+		b := &bytes.Buffer{}
+		for i := uint32(0); i < 3; i++ {
+			if i >= numGC {
+				break
+			}
+			idx := (memstats.NumGC + (numStats - 1) - i) % numStats
+			pauseEnd := int64(memstats.PauseEnd[idx])
+			pauseAt := time.Duration(t - pauseEnd)
+			if i == 0 {
+				b.WriteString(fmt.Sprintf("~%s %s", formats.Duration(pauseAt),
+					formats.Duration(time.Duration(memstats.PauseNs[idx]))))
+			} else {
+				b.WriteString(fmt.Sprintf(", %s %s", formats.Duration(pauseAt),
+					formats.Duration(time.Duration(memstats.PauseNs[idx]))))
+			}
+			t = pauseEnd
+		}
+		fprintf(w, "%-20s: %s\n", "Recent GC", b.String())
+		pause := make([]time.Duration, 0, numGC)
+		for i := uint32(0); i < numGC; i++ {
+			idx := (memstats.NumGC + (numStats - 1) - i) % numStats
+			pause = append(pause, time.Duration(memstats.PauseNs[idx]))
+		}
+		slices.SortFunc(pause, cmp.Compare)
+		i50 := int(math.Floor(float64(numGC) * 0.50))
+		i90 := int(math.Floor(float64(numGC) * 0.90))
+		p50, p90, pmax := pause[i50], pause[i90], pause[numGC-1]
+		fprintf(w, "%-20s: P50=%s P90=%s MAX=%s SUM=%s\n", "GC Pause",
+			formats.Duration(p50), formats.Duration(p90), formats.Duration(pmax),
+			formats.Duration(time.Duration(memstats.PauseTotalNs)))
 	} else {
-		fprintf(w, "%-20s: %s\n", "Last GC", "(never)")
-		fprintf(w, "%-20s: %s\n", "Last GC pause", "(never)")
+		fprintf(w, "%-20s: %s\n", "Recent GC", "(never)")
+		fprintf(w, "%-20s: %s\n", "GC Pause", "(never)")
 	}
+	fprintf(w, "%-20s: %.07f%%\n", "GC CPU Fraction",
+		memstats.GCCPUFraction*1e+2/float64(runtime.GOMAXPROCS(0)))
 }
 
 type apiStats struct {
@@ -171,7 +204,7 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rt {
 		fprintf(w, "%-20s: %v\n", "Max Procs", runtime.GOMAXPROCS(-1))
 		fprintf(w, "%-20s: %v\n", "Num Goroutines", runtime.NumGoroutine())
-		printMemStats(w, true)
+		printMemStats(w)
 	}
 	stats := h.s.Stats()
 	fprintf(w, "%-20s: %d (%d streams)\n", "Num Sessions", stats.NumSessions, stats.NumStreams)
@@ -244,7 +277,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		w.WriteHeader(http.StatusOK)
 		start := time.Now()
 		debug.FreeOSMemory()
-		printMemStats(w, false)
+		printMemStats(w)
 		fprintf(w, "%-20s: %s\n", "Time Cost", formats.Duration(time.Since(start)))
 	})
 	mux.HandleFunc("/stack", func(w http.ResponseWriter, r *http.Request) {
