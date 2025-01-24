@@ -98,7 +98,7 @@ type logWrapper struct {
 }
 
 func (w *logWrapper) Write(p []byte) (n int, err error) {
-	const calldepth = 4
+	const calldepth = 2
 	raw := strings.TrimSuffix(string(p), "\n")
 	if msg := strings.TrimPrefix(raw, "[ERR] "); len(msg) != len(raw) {
 		w.Output(calldepth, slog.LevelError, nil, msg)
