@@ -26,9 +26,9 @@ Status: **Stable**
 - Multiplexed: All traffic goes over one TCP connection.
 - Mutual Forwarded: Each peer can listen from and connect to the other peer simultaneously over the same underlying connection.
 - Secured: All traffic is optionally protected by [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS).
-- Incompatible: Always enforce the latest TLS version.
+- Long-Term Supported: Follow the latest releases of the dependent projects. Even if we don't make any changes, the binary release will be rebuilt at least once a year.
 
-*In terms of performance, creating multiplexed TCP tunnels is generally not a good idea, see [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking). Make sure you have a good reason to do so.*
+*Note: tlswrapper is designed as an inconspicuous secure communication tunnel. This may increase latency in some scenarios, see [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking).*
 
 ```
        Trusted      |     Untrusted    |     Trusted
