@@ -108,11 +108,11 @@ func printMemStats(w io.Writer) {
 			pauseEnd := int64(memstats.PauseEnd[idx])
 			pauseAt := time.Duration(t - pauseEnd)
 			if i == 0 {
-				b.WriteString(fmt.Sprintf("~%s %s", formats.Duration(pauseAt),
-					formats.Duration(time.Duration(memstats.PauseNs[idx]))))
+				fmt.Fprintf(b, "~%s %s", formats.Duration(pauseAt),
+					formats.Duration(time.Duration(memstats.PauseNs[idx])))
 			} else {
-				b.WriteString(fmt.Sprintf(", %s %s", formats.Duration(pauseAt),
-					formats.Duration(time.Duration(memstats.PauseNs[idx]))))
+				fmt.Fprintf(b, ", %s %s", formats.Duration(pauseAt),
+					formats.Duration(time.Duration(memstats.PauseNs[idx])))
 			}
 			t = pauseEnd
 		}
@@ -126,7 +126,7 @@ func printMemStats(w io.Writer) {
 		i50 := int(math.Floor(float64(numGC) * 0.50))
 		i90 := int(math.Floor(float64(numGC) * 0.90))
 		p50, p90, pmax := pause[i50], pause[i90], pause[numGC-1]
-		fprintf(w, "%-20s: P50=%s P90=%s MAX=%s SUM=%s\n", "GC Pause",
+		fprintf(w, "%-20s: P50=%s P90=%s MAX=%s TOTAL=%s\n", "GC Pause",
 			formats.Duration(p50), formats.Duration(p90), formats.Duration(pmax),
 			formats.Duration(time.Duration(memstats.PauseTotalNs)))
 	} else {
