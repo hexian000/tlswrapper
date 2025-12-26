@@ -16,8 +16,10 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
+// ErrConnLimit is returned when the maximum number of concurrent connections is exceeded
 var ErrConnLimit = errors.New("connection limit is exceeded")
 
+// Forwarder interface defines methods for forwarding connections
 type Forwarder interface {
 	Forward(accepted net.Conn, dialed net.Conn) error
 	Count() int
@@ -31,6 +33,7 @@ type forwarder struct {
 	counter chan struct{}
 }
 
+// New creates a new Forwarder with the given maximum concurrent connections
 func New(maxConn int, g routines.Group) Forwarder {
 	return &forwarder{
 		conn:    make(map[net.Conn]struct{}),
@@ -75,6 +78,7 @@ func (f *forwarder) connCopy(dst net.Conn, src net.Conn) {
 	}
 }
 
+// Forward forwards data between accepted and dialed connections
 func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 	select {
 	case <-f.g.CloseC():
@@ -106,10 +110,12 @@ func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 	return nil
 }
 
+// Count returns the current number of active connections
 func (f *forwarder) Count() int {
 	return len(f.counter)
 }
 
+// Close closes all active connections managed by the forwarder
 func (f *forwarder) Close() {
 	f.mu.Lock()
 	defer f.mu.Unlock()

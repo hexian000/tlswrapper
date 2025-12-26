@@ -13,6 +13,7 @@ var (
 	mimeType    = "application/x-tlswrapper-config"
 	mimeVersion = "3"
 
+	// Type is the configuration file type identifier in MIME format
 	Type = mime.FormatMediaType(mimeType, map[string]string{"version": mimeVersion})
 )
 
@@ -28,6 +29,7 @@ type Tunnel struct {
 	Service string `json:"service,omitempty"`
 }
 
+// KeyPair represents a TLS certificate and private key pair
 type KeyPair struct {
 	// TLS: PEM encoded certificate
 	Certificate string `json:"cert"`
@@ -35,9 +37,10 @@ type KeyPair struct {
 	PrivateKey string `json:"key"`
 }
 
+// CertPool represents a pool of PEM encoded certificates
 type CertPool []string
 
-// File config file
+// File represents the configuration file structure
 type File struct {
 	// type identifier
 	Type string `json:"type"`
@@ -91,6 +94,7 @@ type File struct {
 	LogLevel slog.Level `json:"loglevel"`
 }
 
+// Default configuration
 var Default = File{
 	Type:            Type,
 	Services:        map[string]string{},

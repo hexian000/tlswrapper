@@ -107,6 +107,7 @@ func (s *Server) getAllTunnels() []*tunnel {
 	return tunnels
 }
 
+// ServerStats holds statistics of the server
 type ServerStats struct {
 	NumSessions int
 	NumStreams  int
@@ -119,6 +120,7 @@ type ServerStats struct {
 	tunnels     []TunnelStats
 }
 
+// Stats returns the current server statistics
 func (s *Server) Stats() (stats ServerStats) {
 	if s.l != nil {
 		stats.Accepted, stats.Served = s.l.Stats()
@@ -158,6 +160,7 @@ func (s *Server) serveOne(accepted net.Conn, handler Handler) {
 	handler.Serve(ctx, accepted)
 }
 
+// Serve incoming connections with the given handler
 func (s *Server) Serve(listener net.Listener, handler Handler) {
 	for {
 		conn, err := listener.Accept()
@@ -181,6 +184,7 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	}
 }
 
+// addMux adds a yamux session to the server's mux map
 func (s *Server) addMux(mux *yamux.Session, tag string) {
 	now := time.Now()
 	msg := fmt.Sprintf("%s: session established", tag)
@@ -192,6 +196,7 @@ func (s *Server) addMux(mux *yamux.Session, tag string) {
 	s.mux[mux] = tag
 }
 
+// delMux removes a yamux session from the server's mux map
 func (s *Server) delMux(mux *yamux.Session) {
 	now := time.Now()
 	if tag, ok := func() (string, bool) {
@@ -209,6 +214,7 @@ func (s *Server) delMux(mux *yamux.Session) {
 	delete(s.mux, mux)
 }
 
+// startMux starts a yamux session over the given connection
 func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service string, t *tunnel, tag string) (*yamux.Session, error) {
 	muxcfg := cfg.NewMuxConfig(t != nil)
 	handshakeFunc := yamux.Server
@@ -240,6 +246,7 @@ func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service str
 	return mux, nil
 }
 
+// Listen starts listening on the given address
 func (s *Server) Listen(addr string) (net.Listener, error) {
 	listener, err := net.Listen(network, addr)
 	if err != nil {
@@ -250,6 +257,7 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 	return listener, err
 }
 
+// loadTunnels loads tunnels from the configuration file
 func (s *Server) loadTunnels(cfg *config.File) error {
 	s.tunnelsMu.Lock()
 	defer s.tunnelsMu.Unlock()

@@ -9,12 +9,14 @@ import (
 	"time"
 )
 
+// contextMgr manages contexts with timeouts
 type contextMgr struct {
 	timeout  func() time.Duration
 	mu       sync.Mutex
 	contexts map[context.Context]context.CancelFunc
 }
 
+// withTimeout creates a new context with timeout
 func (m *contextMgr) withTimeout() context.Context {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -26,6 +28,7 @@ func (m *contextMgr) withTimeout() context.Context {
 	return ctx
 }
 
+// cancel cancels the given context
 func (m *contextMgr) cancel(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -38,6 +41,7 @@ func (m *contextMgr) cancel(ctx context.Context) {
 	}
 }
 
+// close cancels all managed contexts and frees all underlying resources
 func (m *contextMgr) close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

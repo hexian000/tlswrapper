@@ -18,23 +18,26 @@ import (
 	"github.com/hexian000/tlswrapper/v3/proto"
 )
 
+// Handler is a generic interface that handles incoming connections
 type Handler interface {
 	Serve(context.Context, net.Conn)
 }
 
-// TLSHandler creates a tunnel
+// TLSHandler creates tunnels from incoming TLS connections
 type TLSHandler struct {
 	s *Server
 
 	halfOpen atomic.Uint32
 }
 
+// Stats4Listener returns the current number of sessions and half-open connections
 func (h *TLSHandler) Stats4Listener() (numSessions uint32, numHalfOpen uint32) {
 	numSessions = h.s.numSessions.Load()
 	numHalfOpen = h.halfOpen.Load()
 	return
 }
 
+// Serve handles an incoming connection
 func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	h.halfOpen.Add(1)
 	defer h.halfOpen.Add(^uint32(0))
@@ -89,13 +92,14 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	slog.Debugf("%s: service=%q, setup %v", tag, req.Service, formats.Duration(time.Since(start)))
 }
 
-// ForwardHandler forwards connections to another plain address
+// ForwardHandler forwards connections to configured address
 type ForwardHandler struct {
 	s        *Server
 	peerName string
 	service  string
 }
 
+// Serve handles an incoming connection
 func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 	h.s.stats.request.Add(1)
 	peerName := "?"
@@ -133,6 +137,7 @@ type TunnelHandler struct {
 	t *tunnel
 }
 
+// Serve handles an incoming connection
 func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 	dialed, err := h.t.Dial(ctx)
 	if err != nil {
@@ -156,6 +161,7 @@ func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
 // EmptyHandler rejects all connections
 type EmptyHandler struct{}
 
+// Serve handles an incoming connection
 func (h *EmptyHandler) Serve(_ context.Context, accepted net.Conn) {
 	ioClose(accepted)
 }

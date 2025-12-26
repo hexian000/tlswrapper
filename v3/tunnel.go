@@ -48,6 +48,7 @@ func (t *tunnel) getConfig() (*config.File, *tls.Config, *config.Tunnel) {
 	return cfg, tlscfg, cfg.GetTunnel(t.peerName)
 }
 
+// Start starts the tunnel, including listening if configured
 func (t *tunnel) Start() error {
 	_, _, c := t.getConfig()
 	if c.Listen != "" {
@@ -69,6 +70,7 @@ func (t *tunnel) Start() error {
 	return t.s.g.Go(t.run)
 }
 
+// Stop stops the tunnel
 func (t *tunnel) Stop() error {
 	close(t.closeSig)
 	slog.Debugf("tunnel %q: stop", t.peerName)
@@ -184,6 +186,7 @@ func (t *tunnel) run() {
 	}
 }
 
+// addMux adds a yamux session to the tunnel's mux map
 func (t *tunnel) addMux(mux *yamux.Session, tag string) {
 	now := time.Now()
 	msg := fmt.Sprintf("%s: session established", tag)
@@ -251,12 +254,14 @@ func (t *tunnel) getMux() *yamux.Session {
 	return mux
 }
 
+// NumSessions returns the current number of active yamux sessions
 func (t *tunnel) NumSessions() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return len(t.mux)
 }
 
+// muxDial dials to the remote and establishes a yamux session
 func (t *tunnel) muxDial(ctx context.Context) (*yamux.Session, error) {
 	cfg, tlscfg, tuncfg := t.getConfig()
 	if tuncfg.MuxDial == "" {
@@ -307,6 +312,7 @@ func (t *tunnel) muxDial(ctx context.Context) (*yamux.Session, error) {
 	return mux, nil
 }
 
+// Dial opens a new stream over an existing yamux session, or dials a new session if needed
 func (t *tunnel) Dial(ctx context.Context) (net.Conn, error) {
 	mux := t.getMux()
 	if mux == nil {
@@ -323,6 +329,7 @@ func (t *tunnel) Dial(ctx context.Context) (net.Conn, error) {
 	return stream, nil
 }
 
+// TunnelStats holds statistics of a tunnel
 type TunnelStats struct {
 	Name        string
 	LastChanged time.Time
@@ -330,6 +337,7 @@ type TunnelStats struct {
 	NumStreams  int
 }
 
+// Stats returns the current statistics of the tunnel
 func (t *tunnel) Stats() TunnelStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()

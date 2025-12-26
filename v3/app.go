@@ -33,6 +33,7 @@ func init() {
 	std.SetLevel(slog.LevelVerbose)
 }
 
+// AppFlags holds the command-line arguments
 type AppFlags struct {
 	Help       bool
 	Config     string
@@ -62,6 +63,7 @@ func (f *AppFlags) Validate() error {
 
 var appFlags AppFlags
 
+// AppMain is the main entry point of the application
 func AppMain(f *AppFlags) int {
 	if err := f.Validate(); err != nil {
 		slog.Fatalf("arguments: %s", formats.Error(err))

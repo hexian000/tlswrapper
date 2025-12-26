@@ -46,6 +46,7 @@ type apiConfigHandler struct {
 	s *Server
 }
 
+// ServeHTTP handles configuration update requests
 func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -151,13 +152,15 @@ type apiStatsHandler struct {
 	last apiStats
 }
 
+// ServeHTTP handles statistics requests
 func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var stateless bool
-	if r.Method == http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
 		stateless = true
-	} else if r.Method == http.MethodPost {
+	case http.MethodPost:
 		stateless = false
-	} else {
+	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
@@ -261,6 +264,7 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// RunHTTPServer runs an HTTP server for metrics and configuration
 func RunHTTPServer(l net.Listener, s *Server) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {

@@ -19,6 +19,7 @@ var (
 	mimeType    = "application/x-tlswrapper-proto"
 	mimeVersion = "3"
 
+	// Type is the protocol message type identifier in MIME format
 	Type = mime.FormatMediaType(mimeType, map[string]string{"version": mimeVersion})
 )
 
@@ -27,6 +28,7 @@ const (
 	MsgServerHello
 )
 
+// Message represents a protocol message
 type Message struct {
 	Type     string `json:"type"`
 	Msg      int    `json:"msgid"`
@@ -91,6 +93,7 @@ func checkType(s string) error {
 	return nil
 }
 
+// Roundtrip sends a request message and waits for the response
 func Roundtrip(conn net.Conn, req *Message) (*Message, error) {
 	if err := sendmsg(conn, req); err != nil {
 		return nil, err
@@ -106,6 +109,7 @@ func Roundtrip(conn net.Conn, req *Message) (*Message, error) {
 	return rsp, nil
 }
 
+// Read reads a Message from the given reader
 func Read(r io.Reader) (*Message, error) {
 	req := &Message{}
 	if err := recvmsg(r, req); err != nil {
@@ -118,6 +122,7 @@ func Read(r io.Reader) (*Message, error) {
 	return req, nil
 }
 
+// Write writes a Message to the given writer
 func Write(w io.Writer, rsp *Message) error {
 	return sendmsg(w, rsp)
 }

@@ -14,9 +14,10 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
+// loadPEM loads a PEM string or reads it from a file if it starts with '@'
 func loadPEM(s string) (string, error) {
-	if strings.HasPrefix(s, "@") {
-		certPEM, err := os.ReadFile(strings.TrimPrefix(s, "@"))
+	if fileName, ok := strings.CutPrefix(s, "@"); ok {
+		certPEM, err := os.ReadFile(fileName)
 		if err != nil {
 			return "", err
 		}
@@ -25,6 +26,7 @@ func loadPEM(s string) (string, error) {
 	return s, nil
 }
 
+// Load loads the certificate and private key in the key pair
 func (c *KeyPair) Load() error {
 	certPEM, err := loadPEM(c.Certificate)
 	if err != nil {
@@ -39,6 +41,7 @@ func (c *KeyPair) Load() error {
 	return nil
 }
 
+// Load loads all certificates in the cert pool
 func (p CertPool) Load() error {
 	for i, cert := range p {
 		certPEM, err := loadPEM(cert)
@@ -63,6 +66,7 @@ func (cfg *File) load() error {
 	return nil
 }
 
+// Load loads configuration from a byte slice
 func Load(b []byte) (*File, error) {
 	cfg := Default
 	if err := json.Unmarshal(b, &cfg); err != nil {
@@ -85,6 +89,7 @@ func Load(b []byte) (*File, error) {
 	return &cfg, nil
 }
 
+// LoadFile loads configuration from a file
 func LoadFile(path string) (*File, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -118,6 +123,7 @@ func checkType(s string) error {
 	return nil
 }
 
+// Validate validates the configuration file
 func (c *File) Validate() error {
 	if err := checkType(c.Type); err != nil {
 		return err
@@ -146,6 +152,7 @@ func (c *File) Validate() error {
 	return nil
 }
 
+// Clone creates a deep copy of the configuration file
 func (cfg *File) Clone() (*File, error) {
 	b, err := json.Marshal(cfg)
 	if err != nil {
@@ -158,6 +165,7 @@ func (cfg *File) Clone() (*File, error) {
 	return c, nil
 }
 
+// Dump dumps the configuration file to JSON format
 func (cfg *File) Dump() ([]byte, error) {
 	c, err := cfg.Clone()
 	if err != nil {

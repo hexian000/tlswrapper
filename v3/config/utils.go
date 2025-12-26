@@ -18,6 +18,7 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
+// SetLogger sets up logging according to config
 func (cfg *File) SetLogger(l *slog.Logger) error {
 	switch cfg.Log {
 	case "discard":
@@ -35,6 +36,7 @@ func (cfg *File) SetLogger(l *slog.Logger) error {
 	return nil
 }
 
+// NewX509CertPool creates x509.CertPool from CertPool
 func (p CertPool) NewX509CertPool() (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
 	for i, cert := range p {
@@ -93,6 +95,7 @@ func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {
 	}, nil
 }
 
+// logWrapper wraps slog.Logger to implement io.Writer
 type logWrapper struct {
 	*slog.Logger
 }
