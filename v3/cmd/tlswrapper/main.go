@@ -14,11 +14,13 @@ import (
 
 var flagAlias = map[string]string{
 	"help":   "h",
+	"color":  "C",
 	"config": "c",
 }
 
 func parseFlags(f *tlswrapper.AppFlags) {
 	flag.BoolVar(&f.Help, "help", false, "show usage and exit")
+	flag.BoolVar(&f.Color, "color", false, "enable color output")
 	flag.StringVar(&f.Config, "config", "", "config file")
 	flag.BoolVar(&f.DumpConfig, "dumpconfig", false, "dump config file to stdout")
 	flag.StringVar(&f.ServerName, "sni", "example.com", "gencerts: server name")

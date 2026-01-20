@@ -4,7 +4,7 @@ github.com/clipperhouse/uax29/v2 v2.3.1 h1:RjM8gnVbFbgI67SBekIC7ihFpyXwRPYWXn9BZ
 github.com/clipperhouse/uax29/v2 v2.3.1/go.mod h1:Wn1g7MK6OoeDT0vL+Q0SQLDz/KpfsVRgg6W7ihQeh4g=
 github.com/hashicorp/yamux v0.1.2 h1:XtB8kyFOyHXYVFnwT5C3+Bdo8gArse7j2AQ0DA0Uey8=
 github.com/hashicorp/yamux v0.1.2/go.mod h1:C+zze2n6e/7wshOZep2A70/aQU6QBRWJO/G6FT1wIns=
-github.com/hexian000/gosnippets v0.0.0-20260119104735-281bb83965e2 h1:bXtsuwhbtOe7K+KXUf3mm8q+I8tinkmuA/gcJzgryac=
-github.com/hexian000/gosnippets v0.0.0-20260119104735-281bb83965e2/go.mod h1:MNstWYFQWsGuQsXJ+ZwMYVUp8gaGYEzkbIkZp7c15xU=
+github.com/hexian000/gosnippets v0.0.0-20260120132543-24886bf3e6ae h1:6QzWmsu/ipIgKgTbYiJuebMZVqqziYxIFTYlcR0cV54=
+github.com/hexian000/gosnippets v0.0.0-20260120132543-24886bf3e6ae/go.mod h1:VtCdSfFdNDvXxTRaBHl+iSJTmjmcEW45L2kf04ARV/8=
 github.com/mattn/go-runewidth v0.0.19 h1:v++JhqYnZuu5jSKrk9RbgF5v4CGUjqRfBm05byFGLdw=
 github.com/mattn/go-runewidth v0.0.19/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=

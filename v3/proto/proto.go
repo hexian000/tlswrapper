@@ -68,7 +68,7 @@ func recvmsg(r io.Reader, msg any) error {
 	if err != nil {
 		return err
 	}
-	slog.Binaryf(slog.LevelVeryVerbose, b, "recvmsg: %d bytes", len(b))
+	slog.Binaryf(slog.LevelVeryVerbose, b, 0, "recvmsg: %d bytes", len(b))
 	if err := json.Unmarshal(b, msg); err != nil {
 		return err
 	}

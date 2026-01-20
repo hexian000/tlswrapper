@@ -36,6 +36,7 @@ func init() {
 // AppFlags holds the command-line arguments
 type AppFlags struct {
 	Help       bool
+	Color      bool
 	Config     string
 	DumpConfig bool
 	ServerName string
@@ -65,6 +66,9 @@ var appFlags AppFlags
 
 // AppMain is the main entry point of the application
 func AppMain(f *AppFlags) int {
+	if f.Color {
+		slog.Default().SetOutput(slog.OutputTerminal, os.Stdout)
+	}
 	if err := f.Validate(); err != nil {
 		slog.Fatalf("arguments: %s", formats.Error(err))
 		slog.Infof("try \"%s -h\" for more information", os.Args[0])
