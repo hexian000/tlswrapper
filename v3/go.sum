@@ -1,10 +1,10 @@
 github.com/clipperhouse/stringish v0.1.1 h1:+NSqMOr3GR6k1FdRhhnXrLfztGzuG+VuFDfatpWHKCs=
 github.com/clipperhouse/stringish v0.1.1/go.mod h1:v/WhFtE1q0ovMta2+m+UbpZ+2/HEXNWYXQgCt4hdOzA=
-github.com/clipperhouse/uax29/v2 v2.3.0 h1:SNdx9DVUqMoBuBoW3iLOj4FQv3dN5mDtuqwuhIGpJy4=
-github.com/clipperhouse/uax29/v2 v2.3.0/go.mod h1:Wn1g7MK6OoeDT0vL+Q0SQLDz/KpfsVRgg6W7ihQeh4g=
+github.com/clipperhouse/uax29/v2 v2.3.1 h1:RjM8gnVbFbgI67SBekIC7ihFpyXwRPYWXn9BZActHbw=
+github.com/clipperhouse/uax29/v2 v2.3.1/go.mod h1:Wn1g7MK6OoeDT0vL+Q0SQLDz/KpfsVRgg6W7ihQeh4g=
 github.com/hashicorp/yamux v0.1.2 h1:XtB8kyFOyHXYVFnwT5C3+Bdo8gArse7j2AQ0DA0Uey8=
 github.com/hashicorp/yamux v0.1.2/go.mod h1:C+zze2n6e/7wshOZep2A70/aQU6QBRWJO/G6FT1wIns=
-github.com/hexian000/gosnippets v0.0.0-20251204104341-97e959c976eb h1:+DVRwnRDT9Rhysq1kBSVePkt7KpwiHKrYE3JGn0K2Rg=
-github.com/hexian000/gosnippets v0.0.0-20251204104341-97e959c976eb/go.mod h1:MNstWYFQWsGuQsXJ+ZwMYVUp8gaGYEzkbIkZp7c15xU=
+github.com/hexian000/gosnippets v0.0.0-20260119104735-281bb83965e2 h1:bXtsuwhbtOe7K+KXUf3mm8q+I8tinkmuA/gcJzgryac=
+github.com/hexian000/gosnippets v0.0.0-20260119104735-281bb83965e2/go.mod h1:MNstWYFQWsGuQsXJ+ZwMYVUp8gaGYEzkbIkZp7c15xU=
 github.com/mattn/go-runewidth v0.0.19 h1:v++JhqYnZuu5jSKrk9RbgF5v4CGUjqRfBm05byFGLdw=
 github.com/mattn/go-runewidth v0.0.19/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=

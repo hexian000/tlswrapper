@@ -1,4 +1,4 @@
-// tlswrapper (c) 2021-2025 He Xian <hexian000@outlook.com>
+// tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
 // This code is licensed under MIT license (see LICENSE for details)
 
 package config
@@ -104,11 +104,11 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 	const calldepth = 2
 	raw := strings.TrimSuffix(string(p), "\n")
 	if msg := strings.TrimPrefix(raw, "[ERR] "); len(msg) != len(raw) {
-		w.Output(calldepth, slog.LevelError, nil, msg)
+		w.Println(calldepth, slog.LevelError, nil, msg)
 	} else if msg := strings.TrimPrefix(raw, "[WARN] "); len(msg) != len(raw) {
-		w.Output(calldepth, slog.LevelWarning, nil, msg)
+		w.Println(calldepth, slog.LevelWarning, nil, msg)
 	} else {
-		w.Output(calldepth, slog.LevelError, nil, string(p))
+		w.Println(calldepth, slog.LevelError, nil, string(p))
 	}
 	return len(p), nil
 }
