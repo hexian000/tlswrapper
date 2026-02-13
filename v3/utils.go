@@ -68,7 +68,7 @@ func newCertificate(parent *x509.Certificate, signKey any, sni string, pubKey an
 	now := time.Now()
 	tmpl := x509.Certificate{
 		NotBefore:    now,
-		NotAfter:     now.AddDate(0, 0, 36500),
+		NotAfter:     now.AddDate(0, 0, 3652), // 10 years
 		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
 			Country:            []string{"US"},
