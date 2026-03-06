@@ -1,0 +1,16 @@
+{
+  "peername": "server",
+  "muxlisten": "127.0.0.1:38000",
+  "services": {
+    "http": "127.0.0.1:8080"
+  },
+  "certs": [
+    {
+      "cert": "@server-cert.pem",
+      "key": "@server-key.pem"
+    }
+  ],
+  "authcerts": [
+    "@client-cert.pem"
+  ]
+}

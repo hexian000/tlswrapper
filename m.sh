@@ -1,5 +1,5 @@
 #!/bin/sh
-# make.sh: in-tree build script for convenience
+# m.sh: in-tree build script for convenience
 cd "$(dirname "$0")"
 
 VERSION="dev"
