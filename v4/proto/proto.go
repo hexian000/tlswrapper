@@ -30,10 +30,10 @@ const (
 
 // Message represents a protocol message
 type Message struct {
-	Type     string `json:"type"`
-	Msg      int    `json:"msgid"`
-	PeerName string `json:"peername,omitempty"`
-	Service  string `json:"service,omitempty"`
+	Type string `json:"type"`
+	Msg  int    `json:"msgid"`
+	// sender identity (service.id)
+	ID string `json:"id,omitempty"`
 }
 
 var (

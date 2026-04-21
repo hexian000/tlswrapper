@@ -6,9 +6,9 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"mime"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/hexian000/gosnippets/slog"
@@ -26,42 +26,46 @@ func loadPEM(s string) (string, error) {
 	return s, nil
 }
 
-// Load loads the certificate and private key in the key pair
-func (c *KeyPair) Load() error {
-	certPEM, err := loadPEM(c.Certificate)
+// load resolves any "@path" references in the TLS config
+func (t *TLSConfig) load() error {
+	certPEM, err := loadPEM(t.Certificate)
 	if err != nil {
 		return err
 	}
-	c.Certificate = certPEM
-	keyPEM, err := loadPEM(c.PrivateKey)
+	t.Certificate = certPEM
+	keyPEM, err := loadPEM(t.PrivateKey)
 	if err != nil {
 		return err
 	}
-	c.PrivateKey = keyPEM
-	return nil
-}
-
-// Load loads all certificates in the cert pool
-func (p CertPool) Load() error {
-	for i, cert := range p {
+	t.PrivateKey = keyPEM
+	for i, cert := range t.AuthCerts {
 		certPEM, err := loadPEM(cert)
 		if err != nil {
 			return err
 		}
-		p[i] = certPEM
+		t.AuthCerts[i] = certPEM
 	}
 	return nil
 }
 
+func clampInt(v *int, min, max int) {
+	if *v < min {
+		*v = min
+	} else if *v > max {
+		*v = max
+	}
+}
+
 func (cfg *File) load() error {
-	for i, pair := range cfg.Certificates {
-		if err := pair.Load(); err != nil {
+	if cfg.TLS != nil {
+		if err := cfg.TLS.load(); err != nil {
 			return err
 		}
-		cfg.Certificates[i] = pair
 	}
-	if err := cfg.AuthorizedCerts.Load(); err != nil {
-		return err
+	// expand stream_window convenience alias
+	if cfg.StreamWindow != 0 {
+		cfg.Mux.WriteMem = cfg.StreamWindow
+		cfg.Mux.ReadMem = 2 * cfg.StreamWindow
 	}
 	return nil
 }
@@ -98,13 +102,6 @@ func LoadFile(path string) (*File, error) {
 	return Load(b)
 }
 
-func rangeCheckInt(key string, value int, min int, max int) error {
-	if !(min <= value && value <= max) {
-		return fmt.Errorf("%s is out of range (%d - %d)", key, min, max)
-	}
-	return nil
-}
-
 func checkType(s string) error {
 	mediatype, params, err := mime.ParseMediaType(s)
 	if err != nil {
@@ -123,32 +120,66 @@ func checkType(s string) error {
 	return nil
 }
 
-// Validate validates the configuration file
+// parseMaxStartups parses the "start:rate:full" throttle string
+func parseMaxStartups(s string) (start, rate, full int, err error) {
+	parts := strings.SplitN(s, ":", 3)
+	if len(parts) != 3 {
+		err = fmt.Errorf("invalid format %q, expected start:rate:full", s)
+		return
+	}
+	start, err = strconv.Atoi(parts[0])
+	if err != nil || start < 1 {
+		err = fmt.Errorf("start must be a positive integer, got %q", parts[0])
+		return
+	}
+	rate, err = strconv.Atoi(parts[1])
+	if err != nil || rate < 0 || rate > 100 {
+		err = fmt.Errorf("rate must be 0-100, got %q", parts[1])
+		return
+	}
+	full, err = strconv.Atoi(parts[2])
+	if err != nil || full < start {
+		err = fmt.Errorf("full must be >= start, got %q", parts[2])
+		return
+	}
+	return
+}
+
+// ParsedMaxStartups returns the parsed components of the MaxStartups throttle string.
+// Returns (0,0,0) if MaxStartups is empty.
+func (c *File) ParsedMaxStartups() (start, rate, full int) {
+	if c.MaxStartups == "" {
+		return
+	}
+	start, rate, full, _ = parseMaxStartups(c.MaxStartups)
+	return
+}
+
+// Validate validates and clamps the configuration
 func (c *File) Validate() error {
 	if err := checkType(c.Type); err != nil {
 		return err
 	}
-	if err := rangeCheckInt("keepalive", c.KeepAlive, 0, 86400); err != nil {
-		return err
+	if c.MaxStartups != "" {
+		if _, _, _, err := parseMaxStartups(c.MaxStartups); err != nil {
+			return fmt.Errorf("max_startups: %w", err)
+		}
 	}
-	if err := rangeCheckInt("serverkeepalive", c.ServerKeepAlive, 0, 86400); err != nil {
-		return err
+	// clamp timing fields
+	clampInt(&c.SessionTimeout, 5, 86400)
+	clampInt(&c.KeepAlive, 1, c.SessionTimeout)
+	clampInt(&c.SendTimeout, 5, c.SessionTimeout)
+	if c.IdleTimeout != 0 {
+		clampInt(&c.IdleTimeout, 5, 31557600)
 	}
-	if err := rangeCheckInt("startuplimitstart", c.StartupLimitStart, 1, math.MaxInt); err != nil {
-		return err
+	// clamp mux buffer/backlog fields
+	clampInt(&c.Mux.ReadMem, 16384, 16777216)
+	clampInt(&c.Mux.WriteMem, 16384, 16777216)
+	clampInt(&c.Mux.Backlog, 1, 4096)
+	if c.Mux.MaxHalfOpen != 0 {
+		clampInt(&c.Mux.MaxHalfOpen, 1, 4096)
 	}
-	if err := rangeCheckInt("startuplimitrate", c.StartupLimitRate, 0, 100); err != nil {
-		return err
-	}
-	if err := rangeCheckInt("startuplimitfull", c.StartupLimitFull, 1, math.MaxInt); err != nil {
-		return err
-	}
-	if err := rangeCheckInt("maxconn", c.MaxConn, 1, math.MaxInt); err != nil {
-		return err
-	}
-	if err := rangeCheckInt("maxsessions", c.MaxSessions, 1, math.MaxInt); err != nil {
-		return err
-	}
+	clampInt(&c.TCP.Backlog, 1, 4096)
 	return nil
 }
 

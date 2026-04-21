@@ -1,0 +1,276 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "tlswrapper configuration",
+    "description": "Configuration file for tlswrapper. At least one of 'mux_listen', 'mux_connect', or 'service.mux_connect' must be present.",
+    "type": "object",
+    "properties": {
+        "type": {
+            "description": "MIME type identifying the config format and version.",
+            "type": "string",
+            "const": "application/x-tlswrapper-config; version=4"
+        },
+        "id": {
+            "description": "Self identity announced in the handshake.",
+            "type": "string"
+        },
+        "log": {
+            "description": "Log output destination: 'stdout' (default), 'stderr', 'syslog', or 'discard'.",
+            "type": "string",
+            "enum": ["stdout", "stderr", "syslog", "discard"],
+            "default": "stdout"
+        },
+        "no_redial": {
+            "description": "Disable automatic tunnel redial in client mode. Default: false.",
+            "type": "boolean",
+            "default": false
+        },
+        "api_listen": {
+            "description": "Listen address for the HTTP management API (e.g. '127.0.0.1:9081').",
+            "type": "string"
+        },
+        "mux_listen": {
+            "description": "Address to accept inbound mux connections on (server mode).",
+            "type": "string"
+        },
+        "mux_connect": {
+            "description": "Address to dial for the outbound mux connection (client mode).",
+            "type": "string"
+        },
+        "listen": {
+            "description": "Local TCP address to accept application traffic on.",
+            "type": "string"
+        },
+        "connect": {
+            "description": "Forwarding target address for inbound application streams.",
+            "type": "string"
+        },
+        "timeout": {
+            "description": "Session inactivity timeout in seconds. Clamped to [5, 86400]. Default: 60.",
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 86400,
+            "default": 60
+        },
+        "keepalive": {
+            "description": "Keepalive probe interval in seconds. Clamped to [1, timeout]. Default: 25.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400,
+            "default": 25
+        },
+        "send_timeout": {
+            "description": "Send completion timeout in seconds. Clamped to [5, timeout]. Default: 15.",
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 86400,
+            "default": 15
+        },
+        "idle_timeout": {
+            "description": "Session idle timeout in seconds. 0 disables idle eviction; otherwise clamped to [5, 31557600]. Default: 0.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 31557600,
+            "default": 0
+        },
+        "loglevel": {
+            "description": "Log verbosity: 0=silence, 1=fatal, 2=error, 3=warning, 4=notice, 5=info, 6=debug, 7=verbose, 8=veryverbose. Default: 4.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8,
+            "default": 4
+        },
+        "max_sessions": {
+            "description": "Maximum number of concurrent mux sessions. 0 means unlimited.",
+            "type": "integer",
+            "minimum": 0
+        },
+        "max_streams": {
+            "description": "Maximum concurrent streams per session. 0 uses the internal default (1024).",
+            "type": "integer",
+            "minimum": 0
+        },
+        "stream_window": {
+            "description": "Convenience alias: sets wmem to this value and rmem to twice this value. Clamped to [16384, 16777216].",
+            "type": "integer",
+            "minimum": 16384,
+            "maximum": 16777216
+        },
+        "max_startups": {
+            "description": "Unauthenticated connection throttle in 'start:rate:full' format. Beyond 'start' connections, each new one is dropped with probability 'rate'% until the queue reaches 'full'.",
+            "type": "string",
+            "pattern": "^[0-9]+:[0-9]+:[0-9]+$",
+            "examples": [
+                "10:30:60"
+            ]
+        },
+        "tls": {
+            "description": "TLS configuration. All three of cert, key, and authcerts must be set together, or all must be absent (plaintext mode).",
+            "type": "object",
+            "properties": {
+                "cert": {
+                    "description": "PEM certificate. Use '@path' to read the file at startup, or provide an inline PEM string.",
+                    "type": "string"
+                },
+                "key": {
+                    "description": "PEM private key. Use '@path' to read the file at startup, or provide an inline PEM string.",
+                    "type": "string"
+                },
+                "ciphersuites": {
+                    "description": "Colon-separated list of TLS 1.3 ciphersuites to enable.",
+                    "type": "string"
+                },
+                "authcerts": {
+                    "description": "Authorized peer certificates. Each entry is a '@path' reference or an inline PEM string.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "minItems": 1
+                }
+            },
+            "additionalProperties": false
+        },
+        "mux": {
+            "description": "Socket and buffer settings for the mux (transport-level) connection.",
+            "type": "object",
+            "properties": {
+                "reuseport": {
+                    "description": "Enable SO_REUSEPORT on the mux socket. Default: false.",
+                    "type": "boolean",
+                    "default": false
+                },
+                "keepalive": {
+                    "description": "Enable TCP keepalive on the mux socket. Default: false.",
+                    "type": "boolean",
+                    "default": false
+                },
+                "nodelay": {
+                    "description": "Enable TCP_NODELAY on the mux socket. Default: true.",
+                    "type": "boolean",
+                    "default": true
+                },
+                "sndbuf": {
+                    "description": "SO_SNDBUF hint in bytes for the mux socket. 0 uses the system default.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "rcvbuf": {
+                    "description": "SO_RCVBUF hint in bytes for the mux socket. 0 uses the system default.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "backlog": {
+                    "description": "Listen backlog for the mux socket. Clamped to [1, 4096]. Default: 16.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4096,
+                    "default": 16
+                },
+                "max_halfopen": {
+                    "description": "Maximum half-open (unacknowledged SYN) streams per session. 0 disables the limit; otherwise clamped to [1, 4096]. Default: 256.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4096,
+                    "default": 256
+                },
+                "rmem": {
+                    "description": "Per-stream receive buffer size in bytes. Clamped to [16384, 16777216]. Default: 262144.",
+                    "type": "integer",
+                    "minimum": 16384,
+                    "maximum": 16777216,
+                    "default": 262144
+                },
+                "wmem": {
+                    "description": "Per-stream send buffer size in bytes. Clamped to [16384, 16777216]. Default: 131072.",
+                    "type": "integer",
+                    "minimum": 16384,
+                    "maximum": 16777216,
+                    "default": 131072
+                },
+                "mem_pressure": {
+                    "description": "Session memory pressure threshold in bytes. 0 auto-derives the value from max_streams and rmem. When positive, clamped to [65536, 2147483647].",
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0
+                },
+                "stream_open_timeout": {
+                    "description": "Stream open timeout in seconds. Default: 30.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 30
+                },
+                "stream_close_timeout": {
+                    "description": "Stream close timeout in seconds. Default: 120.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 120
+                }
+            },
+            "additionalProperties": false
+        },
+        "tcp": {
+            "description": "Socket options for local (application-side) TCP connections.",
+            "type": "object",
+            "properties": {
+                "reuseport": {
+                    "description": "Enable SO_REUSEPORT on local sockets. Default: false.",
+                    "type": "boolean",
+                    "default": false
+                },
+                "keepalive": {
+                    "description": "Enable TCP keepalive on local sockets. Default: true.",
+                    "type": "boolean",
+                    "default": true
+                },
+                "nodelay": {
+                    "description": "Enable TCP_NODELAY on local sockets. Default: true.",
+                    "type": "boolean",
+                    "default": true
+                },
+                "sndbuf": {
+                    "description": "SO_SNDBUF hint in bytes for local sockets. 0 uses the system default.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "rcvbuf": {
+                    "description": "SO_RCVBUF hint in bytes for local sockets. 0 uses the system default.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "backlog": {
+                    "description": "Listen backlog for the local listener. Clamped to [1, 4096]. Default: 16.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4096,
+                    "default": 16
+                }
+            },
+            "additionalProperties": false
+        },
+        "service": {
+            "description": "Named-service routing entries, keyed by service_id. Each entry configures the routing for one logical service.",
+            "type": "object",
+            "additionalProperties": {
+                "description": "Per-service routing configuration. At least one field must be set.",
+                "type": "object",
+                "properties": {
+                    "listen": {
+                        "description": "Local TCP address to accept application traffic on for this service.",
+                        "type": "string"
+                    },
+                    "mux_connect": {
+                        "description": "Mux endpoint address to dial for this service. Each entry maintains a separate outbound mux session.",
+                        "type": "string"
+                    },
+                    "connect": {
+                        "description": "Forwarding target address for inbound streams tagged with this service_id.",
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": false,
+                "minProperties": 1
+            }
+        }
+    },
+    "additionalProperties": false
+}

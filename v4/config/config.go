@@ -17,105 +17,149 @@ var (
 	Type = mime.FormatMediaType(mimeType, map[string]string{"version": mimeVersion})
 )
 
-// Tunnel represents a "fixed" tunnel between 2 peers
-type Tunnel struct {
-	// is disabled
-	Disabled bool `json:"disabled,omitempty"`
-	// mux dial address
-	MuxDial string `json:"addr,omitempty"`
-	// local listener address
-	Listen string `json:"listen,omitempty"`
-	// remote service name
-	Service string `json:"service,omitempty"`
-}
-
-// KeyPair represents a TLS certificate and private key pair
-type KeyPair struct {
-	// TLS: PEM encoded certificate
+// TLSConfig holds TLS certificate/key material and authorized peer certificates.
+// When TLS is nil in the parent File, connections run in plaintext mode.
+type TLSConfig struct {
+	// PEM certificate (inline PEM or "@path" to read from file at startup)
 	Certificate string `json:"cert"`
-	// TLS: PEM encoded private key
+	// PEM private key (inline PEM or "@path" to read from file at startup)
 	PrivateKey string `json:"key"`
+	// Colon-separated list of TLS 1.3 ciphersuites (informational; Go stdlib fixes TLS 1.3 suites)
+	Ciphersuites string `json:"ciphersuites,omitempty"`
+	// Authorized peer certificates (inline PEM or "@path" entries)
+	AuthCerts []string `json:"authcerts"`
 }
 
-// CertPool represents a pool of PEM encoded certificates
-type CertPool []string
-
-// File represents the configuration file structure
-type File struct {
-	// type identifier
-	Type string `json:"type"`
-	// local peer name
-	PeerName string `json:"peername,omitempty"`
-	// mux listen address
-	MuxListen string `json:"muxlisten,omitempty"`
-	// service name to dial address
-	Services map[string]string `json:"services"`
-	// peer name to config
-	Peers map[string]Tunnel `json:"peers"`
-	// health check and metrics, default to "" (disabled)
-	HTTPListen string `json:"httplisten,omitempty"`
-	// TLS: local certificates
-	Certificates []KeyPair `json:"certs"`
-	// TLS: authorized remote certificates, PEM encoded
-	AuthorizedCerts CertPool `json:"authcerts"`
-	// TCP no delay, default to true
+// MuxConfig holds socket and buffer settings for the mux (transport-level) connection.
+type MuxConfig struct {
+	// Enable SO_REUSEPORT on the mux socket
+	ReusePort bool `json:"reuseport"`
+	// Enable OS-level TCP keepalive on the mux socket
+	KeepAlive bool `json:"keepalive"`
+	// Enable TCP_NODELAY on the mux socket
 	NoDelay bool `json:"nodelay"`
-	// soft limit of concurrent unauthenticated connections, default to 10
-	StartupLimitStart int `json:"startuplimitstart"`
-	// probability of random disconnection when soft limit is exceeded, default to 30 (30%)
-	StartupLimitRate int `json:"startuplimitrate"`
-	// hard limit of concurrent unauthenticated connections, default to 60
-	StartupLimitFull int `json:"startuplimitfull"`
-	// max concurrent streams, default to 16384
-	MaxConn int `json:"maxconn"`
-	// max concurrent incoming sessions, default to 128
-	MaxSessions int `json:"maxsessions"`
-	// don't keep tunnels connected, default to false
-	NoRedial bool `json:"noredial,omitempty"`
-	// client-side keep alive interval in seconds, 0 for disable, default to 25 (every 25s)
-	KeepAlive int `json:"keepalive"`
-	// server-side keep alive interval in seconds, 0 for disable, default to 300 (every 5min)
-	ServerKeepAlive int `json:"serverkeepalive"`
-	// mux accept backlog, default to 256, you may not want to change this
-	AcceptBacklog int `json:"backlog"`
-	// stream window size in bytes, default to 256 KiB, increase this on long fat networks
-	StreamWindow uint32 `json:"window"`
-	// tunnel connecting timeout in seconds, default to 15
-	ConnectTimeout int `json:"timeout"`
-	// stream open timeout in seconds, default to 30
-	StreamOpenTimeout int `json:"streamopentimeout"`
-	// stream close timeout in seconds, default to 120
-	StreamCloseTimeout int `json:"streamclosetimeout"`
-	// data write request timeout in seconds, default to 15, for detecting network failures earlier
-	WriteTimeout int `json:"writetimeout"`
-	// log output, default to stdout
-	Log string `json:"log"`
-	// log output, default to 4 (notice)
-	LogLevel slog.Level `json:"loglevel"`
+	// SO_SNDBUF hint in bytes (0 = system default)
+	SndBuf int `json:"sndbuf,omitempty"`
+	// SO_RCVBUF hint in bytes (0 = system default)
+	RcvBuf int `json:"rcvbuf,omitempty"`
+	// Listen backlog for the mux socket
+	Backlog int `json:"backlog"`
+	// Maximum half-open streams per session (0 = unlimited)
+	MaxHalfOpen int `json:"max_halfopen"`
+	// Per-stream receive buffer size in bytes (flow-control window)
+	ReadMem int `json:"rmem"`
+	// Per-stream send buffer size in bytes
+	WriteMem int `json:"wmem"`
+	// Session memory pressure threshold in bytes (0 = auto)
+	MemPressure int64 `json:"mem_pressure"`
+	// Stream open timeout in seconds
+	StreamOpenTimeout int `json:"stream_open_timeout,omitempty"`
+	// Stream close timeout in seconds
+	StreamCloseTimeout int `json:"stream_close_timeout,omitempty"`
 }
 
-// Default configuration
-var Default = File{
-	Type:            Type,
-	Services:        map[string]string{},
-	Peers:           map[string]Tunnel{},
-	Certificates:    []KeyPair{},
-	AuthorizedCerts: CertPool{},
+// TCPConfig holds socket options for local (application-side) TCP connections.
+type TCPConfig struct {
+	// Enable SO_REUSEPORT on local sockets
+	ReusePort bool `json:"reuseport"`
+	// Enable TCP keepalive on local sockets
+	KeepAlive bool `json:"keepalive"`
+	// Enable TCP_NODELAY on local sockets
+	NoDelay bool `json:"nodelay"`
+	// SO_SNDBUF hint in bytes (0 = system default)
+	SndBuf int `json:"sndbuf,omitempty"`
+	// SO_RCVBUF hint in bytes (0 = system default)
+	RcvBuf int `json:"rcvbuf,omitempty"`
+	// Listen backlog for the local listener
+	Backlog int `json:"backlog"`
+}
 
-	NoDelay:            true,
-	StartupLimitStart:  10,
-	StartupLimitRate:   30,
-	StartupLimitFull:   60,
-	MaxConn:            16384,
-	MaxSessions:        128,
-	KeepAlive:          25,  // every 25s
-	ServerKeepAlive:    300, // every 5min
-	AcceptBacklog:      256,
-	StreamWindow:       256 * 1024, // 256 KiB
-	ConnectTimeout:     15,
-	StreamOpenTimeout:  30,
-	StreamCloseTimeout: 120,
-	WriteTimeout:       15,
-	Log:                "stdout",
-	LogLevel:           slog.LevelNotice,
+// ServiceEntry configures routing for a single named service.
+type ServiceEntry struct {
+	// Local TCP address to accept application traffic on for this service
+	Listen string `json:"listen,omitempty"`
+	// Mux endpoint address to dial for this service
+	MuxConnect string `json:"mux_connect,omitempty"`
+	// Forwarding target for inbound streams tagged with this service ID
+	Connect string `json:"connect,omitempty"`
+}
+
+// File represents the top-level configuration structure.
+type File struct {
+	// MIME type identifying the config format and version
+	Type string `json:"type"`
+	// Self identity announced in the handshake
+	ID string `json:"id,omitempty"`
+	// HTTP management API listen address (empty = disabled)
+	APIListen string `json:"api_listen,omitempty"`
+	// Address to accept inbound mux connections (server mode)
+	MuxListen string `json:"mux_listen,omitempty"`
+	// Address to dial for the outbound mux connection (client mode)
+	MuxConnect string `json:"mux_connect,omitempty"`
+	// Local TCP address to accept application traffic on
+	Listen string `json:"listen,omitempty"`
+	// Forwarding target for inbound application streams
+	Connect string `json:"connect,omitempty"`
+	// Session inactivity timeout in seconds
+	SessionTimeout int `json:"timeout"`
+	// Application-level keepalive probe interval in seconds
+	KeepAlive int `json:"keepalive"`
+	// Send completion timeout in seconds
+	SendTimeout int `json:"send_timeout"`
+	// Session idle eviction timeout in seconds (0 = disabled)
+	IdleTimeout int `json:"idle_timeout"`
+	// Log output destination ("stdout", "stderr", "syslog", "discard")
+	Log string `json:"log,omitempty"`
+	// Log verbosity level
+	LogLevel slog.Level `json:"loglevel"`
+	// Maximum concurrent mux sessions (0 = unlimited)
+	MaxSessions int `json:"max_sessions"`
+	// Maximum concurrent streams per session (0 = internal default 1024)
+	MaxStreams int `json:"max_streams"`
+	// Convenience alias: sets Mux.WriteMem=X and Mux.ReadMem=2X (0 = no override)
+	StreamWindow int `json:"stream_window,omitempty"`
+	// Unauthenticated connection throttle in "start:rate:full" format
+	MaxStartups string `json:"max_startups,omitempty"`
+	// Disable automatic tunnel redial (client mode)
+	NoRedial bool `json:"no_redial,omitempty"`
+	// TLS configuration (nil = plaintext mode)
+	TLS *TLSConfig `json:"tls,omitempty"`
+	// Mux socket and buffer settings
+	Mux MuxConfig `json:"mux"`
+	// Local TCP socket settings
+	TCP TCPConfig `json:"tcp"`
+	// Named-service routing entries keyed by service ID
+	Service map[string]ServiceEntry `json:"service,omitempty"`
+}
+
+// Default holds the baseline configuration with sensible defaults.
+var Default = File{
+	Type: Type,
+
+	SessionTimeout: 60,
+	KeepAlive:      25,
+	SendTimeout:    15,
+	IdleTimeout:    0,
+
+	Log:      "stdout",
+	LogLevel: slog.LevelNotice,
+
+	MaxSessions: 128,
+	MaxStreams:  0,
+	MaxStartups: "10:30:60",
+
+	Mux: MuxConfig{
+		NoDelay:            true,
+		Backlog:            16,
+		MaxHalfOpen:        256,
+		ReadMem:            262144, // 256 KiB
+		WriteMem:           131072, // 128 KiB
+		StreamOpenTimeout:  30,
+		StreamCloseTimeout: 120,
+	},
+	TCP: TCPConfig{
+		KeepAlive: true,
+		NoDelay:   true,
+		Backlog:   16,
+	},
 }

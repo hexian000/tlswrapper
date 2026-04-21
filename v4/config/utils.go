@@ -21,10 +21,10 @@ import (
 // SetLogger sets up logging according to config
 func (cfg *File) SetLogger(l *slog.Logger) error {
 	switch cfg.Log {
+	case "", "stdout":
+		l.SetOutput(slog.OutputWriter, os.Stdout)
 	case "discard":
 		l.SetOutput(slog.OutputDiscard)
-	case "stdout":
-		l.SetOutput(slog.OutputWriter, os.Stdout)
 	case "stderr":
 		l.SetOutput(slog.OutputWriter, os.Stderr)
 	case "syslog":
@@ -36,57 +36,58 @@ func (cfg *File) SetLogger(l *slog.Logger) error {
 	return nil
 }
 
-// NewX509CertPool creates x509.CertPool from CertPool
-func (p CertPool) NewX509CertPool() (*x509.CertPool, error) {
+// newX509CertPool parses a slice of PEM-encoded certificates into an x509.CertPool
+func newX509CertPool(authCerts []string) (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
-	for i, cert := range p {
+	for i, cert := range authCerts {
 		if !certPool.AppendCertsFromPEM([]byte(cert)) {
-			err := fmt.Errorf("unable to parse authorized certificate #%d", i)
-			return nil, err
+			return nil, fmt.Errorf("unable to parse authorized certificate #%d", i)
 		}
 	}
 	return certPool, nil
 }
 
-// GetTunnel finds the tunnel config
-func (c *File) GetTunnel(peerName string) *Tunnel {
-	tuncfg, ok := c.Peers[peerName]
-	if !ok {
-		return nil
-	}
-	return &tuncfg
-}
-
-// Timeout gets the generic request timeout
+// Timeout returns the session inactivity timeout
 func (c *File) Timeout() time.Duration {
-	return time.Duration(c.ConnectTimeout) * time.Second
+	return time.Duration(c.SessionTimeout) * time.Second
 }
 
-// SetConnParams sets TCP params
-func (c *File) SetConnParams(conn net.Conn) {
-	if tcpConn := conn.(*net.TCPConn); tcpConn != nil {
-		_ = tcpConn.SetNoDelay(c.NoDelay)
-		_ = tcpConn.SetKeepAlive(false) // we have an encrypted one
+// SetMuxConnParams sets TCP parameters on the mux-layer connection
+func (c *File) SetMuxConnParams(conn net.Conn) {
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return
 	}
+	_ = tcpConn.SetNoDelay(c.Mux.NoDelay)
+	_ = tcpConn.SetKeepAlive(c.Mux.KeepAlive)
 }
 
-// NewTLSConfig creates tls.Config
+// SetTCPConnParams sets TCP parameters on a local (application-side) connection
+func (c *File) SetTCPConnParams(conn net.Conn) {
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return
+	}
+	_ = tcpConn.SetNoDelay(c.TCP.NoDelay)
+	_ = tcpConn.SetKeepAlive(c.TCP.KeepAlive)
+}
+
+// NewTLSConfig creates a tls.Config from the TLS section.
+// Returns nil if TLS is not configured (plaintext mode).
 func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {
-	certs := make([]tls.Certificate, 0, len(c.Certificates))
-	for i, cert := range c.Certificates {
-		tlsCert, err := tls.X509KeyPair([]byte(cert.Certificate), []byte(cert.PrivateKey))
-		if err != nil {
-			err := fmt.Errorf("unable to parse certificate #%d: %s", i, formats.Error(err))
-			return nil, err
-		}
-		certs = append(certs, tlsCert)
+	if c.TLS == nil {
+		return nil, nil
 	}
-	certPool, err := c.AuthorizedCerts.NewX509CertPool()
+	tlsCert, err := tls.X509KeyPair([]byte(c.TLS.Certificate), []byte(c.TLS.PrivateKey))
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse certificate: %s", formats.Error(err))
+	}
+	certPool, err := newX509CertPool(c.TLS.AuthCerts)
 	if err != nil {
 		return nil, err
 	}
 	return &tls.Config{
-		Certificates: certs,
+		Certificates: []tls.Certificate{tlsCert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    certPool,
 		RootCAs:      certPool,
@@ -113,28 +114,29 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// NewMuxConfig creates yamux.Config
-func (c *File) NewMuxConfig(isDialed bool) *yamux.Config {
-	acceptBacklog := c.AcceptBacklog
-	streamWindow := c.StreamWindow
-	keepAlive := c.ServerKeepAlive
-	if isDialed {
-		keepAlive = c.KeepAlive
-	}
-
-	keepAliveInterval := time.Duration(keepAlive) * time.Second
+// NewMuxConfig creates a yamux.Config from the current configuration
+func (c *File) NewMuxConfig() *yamux.Config {
+	keepAliveInterval := time.Duration(c.KeepAlive) * time.Second
 	enableKeepAlive := keepAliveInterval >= time.Second
 	if !enableKeepAlive {
 		keepAliveInterval = 15 * time.Second
 	}
+	openTimeout := time.Duration(c.Mux.StreamOpenTimeout) * time.Second
+	if openTimeout <= 0 {
+		openTimeout = 30 * time.Second
+	}
+	closeTimeout := time.Duration(c.Mux.StreamCloseTimeout) * time.Second
+	if closeTimeout <= 0 {
+		closeTimeout = 120 * time.Second
+	}
 	return &yamux.Config{
-		AcceptBacklog:          acceptBacklog,
+		AcceptBacklog:          c.Mux.Backlog,
 		EnableKeepAlive:        enableKeepAlive,
 		KeepAliveInterval:      keepAliveInterval,
-		ConnectionWriteTimeout: time.Duration(c.WriteTimeout) * time.Second,
-		MaxStreamWindowSize:    streamWindow,
-		StreamOpenTimeout:      time.Duration(c.StreamOpenTimeout) * time.Second,
-		StreamCloseTimeout:     time.Duration(c.StreamCloseTimeout) * time.Second,
+		ConnectionWriteTimeout: time.Duration(c.SendTimeout) * time.Second,
+		MaxStreamWindowSize:    uint32(c.Mux.ReadMem),
+		StreamOpenTimeout:      openTimeout,
+		StreamCloseTimeout:     closeTimeout,
 		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
 	}
 }

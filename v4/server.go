@@ -74,7 +74,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 		ctx: contextMgr{
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
-		f:            forwarder.New(cfg.MaxConn, g),
+		f:            forwarder.New(maxStreams(cfg), g),
 		flowStats:    &snet.FlowStats{},
 		recentEvents: eventlog.NewRecent(100),
 		g:            g,
@@ -89,6 +89,13 @@ func NewServer(cfg *config.File) (*Server, error) {
 	}
 	s.tlscfg = tlscfg
 	return s, nil
+}
+
+func maxStreams(cfg *config.File) int {
+	if cfg.MaxStreams == 0 {
+		return 1024
+	}
+	return cfg.MaxStreams
 }
 
 func (s *Server) findTunnel(peerName string) *tunnel {
@@ -215,8 +222,8 @@ func (s *Server) delMux(mux *yamux.Session) {
 }
 
 // startMux starts a yamux session over the given connection
-func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service string, t *tunnel, tag string) (*yamux.Session, error) {
-	muxcfg := cfg.NewMuxConfig(t != nil)
+func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName string, t *tunnel, tag string) (*yamux.Session, error) {
+	muxcfg := cfg.NewMuxConfig()
 	handshakeFunc := yamux.Server
 	if t != nil {
 		handshakeFunc = yamux.Client
@@ -226,7 +233,7 @@ func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName, service str
 		ioClose(conn)
 		return nil, err
 	}
-	h := &ForwardHandler{s, peerName, service}
+	h := &ForwardHandler{s, peerName}
 	serveFunc := func() {
 		s.addMux(mux, tag)
 		defer s.delMux(mux)
@@ -259,20 +266,26 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 
 // loadTunnels loads tunnels from the configuration file
 func (s *Server) loadTunnels(cfg *config.File) error {
+	// collect all peer names that should be active
+	activePeers := make(map[string]struct{})
+	for name := range cfg.Service {
+		activePeers[name] = struct{}{}
+	}
+
 	s.tunnelsMu.Lock()
 	defer s.tunnelsMu.Unlock()
-	// 1. remove
+	// 1. remove tunnels that are no longer in the config
 	for name, t := range s.tunnels {
-		if tuncfg, ok := cfg.Peers[name]; !ok || tuncfg.Disabled {
+		if _, ok := activePeers[name]; !ok {
 			if err := t.Stop(); err != nil {
 				slog.Errorf("tunnel %q: %s", name, formats.Error(err))
 			}
 			delete(s.tunnels, name)
 		}
 	}
-	// 2. add
-	for name, tuncfg := range cfg.Peers {
-		if tuncfg.Disabled {
+	// 2. add new tunnels
+	for name := range activePeers {
+		if _, exists := s.tunnels[name]; exists {
 			continue
 		}
 		t := newTunnel(name, s)
@@ -294,10 +307,11 @@ func (s *Server) Start() error {
 		slog.Noticef("mux listen: %v", l.Addr())
 		h := &TLSHandler{s: s}
 		c, _ := s.getConfig()
+		startupStart, startupRate, startupFull := c.ParsedMaxStartups()
 		s.l = hlistener.Wrap(l, &hlistener.Config{
-			Start:       uint32(c.StartupLimitStart),
-			Full:        uint32(c.StartupLimitFull),
-			Rate:        float64(c.StartupLimitRate) / 100.0,
+			Start:       uint32(startupStart),
+			Full:        uint32(startupFull),
+			Rate:        float64(startupRate) / 100.0,
 			MaxSessions: uint32(c.MaxSessions),
 			Stats:       h.Stats4Listener,
 		})
@@ -309,8 +323,8 @@ func (s *Server) Start() error {
 			return err
 		}
 	}
-	if s.cfg.HTTPListen != "" {
-		l, err := s.Listen(s.cfg.HTTPListen)
+	if s.cfg.APIListen != "" {
+		l, err := s.Listen(s.cfg.APIListen)
 		if err != nil {
 			return err
 		}

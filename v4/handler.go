@@ -50,7 +50,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		}
 	}
 	cfg, tlscfg := h.s.getConfig()
-	cfg.SetConnParams(conn)
+	cfg.SetMuxConnParams(conn)
 	conn = snet.FlowMeter(conn, h.s.flowStats)
 	if tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
@@ -66,16 +66,13 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Errorf("%s: %s", tag, "invalid message")
 		return
 	}
-	if req.PeerName != "" {
-		tag = fmt.Sprintf("%q <= %v", req.PeerName, conn.RemoteAddr())
+	if req.ID != "" {
+		tag = fmt.Sprintf("%q <= %v", req.ID, conn.RemoteAddr())
 	}
 	rsp := &proto.Message{
-		Type:     proto.Type,
-		Msg:      proto.MsgServerHello,
-		PeerName: cfg.PeerName,
-	}
-	if cfg, ok := cfg.Peers[req.PeerName]; ok {
-		rsp.Service = cfg.Service
+		Type: proto.Type,
+		Msg:  proto.MsgServerHello,
+		ID:   cfg.ID,
 	}
 	if err := proto.Write(conn, rsp); err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
@@ -84,19 +81,18 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	_ = conn.SetDeadline(time.Time{})
 	h.s.stats.authorized.Add(1)
 
-	_, err = h.s.startMux(conn, cfg, req.PeerName, req.Service, nil, tag)
+	_, err = h.s.startMux(conn, cfg, req.ID, nil, tag)
 	if err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
 	}
-	slog.Debugf("%s: service=%q, setup %v", tag, req.Service, formats.Duration(time.Since(start)))
+	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
 }
 
-// ForwardHandler forwards connections to configured address
+// ForwardHandler forwards connections to the locally configured service address
 type ForwardHandler struct {
 	s        *Server
 	peerName string
-	service  string
 }
 
 // Serve handles an incoming connection
@@ -107,9 +103,9 @@ func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 		peerName = fmt.Sprintf("%q", h.peerName)
 	}
 	cfg, _ := h.s.getConfig()
-	dialAddr, ok := cfg.Services[h.service]
-	if !ok {
-		slog.Warningf("tunnel %s: unknown service %q", peerName, h.service)
+	dialAddr := cfg.Connect
+	if dialAddr == "" {
+		slog.Warningf("tunnel %s: no connect address configured", peerName)
 		ioClose(accepted)
 		return
 	}

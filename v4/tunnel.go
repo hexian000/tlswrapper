@@ -43,16 +43,15 @@ func newTunnel(peerName string, s *Server) *tunnel {
 	}
 }
 
-func (t *tunnel) getConfig() (*config.File, *tls.Config, *config.Tunnel) {
-	cfg, tlscfg := t.s.getConfig()
-	return cfg, tlscfg, cfg.GetTunnel(t.peerName)
+func (t *tunnel) getConfig() (*config.File, *tls.Config) {
+	return t.s.getConfig()
 }
 
 // Start starts the tunnel, including listening if configured
 func (t *tunnel) Start() error {
-	_, _, c := t.getConfig()
-	if c.Listen != "" {
-		l, err := t.s.Listen(c.Listen)
+	cfg, _ := t.getConfig()
+	if listenAddr := cfg.Service[t.peerName].Listen; listenAddr != "" {
+		l, err := t.s.Listen(listenAddr)
 		if err != nil {
 			return err
 		}
@@ -109,8 +108,8 @@ func (t *tunnel) redial() {
 		if redialCount > t.redialCount {
 			t.redialCount = redialCount
 		}
-		_, _, c := t.getConfig()
-		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.peerName, t.redialCount, c.MuxDial, formats.Error(err))
+		cfg, _ := t.getConfig()
+		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.peerName, t.redialCount, cfg.Service[t.peerName].MuxConnect, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
@@ -120,8 +119,8 @@ func (t *tunnel) maintenance() {
 	t.cleanMux()
 	n := t.NumSessions()
 	if n < 1 {
-		cfg, _, tuncfg := t.getConfig()
-		if !cfg.NoRedial && tuncfg.MuxDial != "" {
+		cfg, _ := t.getConfig()
+		if !cfg.NoRedial && cfg.Service[t.peerName].MuxConnect != "" {
 			t.redial()
 		}
 		return
@@ -129,8 +128,8 @@ func (t *tunnel) maintenance() {
 }
 
 func (t *tunnel) schedule() <-chan time.Time {
-	cfg, _, tuncfg := t.getConfig()
-	if cfg.NoRedial || tuncfg.MuxDial == "" || t.redialCount < 1 {
+	cfg, _ := t.getConfig()
+	if cfg.NoRedial || cfg.Service[t.peerName].MuxConnect == "" || t.redialCount < 1 {
 		pause := 10 * time.Minute
 		pause += time.Duration(rand.Int63n(int64(10 * time.Minute)))
 		return time.After(pause)
@@ -263,8 +262,9 @@ func (t *tunnel) NumSessions() int {
 
 // muxDial dials to the remote and establishes a yamux session
 func (t *tunnel) muxDial(ctx context.Context) (*yamux.Session, error) {
-	cfg, tlscfg, tuncfg := t.getConfig()
-	if tuncfg.MuxDial == "" {
+	cfg, tlscfg := t.getConfig()
+	dialAddr := cfg.Service[t.peerName].MuxConnect
+	if dialAddr == "" {
 		return nil, ErrNoDialAddress
 	}
 	if !t.dialMu.TryLock() {
@@ -272,7 +272,7 @@ func (t *tunnel) muxDial(ctx context.Context) (*yamux.Session, error) {
 	}
 	defer t.dialMu.Unlock()
 	start := time.Now()
-	conn, err := t.s.dialer.DialContext(ctx, network, tuncfg.MuxDial)
+	conn, err := t.s.dialer.DialContext(ctx, network, dialAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ func (t *tunnel) muxDial(ctx context.Context) (*yamux.Session, error) {
 			return nil, err
 		}
 	}
-	cfg.SetConnParams(conn)
+	cfg.SetMuxConnParams(conn)
 	conn = snet.FlowMeter(conn, t.s.flowStats)
 	if tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
@@ -290,25 +290,24 @@ func (t *tunnel) muxDial(ctx context.Context) (*yamux.Session, error) {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
 	req := &proto.Message{
-		Type:     proto.Type,
-		Msg:      proto.MsgClientHello,
-		PeerName: cfg.PeerName,
-		Service:  tuncfg.Service,
+		Type: proto.Type,
+		Msg:  proto.MsgClientHello,
+		ID:   cfg.ID,
 	}
 	rsp, err := proto.Roundtrip(conn, req)
 	if err != nil {
 		return nil, err
 	}
-	if rsp.PeerName != "" && rsp.PeerName != t.peerName {
-		slog.Warningf("%s: peer name mismatch, remote claimed %q", tag, rsp.PeerName)
+	if rsp.ID != "" && rsp.ID != t.peerName {
+		slog.Warningf("%s: peer id mismatch, remote claimed %q", tag, rsp.ID)
 	}
 	_ = conn.SetDeadline(time.Time{})
 
-	mux, err := t.s.startMux(conn, cfg, rsp.PeerName, rsp.Service, t, tag)
+	mux, err := t.s.startMux(conn, cfg, rsp.ID, t, tag)
 	if err != nil {
 		return nil, err
 	}
-	slog.Debugf("%s: service=%q, setup %v", tag, rsp.Service, formats.Duration(time.Since(start)))
+	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
 	return mux, nil
 }
 
