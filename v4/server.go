@@ -150,6 +150,8 @@ func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) 
 	if err != nil {
 		return nil, err
 	}
+	cfg, _ := s.getConfig()
+	cfg.SetTCPConnParams(dialed)
 	return dialed, nil
 }
 
@@ -270,6 +272,10 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 	activePeers := make(map[string]struct{})
 	for name := range cfg.Service {
 		activePeers[name] = struct{}{}
+	}
+	// the empty-string key represents the default unnamed service driven by top-level Listen/MuxConnect
+	if cfg.Listen != "" || cfg.MuxConnect != "" {
+		activePeers[""] = struct{}{}
 	}
 
 	s.tunnelsMu.Lock()

@@ -24,34 +24,20 @@ type TLSConfig struct {
 	Certificate string `json:"cert"`
 	// PEM private key (inline PEM or "@path" to read from file at startup)
 	PrivateKey string `json:"key"`
-	// Colon-separated list of TLS 1.3 ciphersuites (informational; Go stdlib fixes TLS 1.3 suites)
-	Ciphersuites string `json:"ciphersuites,omitempty"`
 	// Authorized peer certificates (inline PEM or "@path" entries)
 	AuthCerts []string `json:"authcerts"`
 }
 
 // MuxConfig holds socket and buffer settings for the mux (transport-level) connection.
 type MuxConfig struct {
-	// Enable SO_REUSEPORT on the mux socket
-	ReusePort bool `json:"reuseport"`
 	// Enable OS-level TCP keepalive on the mux socket
 	KeepAlive bool `json:"keepalive"`
 	// Enable TCP_NODELAY on the mux socket
 	NoDelay bool `json:"nodelay"`
-	// SO_SNDBUF hint in bytes (0 = system default)
-	SndBuf int `json:"sndbuf,omitempty"`
-	// SO_RCVBUF hint in bytes (0 = system default)
-	RcvBuf int `json:"rcvbuf,omitempty"`
 	// Listen backlog for the mux socket
 	Backlog int `json:"backlog"`
 	// Maximum half-open streams per session (0 = unlimited)
 	MaxHalfOpen int `json:"max_halfopen"`
-	// Per-stream receive buffer size in bytes (flow-control window)
-	ReadMem int `json:"rmem"`
-	// Per-stream send buffer size in bytes
-	WriteMem int `json:"wmem"`
-	// Session memory pressure threshold in bytes (0 = auto)
-	MemPressure int64 `json:"mem_pressure"`
 	// Stream open timeout in seconds
 	StreamOpenTimeout int `json:"stream_open_timeout,omitempty"`
 	// Stream close timeout in seconds
@@ -60,16 +46,10 @@ type MuxConfig struct {
 
 // TCPConfig holds socket options for local (application-side) TCP connections.
 type TCPConfig struct {
-	// Enable SO_REUSEPORT on local sockets
-	ReusePort bool `json:"reuseport"`
 	// Enable TCP keepalive on local sockets
 	KeepAlive bool `json:"keepalive"`
 	// Enable TCP_NODELAY on local sockets
 	NoDelay bool `json:"nodelay"`
-	// SO_SNDBUF hint in bytes (0 = system default)
-	SndBuf int `json:"sndbuf,omitempty"`
-	// SO_RCVBUF hint in bytes (0 = system default)
-	RcvBuf int `json:"rcvbuf,omitempty"`
 	// Listen backlog for the local listener
 	Backlog int `json:"backlog"`
 }
@@ -116,8 +96,8 @@ type File struct {
 	MaxSessions int `json:"max_sessions"`
 	// Maximum concurrent streams per session (0 = internal default 1024)
 	MaxStreams int `json:"max_streams"`
-	// Convenience alias: sets Mux.WriteMem=X and Mux.ReadMem=2X (0 = no override)
-	StreamWindow int `json:"stream_window,omitempty"`
+	// yamux flow-control window size in bytes per stream (0 = internal default 262144)
+	StreamWindow int `json:"stream_window"`
 	// Unauthenticated connection throttle in "start:rate:full" format
 	MaxStartups string `json:"max_startups,omitempty"`
 	// Disable automatic tunnel redial (client mode)
@@ -144,22 +124,38 @@ var Default = File{
 	Log:      "stdout",
 	LogLevel: slog.LevelNotice,
 
-	MaxSessions: 128,
-	MaxStreams:  0,
-	MaxStartups: "10:30:60",
+	MaxSessions:  128,
+	MaxStreams:   0,
+	StreamWindow: 262144, // 256 KiB
+	MaxStartups:  "10:30:60",
 
 	Mux: MuxConfig{
 		NoDelay:            true,
 		Backlog:            16,
 		MaxHalfOpen:        256,
-		ReadMem:            262144, // 256 KiB
-		WriteMem:           131072, // 128 KiB
 		StreamOpenTimeout:  30,
 		StreamCloseTimeout: 120,
 	},
 	TCP: TCPConfig{
-		KeepAlive: true,
+		KeepAlive: false,
 		NoDelay:   true,
 		Backlog:   16,
 	},
+}
+
+// ServiceEntry returns the effective ServiceEntry for the given peer name.
+// For the empty name "", the top-level Listen/MuxConnect/Connect fields are used
+// as the default unnamed service.
+func (c *File) ServiceEntry(name string) ServiceEntry {
+	if entry, ok := c.Service[name]; ok {
+		return entry
+	}
+	if name == "" {
+		return ServiceEntry{
+			Listen:     c.Listen,
+			MuxConnect: c.MuxConnect,
+			Connect:    c.Connect,
+		}
+	}
+	return ServiceEntry{}
 }

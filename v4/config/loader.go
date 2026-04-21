@@ -62,11 +62,6 @@ func (cfg *File) load() error {
 			return err
 		}
 	}
-	// expand stream_window convenience alias
-	if cfg.StreamWindow != 0 {
-		cfg.Mux.WriteMem = cfg.StreamWindow
-		cfg.Mux.ReadMem = 2 * cfg.StreamWindow
-	}
 	return nil
 }
 
@@ -172,9 +167,7 @@ func (c *File) Validate() error {
 	if c.IdleTimeout != 0 {
 		clampInt(&c.IdleTimeout, 5, 31557600)
 	}
-	// clamp mux buffer/backlog fields
-	clampInt(&c.Mux.ReadMem, 16384, 16777216)
-	clampInt(&c.Mux.WriteMem, 16384, 16777216)
+	// clamp mux backlog fields
 	clampInt(&c.Mux.Backlog, 1, 4096)
 	if c.Mux.MaxHalfOpen != 0 {
 		clampInt(&c.Mux.MaxHalfOpen, 1, 4096)

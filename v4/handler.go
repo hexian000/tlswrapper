@@ -103,7 +103,11 @@ func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 		peerName = fmt.Sprintf("%q", h.peerName)
 	}
 	cfg, _ := h.s.getConfig()
-	dialAddr := cfg.Connect
+	// prefer per-service connect address, fall back to top-level connect
+	dialAddr := cfg.ServiceEntry(h.peerName).Connect
+	if dialAddr == "" {
+		dialAddr = cfg.Connect
+	}
 	if dialAddr == "" {
 		slog.Warningf("tunnel %s: no connect address configured", peerName)
 		ioClose(accepted)
@@ -135,6 +139,8 @@ type TunnelHandler struct {
 
 // Serve handles an incoming connection
 func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
+	cfg, _ := h.s.getConfig()
+	cfg.SetTCPConnParams(accepted)
 	dialed, err := h.t.Dial(ctx)
 	if err != nil {
 		if errors.Is(err, ErrDialInProgress) {

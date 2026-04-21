@@ -114,8 +114,13 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// NewMuxConfig creates a yamux.Config from the current configuration
+// NewMuxConfig creates a yamux.Config from the current configuration.
+// MaxHalfOpen is used as the yamux accept backlog. If zero, it defaults to 256.
 func (c *File) NewMuxConfig() *yamux.Config {
+	acceptBacklog := c.Mux.MaxHalfOpen
+	if acceptBacklog <= 0 {
+		acceptBacklog = 256
+	}
 	keepAliveInterval := time.Duration(c.KeepAlive) * time.Second
 	enableKeepAlive := keepAliveInterval >= time.Second
 	if !enableKeepAlive {
@@ -130,11 +135,11 @@ func (c *File) NewMuxConfig() *yamux.Config {
 		closeTimeout = 120 * time.Second
 	}
 	return &yamux.Config{
-		AcceptBacklog:          c.Mux.Backlog,
+		AcceptBacklog:          acceptBacklog,
 		EnableKeepAlive:        enableKeepAlive,
 		KeepAliveInterval:      keepAliveInterval,
 		ConnectionWriteTimeout: time.Duration(c.SendTimeout) * time.Second,
-		MaxStreamWindowSize:    uint32(c.Mux.ReadMem),
+		MaxStreamWindowSize:    uint32(c.StreamWindow),
 		StreamOpenTimeout:      openTimeout,
 		StreamCloseTimeout:     closeTimeout,
 		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),

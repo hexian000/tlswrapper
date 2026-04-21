@@ -90,10 +90,9 @@
             "minimum": 0
         },
         "stream_window": {
-            "description": "Convenience alias: sets wmem to this value and rmem to twice this value. Clamped to [16384, 16777216].",
+            "description": "yamux flow-control window size in bytes per stream. Default: 262144.",
             "type": "integer",
-            "minimum": 16384,
-            "maximum": 16777216
+            "default": 262144
         },
         "max_startups": {
             "description": "Unauthenticated connection throttle in 'start:rate:full' format. Beyond 'start' connections, each new one is dropped with probability 'rate'% until the queue reaches 'full'.",
@@ -115,10 +114,6 @@
                     "description": "PEM private key. Use '@path' to read the file at startup, or provide an inline PEM string.",
                     "type": "string"
                 },
-                "ciphersuites": {
-                    "description": "Colon-separated list of TLS 1.3 ciphersuites to enable.",
-                    "type": "string"
-                },
                 "authcerts": {
                     "description": "Authorized peer certificates. Each entry is a '@path' reference or an inline PEM string.",
                     "type": "array",
@@ -134,11 +129,6 @@
             "description": "Socket and buffer settings for the mux (transport-level) connection.",
             "type": "object",
             "properties": {
-                "reuseport": {
-                    "description": "Enable SO_REUSEPORT on the mux socket. Default: false.",
-                    "type": "boolean",
-                    "default": false
-                },
                 "keepalive": {
                     "description": "Enable TCP keepalive on the mux socket. Default: false.",
                     "type": "boolean",
@@ -148,16 +138,6 @@
                     "description": "Enable TCP_NODELAY on the mux socket. Default: true.",
                     "type": "boolean",
                     "default": true
-                },
-                "sndbuf": {
-                    "description": "SO_SNDBUF hint in bytes for the mux socket. 0 uses the system default.",
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "rcvbuf": {
-                    "description": "SO_RCVBUF hint in bytes for the mux socket. 0 uses the system default.",
-                    "type": "integer",
-                    "minimum": 0
                 },
                 "backlog": {
                     "description": "Listen backlog for the mux socket. Clamped to [1, 4096]. Default: 16.",
@@ -172,26 +152,6 @@
                     "minimum": 0,
                     "maximum": 4096,
                     "default": 256
-                },
-                "rmem": {
-                    "description": "Per-stream receive buffer size in bytes. Clamped to [16384, 16777216]. Default: 262144.",
-                    "type": "integer",
-                    "minimum": 16384,
-                    "maximum": 16777216,
-                    "default": 262144
-                },
-                "wmem": {
-                    "description": "Per-stream send buffer size in bytes. Clamped to [16384, 16777216]. Default: 131072.",
-                    "type": "integer",
-                    "minimum": 16384,
-                    "maximum": 16777216,
-                    "default": 131072
-                },
-                "mem_pressure": {
-                    "description": "Session memory pressure threshold in bytes. 0 auto-derives the value from max_streams and rmem. When positive, clamped to [65536, 2147483647].",
-                    "type": "integer",
-                    "minimum": 0,
-                    "default": 0
                 },
                 "stream_open_timeout": {
                     "description": "Stream open timeout in seconds. Default: 30.",
@@ -212,11 +172,6 @@
             "description": "Socket options for local (application-side) TCP connections.",
             "type": "object",
             "properties": {
-                "reuseport": {
-                    "description": "Enable SO_REUSEPORT on local sockets. Default: false.",
-                    "type": "boolean",
-                    "default": false
-                },
                 "keepalive": {
                     "description": "Enable TCP keepalive on local sockets. Default: true.",
                     "type": "boolean",
@@ -226,16 +181,6 @@
                     "description": "Enable TCP_NODELAY on local sockets. Default: true.",
                     "type": "boolean",
                     "default": true
-                },
-                "sndbuf": {
-                    "description": "SO_SNDBUF hint in bytes for local sockets. 0 uses the system default.",
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "rcvbuf": {
-                    "description": "SO_RCVBUF hint in bytes for local sockets. 0 uses the system default.",
-                    "type": "integer",
-                    "minimum": 0
                 },
                 "backlog": {
                     "description": "Listen backlog for the local listener. Clamped to [1, 4096]. Default: 16.",

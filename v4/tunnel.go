@@ -26,7 +26,8 @@ type tunnel struct {
 	s           *Server
 	l           net.Listener
 	mu          sync.RWMutex
-	mux         map[*yamux.Session]string // map[mux]tag
+	mux         map[*yamux.Session]string    // map[mux]tag
+	idleSince   map[*yamux.Session]time.Time // tracks when each session became stream-less
 	closeSig    chan struct{}
 	redialSig   chan struct{}
 	redialCount int
@@ -38,6 +39,7 @@ func newTunnel(peerName string, s *Server) *tunnel {
 	return &tunnel{
 		peerName: peerName, s: s,
 		mux:       make(map[*yamux.Session]string),
+		idleSince: make(map[*yamux.Session]time.Time),
 		closeSig:  make(chan struct{}),
 		redialSig: make(chan struct{}, 1),
 	}
@@ -50,7 +52,7 @@ func (t *tunnel) getConfig() (*config.File, *tls.Config) {
 // Start starts the tunnel, including listening if configured
 func (t *tunnel) Start() error {
 	cfg, _ := t.getConfig()
-	if listenAddr := cfg.Service[t.peerName].Listen; listenAddr != "" {
+	if listenAddr := cfg.ServiceEntry(t.peerName).Listen; listenAddr != "" {
 		l, err := t.s.Listen(listenAddr)
 		if err != nil {
 			return err
@@ -77,18 +79,47 @@ func (t *tunnel) Stop() error {
 }
 
 func (t *tunnel) cleanMux() {
+	cfg, _ := t.getConfig()
+	idleTimeout := time.Duration(cfg.IdleTimeout) * time.Second
+	now := time.Now()
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	num := len(t.mux)
 	for ss := range t.mux {
 		if ss.IsClosed() {
 			delete(t.mux, ss)
+			delete(t.idleSince, ss)
 		}
 	}
+	// update idle tracking
+	for ss := range t.mux {
+		if ss.NumStreams() == 0 {
+			if _, ok := t.idleSince[ss]; !ok {
+				t.idleSince[ss] = now
+			}
+		} else {
+			delete(t.idleSince, ss)
+		}
+	}
+	// evict sessions that have been idle longer than IdleTimeout
+	if idleTimeout > 0 {
+		for ss, since := range t.idleSince {
+			if now.Sub(since) >= idleTimeout {
+				slog.Debugf("%s: idle session evicted after %v", t.mux[ss], now.Sub(since))
+				ioClose(ss)
+				delete(t.mux, ss)
+				delete(t.idleSince, ss)
+			}
+		}
+	}
+	// close redundant idle sessions (keep at most one)
 	remain := len(t.mux)
 	for ss, tag := range t.mux {
 		if remain > 1 && ss.NumStreams() == 0 {
 			ioClose(ss)
+			delete(t.mux, ss)
+			delete(t.idleSince, ss)
 			slog.Debugf("%s: closed due to redundancy", tag)
 			remain--
 		}
@@ -109,7 +140,7 @@ func (t *tunnel) redial() {
 			t.redialCount = redialCount
 		}
 		cfg, _ := t.getConfig()
-		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.peerName, t.redialCount, cfg.Service[t.peerName].MuxConnect, formats.Error(err))
+		slog.Warningf("tunnel %q: redial #%d to %s: %s", t.peerName, t.redialCount, cfg.ServiceEntry(t.peerName).MuxConnect, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
@@ -120,7 +151,7 @@ func (t *tunnel) maintenance() {
 	n := t.NumSessions()
 	if n < 1 {
 		cfg, _ := t.getConfig()
-		if !cfg.NoRedial && cfg.Service[t.peerName].MuxConnect != "" {
+		if !cfg.NoRedial && cfg.ServiceEntry(t.peerName).MuxConnect != "" {
 			t.redial()
 		}
 		return
@@ -129,7 +160,7 @@ func (t *tunnel) maintenance() {
 
 func (t *tunnel) schedule() <-chan time.Time {
 	cfg, _ := t.getConfig()
-	if cfg.NoRedial || cfg.Service[t.peerName].MuxConnect == "" || t.redialCount < 1 {
+	if cfg.NoRedial || cfg.ServiceEntry(t.peerName).MuxConnect == "" || t.redialCount < 1 {
 		pause := 10 * time.Minute
 		pause += time.Duration(rand.Int63n(int64(10 * time.Minute)))
 		return time.After(pause)
@@ -263,7 +294,7 @@ func (t *tunnel) NumSessions() int {
 // muxDial dials to the remote and establishes a yamux session
 func (t *tunnel) muxDial(ctx context.Context) (*yamux.Session, error) {
 	cfg, tlscfg := t.getConfig()
-	dialAddr := cfg.Service[t.peerName].MuxConnect
+	dialAddr := cfg.ServiceEntry(t.peerName).MuxConnect
 	if dialAddr == "" {
 		return nil, ErrNoDialAddress
 	}
