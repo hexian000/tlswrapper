@@ -1,17 +1,13 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "tlswrapper configuration",
-    "description": "Configuration file for tlswrapper. At least one of 'mux_listen', 'mux_connect', or 'service.mux_connect' must be present.",
+    "description": "Configuration file for tlswrapper. At least one of 'mux_listen', 'mux_connect', or entries in 'service.peers' should be present.",
     "type": "object",
     "properties": {
         "type": {
             "description": "MIME type identifying the config format and version.",
             "type": "string",
             "const": "application/x-tlswrapper-config; version=4"
-        },
-        "id": {
-            "description": "Self identity announced in the handshake.",
-            "type": "string"
         },
         "log": {
             "description": "Log output destination: 'stdout' (default), 'stderr', 'syslog', or 'discard'.",
@@ -193,28 +189,29 @@
             "additionalProperties": false
         },
         "service": {
-            "description": "Named-service routing entries, keyed by service_id. Each entry configures the routing for one logical service.",
+            "description": "Service identity and per-peer tunnel routing settings.",
             "type": "object",
-            "additionalProperties": {
-                "description": "Per-service routing configuration. At least one field must be set.",
-                "type": "object",
-                "properties": {
-                    "listen": {
-                        "description": "Local TCP address to accept application traffic on for this service.",
-                        "type": "string"
-                    },
-                    "mux_connect": {
-                        "description": "Mux endpoint address to dial for this service. Each entry maintains a separate outbound mux session.",
-                        "type": "string"
-                    },
-                    "connect": {
-                        "description": "Forwarding target address for inbound streams tagged with this service_id.",
+            "properties": {
+                "id": {
+                    "description": "Self identity announced in the handshake.",
+                    "type": "string"
+                },
+                "peers": {
+                    "description": "Peer identity to mux dial address mapping.",
+                    "type": "object",
+                    "additionalProperties": {
                         "type": "string"
                     }
                 },
-                "additionalProperties": false,
-                "minProperties": 1
-            }
+                "listen": {
+                    "description": "Peer identity to local listen address mapping.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            },
+            "additionalProperties": false
         }
     },
     "additionalProperties": false

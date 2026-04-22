@@ -83,19 +83,19 @@ Adding a certificate to `"authcerts"` will allow all certificates signed by it.
 
 ```json
 {
-    "muxlisten": "0.0.0.0:38000",
-    "services": {
-        "myhttp": "127.0.0.1:80"
+    "type": "application/x-tlswrapper-config; version=4",
+    "mux_listen": "0.0.0.0:38000",
+    "connect": "127.0.0.1:80",
+    "tls": {
+        "cert": "@server-cert.pem",
+        "key": "@server-key.pem",
+        "authcerts": [
+            "@client-cert.pem"
+        ]
     },
-    "certs": [
-        {
-            "cert": "@server-cert.pem",
-            "key": "@server-key.pem"
-        }
-    ],
-    "authcerts": [
-        "@client-cert.pem"
-    ]
+    "service": {
+        "id": "server"
+    }
 }
 ```
 
@@ -103,22 +103,23 @@ Adding a certificate to `"authcerts"` will allow all certificates signed by it.
 
 ```json
 {
-    "peers": {
-        "tlswrapper server": {
-            "addr": "example.com:38000",
-            "listen": "127.0.0.1:8080",
-            "service": "myhttp"
-        }
+    "type": "application/x-tlswrapper-config; version=4",
+    "tls": {
+        "cert": "@client-cert.pem",
+        "key": "@client-key.pem",
+        "authcerts": [
+            "@server-cert.pem"
+        ]
     },
-    "certs": [
-        {
-            "cert": "@client-cert.pem",
-            "key": "@client-key.pem"
+    "service": {
+        "id": "client",
+        "peers": {
+            "server": "example.com:38000"
+        },
+        "listen": {
+            "server": "127.0.0.1:8080"
         }
-    ],
-    "authcerts": [
-        "@server-cert.pem"
-    ]
+    }
 }
 ```
 
@@ -126,25 +127,21 @@ For complex cases, see the [full example](https://github.com/hexian000/tlswrappe
 
 #### Notes
 
-Feel free to add more services/peers, or bring up forwards/reverses between the same instances.
+Feel free to add more services, or bring up forwards/reverses between the same instances.
 
-- "peername": local peer name
-- "muxlisten": listener bind address
-- "services": local service forwards
-- "services[\*]": local service dial address
-- "peers": named peers to that need to keep connected
-- "peers[\*].addr": dial address
-- "peers[\*].listen": listen for port forwarding
-- "peers[\*].service": the service name we ask the peer for
-- "certs": local certificates
-- "certs[\*].cert": PEM encoded certificate (use "@filename" to read external file, same below)
-- "certs[\*].key": PEM encoded private key
-- "authcerts": peer authorized certificates list, bundles are supported
-- "authcerts[\*].cert": PEM encoded certificate
+- `"type"`: config format identifier, must be `"application/x-tlswrapper-config; version=4"`
+- `"service.id"`: self identity announced in the handshake
+- `"mux_listen"`: address to accept inbound mux connections (server mode)
+- `"connect"`: forwarding target for inbound application streams
+- `"tls.cert"`: PEM certificate (use `"@filename"` to read from file at startup, same below)
+- `"tls.key"`: PEM private key
+- `"tls.authcerts"`: authorized peer certificates list; bundles are supported
+- `"service.peers"`: peer identity to mux endpoint mapping (client mode)
+- `"service.listen"`: peer identity to local listen address mapping
 
-See [source code](v3/config/config.go) for a complete list of all available options.
+See [source code](v4/config/config.go) for a complete list of all available options.
 
-See [config.json](config.json) for example config file.
+See [schema.json](v4/config/schema.json) for the full JSON Schema with field descriptions and defaults.
 
 ### Start
 

@@ -17,9 +17,9 @@ var (
 	Type = mime.FormatMediaType(mimeType, map[string]string{"version": mimeVersion})
 )
 
-// TLSConfig holds TLS certificate/key material and authorized peer certificates.
+// TLS holds TLS certificate/key material and authorized peer certificates.
 // When TLS is nil in the parent File, connections run in plaintext mode.
-type TLSConfig struct {
+type TLS struct {
 	// PEM certificate (inline PEM or "@path" to read from file at startup)
 	Certificate string `json:"cert"`
 	// PEM private key (inline PEM or "@path" to read from file at startup)
@@ -28,8 +28,8 @@ type TLSConfig struct {
 	AuthCerts []string `json:"authcerts"`
 }
 
-// MuxConfig holds socket and buffer settings for the mux (transport-level) connection.
-type MuxConfig struct {
+// Mux holds socket and buffer settings for the mux (transport-level) connection.
+type Mux struct {
 	// Enable OS-level TCP keepalive on the mux socket
 	KeepAlive bool `json:"keepalive"`
 	// Enable TCP_NODELAY on the mux socket
@@ -44,8 +44,8 @@ type MuxConfig struct {
 	StreamCloseTimeout int `json:"stream_close_timeout,omitempty"`
 }
 
-// TCPConfig holds socket options for local (application-side) TCP connections.
-type TCPConfig struct {
+// TCP holds socket options for local (application-side) TCP connections.
+type TCP struct {
 	// Enable TCP keepalive on local sockets
 	KeepAlive bool `json:"keepalive"`
 	// Enable TCP_NODELAY on local sockets
@@ -54,22 +54,28 @@ type TCPConfig struct {
 	Backlog int `json:"backlog"`
 }
 
-// ServiceEntry configures routing for a single named service.
+type Service struct {
+	// Self identity announced in the handshake
+	ID string `json:"id,omitempty"`
+	// Peer identity to mux dial address mapping
+	Peers map[string]string `json:"peers,omitempty"`
+	// Peer identity to local listen address mapping
+	Listen map[string]string `json:"listen,omitempty"`
+}
+
+// ServiceEntry is the effective routing entry for one peer/session.
 type ServiceEntry struct {
-	// Local TCP address to accept application traffic on for this service
-	Listen string `json:"listen,omitempty"`
-	// Mux endpoint address to dial for this service
-	MuxConnect string `json:"mux_connect,omitempty"`
-	// Forwarding target for inbound streams tagged with this service ID
-	Connect string `json:"connect,omitempty"`
+	Listen string
+	// Address to dial for outbound mux session.
+	MuxConnect string
+	// Forwarding target for inbound application streams.
+	Connect string
 }
 
 // File represents the top-level configuration structure.
 type File struct {
 	// MIME type identifying the config format and version
 	Type string `json:"type"`
-	// Self identity announced in the handshake
-	ID string `json:"id,omitempty"`
 	// HTTP management API listen address (empty = disabled)
 	APIListen string `json:"api_listen,omitempty"`
 	// Address to accept inbound mux connections (server mode)
@@ -79,7 +85,9 @@ type File struct {
 	// Local TCP address to accept application traffic on
 	Listen string `json:"listen,omitempty"`
 	// Forwarding target for inbound application streams
-	Connect string `json:"connect,omitempty"`
+	Connect string  `json:"connect,omitempty"`
+	// Service identity and per-peer routing settings
+	Service Service `json:"service,omitempty"`
 	// Session inactivity timeout in seconds
 	SessionTimeout int `json:"timeout"`
 	// Application-level keepalive probe interval in seconds
@@ -103,13 +111,11 @@ type File struct {
 	// Disable automatic tunnel redial (client mode)
 	NoRedial bool `json:"no_redial,omitempty"`
 	// TLS configuration (nil = plaintext mode)
-	TLS *TLSConfig `json:"tls,omitempty"`
+	TLS *TLS `json:"tls,omitempty"`
 	// Mux socket and buffer settings
-	Mux MuxConfig `json:"mux"`
+	Mux Mux `json:"mux"`
 	// Local TCP socket settings
-	TCP TCPConfig `json:"tcp"`
-	// Named-service routing entries keyed by service ID
-	Service map[string]ServiceEntry `json:"service,omitempty"`
+	TCP TCP `json:"tcp"`
 }
 
 // Default holds the baseline configuration with sensible defaults.
@@ -129,14 +135,14 @@ var Default = File{
 	StreamWindow: 262144, // 256 KiB
 	MaxStartups:  "10:30:60",
 
-	Mux: MuxConfig{
+	Mux: Mux{
 		NoDelay:            true,
 		Backlog:            16,
 		MaxHalfOpen:        256,
 		StreamOpenTimeout:  30,
 		StreamCloseTimeout: 120,
 	},
-	TCP: TCPConfig{
+	TCP: TCP{
 		KeepAlive: false,
 		NoDelay:   true,
 		Backlog:   16,
@@ -147,15 +153,13 @@ var Default = File{
 // For the empty name "", the top-level Listen/MuxConnect/Connect fields are used
 // as the default unnamed service.
 func (c *File) ServiceEntry(name string) ServiceEntry {
-	if entry, ok := c.Service[name]; ok {
+	entry := ServiceEntry{Connect: c.Connect}
+	if name == "" {
+		entry.Listen = c.Listen
+		entry.MuxConnect = c.MuxConnect
 		return entry
 	}
-	if name == "" {
-		return ServiceEntry{
-			Listen:     c.Listen,
-			MuxConnect: c.MuxConnect,
-			Connect:    c.Connect,
-		}
-	}
-	return ServiceEntry{}
+	entry.Listen = c.Service.Listen[name]
+	entry.MuxConnect = c.Service.Peers[name]
+	return entry
 }

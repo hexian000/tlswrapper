@@ -306,19 +306,20 @@ func (ss *session) muxDial(ctx context.Context) (*yamux.Session, error) {
 	req := &proto.Message{
 		Type: proto.Type,
 		Msg:  proto.MsgClientHello,
-		ID:   cfg.ID,
 	}
+	req.Extensions.Service.ID = cfg.Service.ID
 	rsp, err := proto.Roundtrip(conn, req)
 	if err != nil {
 		ioClose(conn)
 		return nil, err
 	}
-	if rsp.ID != "" && rsp.ID != ss.id {
-		slog.Warningf("%s: peer id mismatch, remote claimed %q", tag, rsp.ID)
+	rspID := rsp.Extensions.Service.ID
+	if rspID != "" && rspID != ss.id {
+		slog.Warningf("%s: peer id mismatch, remote claimed %q", tag, rspID)
 	}
 	_ = conn.SetDeadline(time.Time{})
 
-	mux, err := ss.s.startMux(conn, cfg, rsp.ID, ss, tag)
+	mux, err := ss.s.startMux(conn, cfg, rspID, ss, tag)
 	if err != nil {
 		return nil, err
 	}

@@ -65,14 +65,15 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Errorf("%s: %s", tag, "invalid message")
 		return
 	}
-	if req.ID != "" {
-		tag = fmt.Sprintf("%q <= %v", req.ID, conn.RemoteAddr())
+	peerID := req.Extensions.Service.ID
+	if peerID != "" {
+		tag = fmt.Sprintf("%q <= %v", peerID, conn.RemoteAddr())
 	}
 	rsp := &proto.Message{
 		Type: proto.Type,
 		Msg:  proto.MsgServerHello,
-		ID:   cfg.ID,
 	}
+	rsp.Extensions.Service.ID = cfg.Service.ID
 	if err := proto.Write(conn, rsp); err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
@@ -80,7 +81,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	_ = conn.SetDeadline(time.Time{})
 	h.s.stats.authorized.Add(1)
 
-	_, err = h.s.startMux(conn, cfg, req.ID, nil, tag)
+	_, err = h.s.startMux(conn, cfg, peerID, nil, tag)
 	if err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return

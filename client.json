@@ -1,18 +1,19 @@
 {
-  "peers": {
-    "server": {
-      "addr": "example.com:38000",
-      "listen": "127.0.0.1:8080",
-      "service": "http"
-    }
+  "type": "application/x-tlswrapper-config; version=4",
+  "tls": {
+    "cert": "@client-cert.pem",
+    "key": "@client-key.pem",
+    "authcerts": [
+      "@server-cert.pem"
+    ]
   },
-  "certs": [
-    {
-      "cert": "@client-cert.pem",
-      "key": "@client-key.pem"
+  "service": {
+    "id": "client",
+    "peers": {
+      "server": "example.com:38000"
+    },
+    "listen": {
+      "server": "127.0.0.1:8080"
     }
-  ],
-  "authcerts": [
-    "@server-cert.pem"
-  ]
+  }
 }

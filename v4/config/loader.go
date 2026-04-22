@@ -27,7 +27,7 @@ func loadPEM(s string) (string, error) {
 }
 
 // load resolves any "@path" references in the TLS config
-func (t *TLSConfig) load() error {
+func (t *TLS) load() error {
 	certPEM, err := loadPEM(t.Certificate)
 	if err != nil {
 		return err

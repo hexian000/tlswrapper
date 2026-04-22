@@ -274,7 +274,10 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 func (s *Server) loadSessions(cfg *config.File) error {
 	// collect all peer names that should be active
 	activePeers := make(map[string]struct{})
-	for name := range cfg.Service {
+	for name := range cfg.Service.Peers {
+		activePeers[name] = struct{}{}
+	}
+	for name := range cfg.Service.Listen {
 		activePeers[name] = struct{}{}
 	}
 	// the empty-string key represents the default unnamed service driven by top-level Listen/MuxConnect
