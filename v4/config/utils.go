@@ -32,7 +32,6 @@ func (cfg *File) SetLogger(l *slog.Logger) error {
 	default:
 		return fmt.Errorf("unknown log output: %s", cfg.Log)
 	}
-	l.SetLevel(cfg.LogLevel)
 	return nil
 }
 

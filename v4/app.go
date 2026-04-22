@@ -44,6 +44,7 @@ type AppFlags struct {
 	Sign       string
 	KeyType    string
 	KeySize    int
+	LogLevel   int
 }
 
 func (f *AppFlags) Validate() error {
@@ -66,6 +67,9 @@ var appFlags AppFlags
 
 // AppMain is the main entry point of the application
 func AppMain(f *AppFlags) int {
+	if f.LogLevel >= 0 {
+		slog.Default().SetLevel(slog.Level(f.LogLevel))
+	}
 	if f.Color {
 		slog.Default().SetOutput(slog.OutputTerminal, os.Stdout)
 	}
@@ -91,6 +95,9 @@ func AppMain(f *AppFlags) int {
 	if err != nil {
 		slog.Fatal("load config: ", formats.Error(err))
 		os.Exit(1)
+	}
+	if f.LogLevel < 0 {
+		slog.Default().SetLevel(cfg.LogLevel)
 	}
 	slog.Debugf("runtime: %s", runtime.Version())
 	server, err := NewServer(cfg)

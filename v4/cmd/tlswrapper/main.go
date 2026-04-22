@@ -28,6 +28,7 @@ func parseFlags(f *tlswrapper.AppFlags) {
 	flag.StringVar(&f.Sign, "sign", "", "gencerts: sign the certificate with <signer>-cert.pem, <signer>-key.pem")
 	flag.StringVar(&f.KeyType, "keytype", "rsa", "gencerts: one of rsa, ecdsa, ed25519")
 	flag.IntVar(&f.KeySize, "keysize", 0, "gencerts: specifies the size of the private key, depending on the key type")
+	flag.IntVar(&f.LogLevel, "loglevel", -1, "set the logging level")
 	for from, to := range flagAlias {
 		flagSet := flag.Lookup(from)
 		flag.Var(flagSet.Value, to, fmt.Sprintf("alias to %q", flagSet.Name))
