@@ -22,7 +22,7 @@ import (
 
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
-	"github.com/hexian000/tlswrapper/v3/config"
+	"github.com/hexian000/tlswrapper/v4/config"
 )
 
 const maxContentLength = 4194304

@@ -7,15 +7,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
+	"golang.org/x/net/http2"
 )
 
 // SetLogger sets up logging according to config
@@ -92,6 +91,7 @@ func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {
 		RootCAs:      certPool,
 		ServerName:   sni,
 		MinVersion:   tls.VersionTLS13,
+		NextProtos:   []string{"h2"},
 	}, nil
 }
 
@@ -113,34 +113,33 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// NewMuxConfig creates a yamux.Config from the current configuration.
-// MaxHalfOpen is used as the yamux accept backlog. If zero, it defaults to 256.
-func (c *File) NewMuxConfig() *yamux.Config {
-	acceptBacklog := c.Mux.MaxHalfOpen
-	if acceptBacklog <= 0 {
-		acceptBacklog = 256
+// NewH2Server creates an http2.Server configured from the current settings.
+// MaxStreams maps to MaxConcurrentStreams; if zero defaults to 256.
+func (c *File) NewH2Server() *http2.Server {
+	maxStreams := uint32(c.Mux.MaxHalfOpen)
+	if maxStreams == 0 {
+		maxStreams = 256
 	}
-	keepAliveInterval := time.Duration(c.KeepAlive) * time.Second
-	enableKeepAlive := keepAliveInterval >= time.Second
-	if !enableKeepAlive {
-		keepAliveInterval = 15 * time.Second
+	return &http2.Server{
+		MaxConcurrentStreams: maxStreams,
+		IdleTimeout:          time.Duration(c.IdleTimeout) * time.Second,
 	}
-	openTimeout := time.Duration(c.Mux.StreamOpenTimeout) * time.Second
-	if openTimeout <= 0 {
-		openTimeout = 30 * time.Second
+}
+
+// NewH2Transport creates an http2.Transport configured from the current settings.
+func (c *File) NewH2Transport(tlscfg *tls.Config) *http2.Transport {
+	keepAlive := time.Duration(c.KeepAlive) * time.Second
+	if keepAlive < time.Second {
+		keepAlive = 25 * time.Second
 	}
-	closeTimeout := time.Duration(c.Mux.StreamCloseTimeout) * time.Second
-	if closeTimeout <= 0 {
-		closeTimeout = 120 * time.Second
+	pingTimeout := time.Duration(c.SessionTimeout) * time.Second
+	if pingTimeout < time.Second {
+		pingTimeout = 60 * time.Second
 	}
-	return &yamux.Config{
-		AcceptBacklog:          acceptBacklog,
-		EnableKeepAlive:        enableKeepAlive,
-		KeepAliveInterval:      keepAliveInterval,
-		ConnectionWriteTimeout: time.Duration(c.SendTimeout) * time.Second,
-		MaxStreamWindowSize:    uint32(c.StreamWindow),
-		StreamOpenTimeout:      openTimeout,
-		StreamCloseTimeout:     closeTimeout,
-		Logger:                 log.New(&logWrapper{slog.Default()}, "", 0),
+	return &http2.Transport{
+		TLSClientConfig: tlscfg,
+		ReadIdleTimeout: keepAlive,
+		PingTimeout:     pingTimeout,
+		AllowHTTP:       tlscfg == nil,
 	}
 }

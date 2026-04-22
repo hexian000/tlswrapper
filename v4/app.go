@@ -16,7 +16,7 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 	sd "github.com/hexian000/gosnippets/systemd"
-	"github.com/hexian000/tlswrapper/v3/config"
+	"github.com/hexian000/tlswrapper/v4/config"
 )
 
 var (

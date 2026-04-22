@@ -79,6 +79,25 @@ func recvmsg(r io.Reader, msg any) error {
 	return nil
 }
 
+// ReadFrom decodes a Message from r using plain JSON (no binary framing).
+// Used for HTTP body decoding.
+func ReadFrom(r io.Reader) (*Message, error) {
+	var msg Message
+	if err := json.NewDecoder(r).Decode(&msg); err != nil {
+		return nil, err
+	}
+	if err := checkType(msg.Type); err != nil {
+		return nil, err
+	}
+	return &msg, nil
+}
+
+// WriteTo encodes msg to w using plain JSON (no binary framing).
+// Used for HTTP body encoding.
+func WriteTo(w io.Writer, msg *Message) error {
+	return json.NewEncoder(w).Encode(msg)
+}
+
 func checkType(s string) error {
 	mediatype, params, err := mime.ParseMediaType(s)
 	if err != nil {

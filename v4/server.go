@@ -7,21 +7,22 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/net/hlistener"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
-	"github.com/hexian000/tlswrapper/v3/config"
-	"github.com/hexian000/tlswrapper/v3/eventlog"
-	"github.com/hexian000/tlswrapper/v3/forwarder"
+	"github.com/hexian000/tlswrapper/v4/config"
+	"github.com/hexian000/tlswrapper/v4/eventlog"
+	"github.com/hexian000/tlswrapper/v4/forwarder"
+	"golang.org/x/net/http2"
 )
 
 const network = "tcp"
@@ -41,6 +42,7 @@ type Server struct {
 	l           hlistener.Listener
 	apiListener net.Listener
 	f           forwarder.Forwarder
+	h2server    *http2.Server
 
 	flowStats    *snet.FlowStats
 	recentEvents eventlog.Recent
@@ -86,6 +88,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 		return nil, err
 	}
 	s.tlscfg = tlscfg
+	s.h2server = cfg.NewH2Server()
 	return s, nil
 }
 
@@ -96,12 +99,12 @@ func maxStreams(cfg *config.File) int {
 	return cfg.MaxStreams
 }
 
-// findSession returns the first session with the given peerName that has an active mux.
+// findSession returns the first session with the given peerName that has an active connection.
 func (s *Server) findSession(peerName string) *session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, ss := range s.sessions {
-		if ss.id == peerName && ss.getMux() != nil {
+		if ss.id == peerName && ss.getH2conn() != nil {
 			return ss
 		}
 	}
@@ -196,8 +199,7 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 		conn, err := listener.Accept()
 		if err != nil {
 			if errors.Is(err, io.EOF) ||
-				errors.Is(err, net.ErrClosed) ||
-				errors.Is(err, yamux.ErrSessionShutdown) {
+				errors.Is(err, net.ErrClosed) {
 				return
 			}
 			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
@@ -214,49 +216,28 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	}
 }
 
-// startMux establishes a yamux session over conn.
-// If ss is non-nil (outbound), the yamux session is attached to the existing session object.
-// If ss is nil (inbound), a new transient session is created and added to the global list.
-func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName string, ss *session, tag string) (*yamux.Session, error) {
-	muxcfg := cfg.NewMuxConfig()
-	handshakeFunc := yamux.Server
-	if ss != nil {
-		handshakeFunc = yamux.Client
-	}
-	mux, err := handshakeFunc(conn, muxcfg)
-	if err != nil {
-		ioClose(conn)
-		return nil, err
-	}
-	h := &ForwardHandler{s, peerName}
-	if ss != nil {
-		// outbound: attach mux to the existing config-driven session
-		if err := s.g.Go(func() {
-			ss.addMux(mux, tag)
-			defer ss.delMux(mux)
-			s.Serve(mux, h)
-		}); err != nil {
-			ioClose(mux)
-			return nil, err
+// serveH2Conn handles one inbound connection as an HTTP/2 server.
+// It blocks until the connection is closed.
+func (s *Server) serveH2Conn(conn net.Conn, tag string) {
+	inbound := newSession("", "", s)
+	s.addSession(inbound)
+	h := newH2ConnHandler(s, inbound, tag)
+	defer func() {
+		now := time.Now()
+		// decrement session counter if it was incremented in handleHello
+		inbound.mu.Lock()
+		if inbound.h2conn != nil || inbound.lastChanged != (time.Time{}) {
+			msg := fmt.Sprintf("%s: session closed", tag)
+			slog.Notice(msg)
+			s.recentEvents.Add(now, msg)
+			if inbound.lastChanged != (time.Time{}) {
+				s.numSessions.Add(^uint32(0))
+			}
 		}
-	} else {
-		// inbound: create a transient session for the duration of this connection
-		inbound := newSession(peerName, "", s)
-		s.addSession(inbound)
-		if err := s.g.Go(func() {
-			inbound.addMux(mux, tag)
-			defer func() {
-				inbound.delMux(mux)
-				s.removeSession(inbound)
-			}()
-			s.Serve(mux, h)
-		}); err != nil {
-			s.removeSession(inbound)
-			ioClose(mux)
-			return nil, err
-		}
-	}
-	return mux, nil
+		inbound.mu.Unlock()
+		s.removeSession(inbound)
+	}()
+	configureH2Server(s.h2server, conn, h)
 }
 
 // Listen starts listening on the given address
@@ -382,10 +363,10 @@ func (s *Server) Shutdown() error {
 	s.ctx.close()
 	// signal all goroutines to stop
 	s.g.Close()
-	// close all active mux sessions to unblock Serve loops
+	// close all active HTTP/2 sessions to unblock Serve loops
 	for _, ss := range s.getAllSessions() {
-		if mux := ss.getMux(); mux != nil {
-			ioClose(mux)
+		if h2conn := ss.getH2conn(); h2conn != nil {
+			_ = h2conn.Close()
 		}
 	}
 	// close all forwards

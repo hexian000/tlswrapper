@@ -1,7 +1,8 @@
 {
-  "type": "application/x-tlswrapper-config; version=4",
-  "mux_listen": "127.0.0.1:38000",
-  "connect": "127.0.0.1:8080",
+  "api_listen": "127.0.0.1:9081",
+  "mux_listen": "127.0.0.1:8443",
+  "listen": "127.0.0.1:5203",
+  "connect": "127.0.0.1:5201",
   "tls": {
     "cert": "@server-cert.pem",
     "key": "@server-key.pem",
@@ -9,7 +10,10 @@
       "@client-cert.pem"
     ]
   },
-  "service": {
-    "id": "server"
-  }
+  "timeout": 60,
+  "keepalive": 25,
+  "stream_window": 16384,
+  "loglevel": 8,
+  "max_streams": 1000,
+  "max_startups": "10:30:60"
 }

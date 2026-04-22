@@ -10,7 +10,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
@@ -22,6 +21,7 @@ var ErrConnLimit = errors.New("connection limit is exceeded")
 // Forwarder interface defines methods for forwarding connections
 type Forwarder interface {
 	Forward(accepted net.Conn, dialed net.Conn) error
+	ForwardSync(accepted net.Conn, dialed net.Conn) error
 	Count() int
 	Close()
 }
@@ -71,8 +71,7 @@ func (f *forwarder) connCopy(dst net.Conn, src net.Conn) {
 	_, err := io.Copy(dst, src)
 	if err != nil &&
 		!errors.Is(err, net.ErrClosed) &&
-		!errors.Is(err, syscall.EPIPE) &&
-		!errors.Is(err, yamux.ErrStreamClosed) {
+		!errors.Is(err, syscall.EPIPE) {
 		slog.Warningf("stream error: %s", formats.Error(err))
 		return
 	}
@@ -107,6 +106,51 @@ func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 		cleanupOnce.Do(cleanup)
 		return err
 	}
+	return nil
+}
+
+// ForwardSync forwards data between accepted and dialed connections and blocks until both directions are done.
+func (f *forwarder) ForwardSync(accepted net.Conn, dialed net.Conn) error {
+	select {
+	case <-f.g.CloseC():
+		return routines.ErrClosed
+	case f.counter <- struct{}{}:
+	default:
+		return ErrConnLimit
+	}
+	f.addConn(accepted, dialed)
+	cleanup := func() {
+		f.delConn(accepted, dialed)
+		<-f.counter
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	cleanupOnce := &sync.Once{}
+	run := func(dst, src net.Conn) {
+		defer wg.Done()
+		f.connCopy(dst, src)
+		// closing both connections unblocks the other direction
+		cleanupOnce.Do(func() {
+			_ = accepted.Close()
+			_ = dialed.Close()
+		})
+	}
+	if err := f.g.Go(func() { run(accepted, dialed) }); err != nil {
+		cleanup()
+		return err
+	}
+	if err := f.g.Go(func() { run(dialed, accepted) }); err != nil {
+		// first goroutine already started; signal it to stop
+		cleanupOnce.Do(func() {
+			_ = accepted.Close()
+			_ = dialed.Close()
+		})
+		wg.Wait()
+		cleanup()
+		return err
+	}
+	wg.Wait()
+	cleanup()
 	return nil
 }
 

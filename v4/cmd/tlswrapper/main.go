@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/hexian000/gosnippets/slog"
-	"github.com/hexian000/tlswrapper/v3"
+	"github.com/hexian000/tlswrapper/v4"
 )
 
 var flagAlias = map[string]string{

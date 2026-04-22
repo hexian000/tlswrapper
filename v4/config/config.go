@@ -36,11 +36,11 @@ type Mux struct {
 	NoDelay bool `json:"nodelay"`
 	// Listen backlog for the mux socket
 	Backlog int `json:"backlog"`
-	// Maximum half-open streams per session (0 = unlimited)
+	// Maximum concurrent streams per connection; maps to HTTP/2 MaxConcurrentStreams (0 = default 256)
 	MaxHalfOpen int `json:"max_halfopen"`
-	// Stream open timeout in seconds
+	// Deprecated: was yamux stream open timeout; retained for config file compatibility.
 	StreamOpenTimeout int `json:"stream_open_timeout,omitempty"`
-	// Stream close timeout in seconds
+	// Deprecated: was yamux stream close timeout; retained for config file compatibility.
 	StreamCloseTimeout int `json:"stream_close_timeout,omitempty"`
 }
 
@@ -104,8 +104,6 @@ type File struct {
 	MaxSessions int `json:"max_sessions"`
 	// Maximum concurrent streams per session (0 = internal default 1024)
 	MaxStreams int `json:"max_streams"`
-	// yamux flow-control window size in bytes per stream (0 = internal default 262144)
-	StreamWindow int `json:"stream_window"`
 	// Unauthenticated connection throttle in "start:rate:full" format
 	MaxStartups string `json:"max_startups,omitempty"`
 	// Disable automatic tunnel redial (client mode)
@@ -132,7 +130,6 @@ var Default = File{
 
 	MaxSessions:  128,
 	MaxStreams:   0,
-	StreamWindow: 262144, // 256 KiB
 	MaxStartups:  "10:30:60",
 
 	Mux: Mux{

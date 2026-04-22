@@ -4,24 +4,28 @@
 package tlswrapper
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
+	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/yamux"
 	"github.com/hexian000/gosnippets/formats"
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
-	"github.com/hexian000/tlswrapper/v3/config"
-	"github.com/hexian000/tlswrapper/v3/proto"
+	"github.com/hexian000/tlswrapper/v4/config"
+	"github.com/hexian000/tlswrapper/v4/proto"
+	"golang.org/x/net/http2"
 )
 
-// session wraps exactly one yamux.Session.
+// session wraps exactly one HTTP/2 ClientConn.
 // Inbound sessions (accepted from a TCP listener) have dialAddr == "".
 // Outbound sessions (dialled by MuxConnect) own a redial loop in run().
 type session struct {
@@ -31,9 +35,10 @@ type session struct {
 	l        net.Listener // local TCP listener (only on config-driven sessions with Listen)
 
 	mu          sync.RWMutex
-	mux         *yamux.Session
-	tag         string    // connection tag for the current mux (set in addMux)
-	idleSince   time.Time // when mux became stream-less (zero = not idle)
+	h2conn      *http2.ClientConn
+	tag         string // connection tag for the current h2conn
+	numStreams  atomic.Int32
+	idleSince   time.Time // when h2conn became stream-less (zero = not idle)
 	closeSig    chan struct{}
 	redialSig   chan struct{}
 	redialCount int
@@ -88,23 +93,24 @@ func (ss *session) Stop() error {
 	return nil
 }
 
-func (ss *session) cleanMux() {
+func (ss *session) cleanH2conn() {
 	cfg, _ := ss.getConfig()
 	idleTimeout := time.Duration(cfg.IdleTimeout) * time.Second
 	now := time.Now()
 
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	if ss.mux == nil {
+	if ss.h2conn == nil {
 		return
 	}
-	if ss.mux.IsClosed() {
-		ss.mux = nil
+	state := ss.h2conn.State()
+	if state.Closed {
+		ss.h2conn = nil
 		ss.idleSince = time.Time{}
 		return
 	}
 	// update idle tracking
-	if ss.mux.NumStreams() == 0 {
+	if ss.numStreams.Load() == 0 {
 		if ss.idleSince.IsZero() {
 			ss.idleSince = now
 		}
@@ -114,8 +120,8 @@ func (ss *session) cleanMux() {
 	// evict if idle too long
 	if idleTimeout > 0 && !ss.idleSince.IsZero() && now.Sub(ss.idleSince) >= idleTimeout {
 		slog.Debugf("session %q: idle session evicted after %v", ss.id, now.Sub(ss.idleSince))
-		ioClose(ss.mux)
-		ss.mux = nil
+		_ = ss.h2conn.Close()
+		ss.h2conn = nil
 		ss.idleSince = time.Time{}
 	}
 }
@@ -126,7 +132,7 @@ func (ss *session) redial() {
 		return
 	}
 	defer ss.s.ctx.cancel(ctx)
-	_, err := ss.muxDial(ctx)
+	_, err := ss.h2Dial(ctx)
 	if err != nil && !errors.Is(err, ErrNoDialAddress) && !errors.Is(err, ErrDialInProgress) {
 		redialCount := ss.redialCount + 1
 		if redialCount > ss.redialCount {
@@ -140,8 +146,8 @@ func (ss *session) redial() {
 }
 
 func (ss *session) maintenance() {
-	ss.cleanMux()
-	if ss.getMux() == nil {
+	ss.cleanH2conn()
+	if ss.getH2conn() == nil {
 		cfg, _ := ss.getConfig()
 		if !cfg.NoRedial && ss.dialAddr != "" {
 			ss.redial()
@@ -189,9 +195,9 @@ func (ss *session) run() {
 			ioClose(ss.l)
 			ss.l = nil
 		}
-		if ss.mux != nil {
-			ioClose(ss.mux)
-			ss.mux = nil
+		if ss.h2conn != nil {
+			_ = ss.h2conn.Close()
+			ss.h2conn = nil
 		}
 	}()
 	for {
@@ -208,8 +214,8 @@ func (ss *session) run() {
 	}
 }
 
-// addMux records an established yamux session on this session object.
-func (ss *session) addMux(mux *yamux.Session, tag string) {
+// addH2conn records an established HTTP/2 ClientConn on this session object.
+func (ss *session) addH2conn(h2conn *http2.ClientConn, tag string) {
 	now := time.Now()
 	msg := fmt.Sprintf("%s: session established", tag)
 	slog.Notice(msg)
@@ -217,26 +223,26 @@ func (ss *session) addMux(mux *yamux.Session, tag string) {
 
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	hadMux := ss.mux != nil && !ss.mux.IsClosed()
-	ss.mux = mux
+	hadConn := ss.h2conn != nil && !ss.h2conn.State().Closed
+	ss.h2conn = h2conn
 	ss.tag = tag
-	if !hadMux {
+	if !hadConn {
 		ss.s.numSessions.Add(1)
 	}
 	ss.lastChanged = now
 }
 
-func (ss *session) delMux(mux *yamux.Session) {
+func (ss *session) delH2conn(h2conn *http2.ClientConn) {
 	now := time.Now()
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	if ss.mux != mux {
+	if ss.h2conn != h2conn {
 		return
 	}
 	msg := fmt.Sprintf("%s: session closed", ss.tag)
 	slog.Notice(msg)
 	ss.s.recentEvents.Add(now, msg)
-	ss.mux = nil
+	ss.h2conn = nil
 	ss.tag = ""
 	ss.idleSince = time.Time{}
 	ss.s.numSessions.Add(^uint32(0))
@@ -249,33 +255,87 @@ func (ss *session) delMux(mux *yamux.Session) {
 	}
 }
 
-// getMux returns the active yamux.Session, or nil if there is none.
-func (ss *session) getMux() *yamux.Session {
+// getH2conn returns the active http2.ClientConn, or nil if there is none.
+func (ss *session) getH2conn() *http2.ClientConn {
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
-	if ss.mux == nil || ss.mux.IsClosed() {
+	if ss.h2conn == nil || ss.h2conn.State().Closed {
 		return nil
 	}
-	return ss.mux
+	return ss.h2conn
 }
 
-// Dial opens a new stream over the session's yamux session.
-// Returns an error if the session has no active mux yet.
+// Dial opens a new HTTP/2 stream (POST /tunnel) over the session's connection.
+// Returns a net.Conn backed by the request/response body pair.
 func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
-	mux := ss.getMux()
-	if mux == nil {
+	h2conn := ss.getH2conn()
+	if h2conn == nil {
 		return nil, ErrNoSession
 	}
-	stream, err := mux.OpenStream()
+	cfg, _ := ss.getConfig()
+	dialAddr := cfg.ServiceEntry(ss.id).MuxConnect
+	if dialAddr == "" {
+		dialAddr = ss.dialAddr
+	}
+	remoteAddr := h2Addr{dialAddr}
+	localAddr := h2Addr{"local"}
+
+	pr, pw := io.Pipe()
+	scheme := "https"
+	if _, tlscfg := ss.getConfig(); tlscfg == nil {
+		scheme = "http"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		scheme+"://"+dialAddr+"/tunnel", pr)
 	if err != nil {
+		_ = pw.Close()
 		return nil, err
 	}
-	slog.Debugf("stream open: %q ID=%v", ss.id, stream.StreamID())
-	return stream, nil
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	ss.numStreams.Add(1)
+	resp, err := h2conn.RoundTrip(req)
+	if err != nil {
+		ss.numStreams.Add(-1)
+		_ = pw.Close()
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		ss.numStreams.Add(-1)
+		_ = pw.Close()
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("tunnel: unexpected status %d", resp.StatusCode)
+	}
+
+	var decremented bool
+	var decOnce sync.Once
+	tc := newH2TunnelConn(pw, resp.Body, localAddr, remoteAddr)
+	// Wrap Close to decrement numStreams exactly once
+	origClose := tc.rb
+	decBody := &onCloseBody{ReadCloser: origClose, onClose: func() {
+		decOnce.Do(func() {
+			decremented = true
+			ss.numStreams.Add(-1)
+		})
+	}}
+	_ = decremented
+	tc.rb = decBody
+	return tc, nil
 }
 
-// muxDial dials to the remote and establishes a yamux session.
-func (ss *session) muxDial(ctx context.Context) (*yamux.Session, error) {
+// onCloseBody wraps an io.ReadCloser and calls onClose when Close is called.
+type onCloseBody struct {
+	io.ReadCloser
+	onClose func()
+}
+
+func (b *onCloseBody) Close() error {
+	b.onClose()
+	return b.ReadCloser.Close()
+}
+
+// h2Dial dials to the remote and establishes an HTTP/2 session.
+func (ss *session) h2Dial(ctx context.Context) (*http2.ClientConn, error) {
 	cfg, tlscfg := ss.getConfig()
 	if ss.dialAddr == "" {
 		return nil, ErrNoDialAddress
@@ -285,46 +345,110 @@ func (ss *session) muxDial(ctx context.Context) (*yamux.Session, error) {
 	}
 	defer ss.dialMu.Unlock()
 	start := time.Now()
-	conn, err := ss.s.dialer.DialContext(ctx, network, ss.dialAddr)
+	rawConn, err := ss.s.dialer.DialContext(ctx, network, ss.dialAddr)
 	if err != nil {
 		return nil, err
 	}
-	tag := fmt.Sprintf("%q => %v", ss.id, conn.RemoteAddr())
+	tag := fmt.Sprintf("%q => %v", ss.id, rawConn.RemoteAddr())
 	if deadline, ok := ctx.Deadline(); ok {
-		if err := conn.SetDeadline(deadline); err != nil {
-			ioClose(conn)
+		if err := rawConn.SetDeadline(deadline); err != nil {
+			ioClose(rawConn)
 			return nil, err
 		}
 	}
-	cfg.SetMuxConnParams(conn)
-	conn = snet.FlowMeter(conn, ss.s.flowStats)
+	cfg.SetMuxConnParams(rawConn)
+	rawConn = snet.FlowMeter(rawConn, ss.s.flowStats)
+	var conn net.Conn = rawConn
 	if tlscfg != nil {
-		conn = tls.Client(conn, tlscfg)
+		tlsConn := tls.Client(rawConn, tlscfg)
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			ioClose(rawConn)
+			return nil, err
+		}
+		conn = tlsConn
 	} else {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
-	req := &proto.Message{
-		Type: proto.Type,
-		Msg:  proto.MsgClientHello,
-	}
-	req.Extensions.Service.ID = cfg.Service.ID
-	rsp, err := proto.Roundtrip(conn, req)
+
+	transport := cfg.NewH2Transport(tlscfg)
+	h2conn, err := transport.NewClientConn(conn)
 	if err != nil {
 		ioClose(conn)
 		return nil, err
 	}
+
+	// Send ClientHello via POST /hello
+	scheme := "https"
+	if tlscfg == nil {
+		scheme = "http"
+	}
+	helloURL := scheme + "://" + ss.dialAddr + "/hello"
+	helloReq := &proto.Message{
+		Type: proto.Type,
+		Msg:  proto.MsgClientHello,
+	}
+	helloReq.Extensions.Service.ID = cfg.Service.ID
+
+	var buf bytes.Buffer
+	if err := proto.WriteTo(&buf, helloReq); err != nil {
+		_ = h2conn.Close()
+		return nil, err
+	}
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, helloURL, &buf)
+	if err != nil {
+		_ = h2conn.Close()
+		return nil, err
+	}
+	hreq.Header.Set("Content-Type", proto.Type)
+
+	resp, err := h2conn.RoundTrip(hreq)
+	if err != nil {
+		_ = h2conn.Close()
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_ = h2conn.Close()
+		return nil, fmt.Errorf("hello: unexpected status %d", resp.StatusCode)
+	}
+	rsp, err := proto.ReadFrom(resp.Body)
+	if err != nil {
+		_ = h2conn.Close()
+		return nil, err
+	}
+	_ = conn.SetDeadline(time.Time{})
 	rspID := rsp.Extensions.Service.ID
 	if rspID != "" && rspID != ss.id {
 		slog.Warningf("%s: peer id mismatch, remote claimed %q", tag, rspID)
 	}
-	_ = conn.SetDeadline(time.Time{})
 
-	mux, err := ss.s.startMux(conn, cfg, rspID, ss, tag)
-	if err != nil {
+	ss.addH2conn(h2conn, tag)
+	// Monitor the connection; clean up when closed
+	if err := ss.s.g.Go(func() {
+		defer ss.delH2conn(h2conn)
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if h2conn.State().Closed {
+					return
+				}
+			case <-ss.closeSig:
+				_ = h2conn.Close()
+				return
+			case <-ss.s.g.CloseC():
+				_ = h2conn.Close()
+				return
+			}
+		}
+	}); err != nil {
+		ss.delH2conn(h2conn)
 		return nil, err
 	}
+
 	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
-	return mux, nil
+	return h2conn, nil
 }
 
 // SessionStats holds statistics of a session.
@@ -339,11 +463,10 @@ type SessionStats struct {
 func (ss *session) Stats() SessionStats {
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
+	active := ss.h2conn != nil && !ss.h2conn.State().Closed
 	numStreams := 0
-	active := false
-	if ss.mux != nil && !ss.mux.IsClosed() {
-		active = true
-		numStreams = ss.mux.NumStreams()
+	if active {
+		numStreams = int(ss.numStreams.Load())
 	}
 	return SessionStats{
 		Name:        ss.id,
@@ -352,5 +475,3 @@ func (ss *session) Stats() SessionStats {
 		Active:      active,
 	}
 }
-
-// tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>

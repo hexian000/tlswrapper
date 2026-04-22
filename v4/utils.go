@@ -23,7 +23,7 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
-	"github.com/hexian000/tlswrapper/v3/config"
+	"github.com/hexian000/tlswrapper/v4/config"
 )
 
 // ioClose closes the given io.Closer and logs any error
