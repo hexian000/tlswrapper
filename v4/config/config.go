@@ -38,10 +38,6 @@ type Mux struct {
 	Backlog int `json:"backlog"`
 	// Maximum concurrent streams per connection; maps to HTTP/2 MaxConcurrentStreams (0 = default 256)
 	MaxHalfOpen int `json:"max_halfopen"`
-	// Deprecated: was yamux stream open timeout; retained for config file compatibility.
-	StreamOpenTimeout int `json:"stream_open_timeout,omitempty"`
-	// Deprecated: was yamux stream close timeout; retained for config file compatibility.
-	StreamCloseTimeout int `json:"stream_close_timeout,omitempty"`
 }
 
 // TCP holds socket options for local (application-side) TCP connections.
@@ -85,7 +81,7 @@ type File struct {
 	// Local TCP address to accept application traffic on
 	Listen string `json:"listen,omitempty"`
 	// Forwarding target for inbound application streams
-	Connect string  `json:"connect,omitempty"`
+	Connect string `json:"connect,omitempty"`
 	// Service identity and per-peer routing settings
 	Service Service `json:"service,omitempty"`
 	// Session inactivity timeout in seconds
@@ -128,16 +124,14 @@ var Default = File{
 	Log:      "stdout",
 	LogLevel: slog.LevelNotice,
 
-	MaxSessions:  128,
-	MaxStreams:   0,
-	MaxStartups:  "10:30:60",
+	MaxSessions: 128,
+	MaxStreams:  0,
+	MaxStartups: "10:30:60",
 
 	Mux: Mux{
-		NoDelay:            true,
-		Backlog:            16,
-		MaxHalfOpen:        256,
-		StreamOpenTimeout:  30,
-		StreamCloseTimeout: 120,
+		NoDelay:     true,
+		Backlog:     16,
+		MaxHalfOpen: 256,
 	},
 	TCP: TCP{
 		KeepAlive: false,

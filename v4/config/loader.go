@@ -162,11 +162,6 @@ func (c *File) Validate() error {
 	if c.IdleTimeout != 0 {
 		clampInt(&c.IdleTimeout, 5, 31557600)
 	}
-	// clamp mux backlog fields
-	clampInt(&c.Mux.Backlog, 1, 4096)
-	if c.Mux.MaxHalfOpen != 0 {
-		clampInt(&c.Mux.MaxHalfOpen, 1, 4096)
-	}
 	clampInt(&c.TCP.Backlog, 1, 4096)
 	return nil
 }
