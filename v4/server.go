@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -30,6 +29,7 @@ const network = "tcp"
 var (
 	ErrNoDialAddress  = errors.New("no dial address is configured")
 	ErrDialInProgress = errors.New("another dial is in progress")
+	ErrNoSession      = errors.New("no active session")
 )
 
 // Server object
@@ -45,11 +45,10 @@ type Server struct {
 	flowStats    *snet.FlowStats
 	recentEvents eventlog.Recent
 
-	tunnels   map[string]*tunnel // map[service]tunnel
-	tunnelsMu sync.RWMutex
-	mux       map[*yamux.Session]string // map[mux]tag
-	muxMu     sync.RWMutex
-	ctx       contextMgr
+	mu       sync.RWMutex
+	services map[string]*session // map[peerName]session — config-driven sessions
+	sessions []*session          // all sessions (inbound + outbound)
+	ctx      contextMgr
 
 	dialer net.Dialer
 	g      routines.Group
@@ -68,9 +67,8 @@ type Server struct {
 func NewServer(cfg *config.File) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
-		cfg:     cfg,
-		tunnels: make(map[string]*tunnel),
-		mux:     make(map[*yamux.Session]string),
+		cfg:      cfg,
+		services: make(map[string]*session),
 		ctx: contextMgr{
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
@@ -98,20 +96,41 @@ func maxStreams(cfg *config.File) int {
 	return cfg.MaxStreams
 }
 
-func (s *Server) findTunnel(peerName string) *tunnel {
-	s.tunnelsMu.RLock()
-	defer s.tunnelsMu.RUnlock()
-	return s.tunnels[peerName]
+// findSession returns the first session with the given peerName that has an active mux.
+func (s *Server) findSession(peerName string) *session {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, ss := range s.sessions {
+		if ss.id == peerName && ss.getMux() != nil {
+			return ss
+		}
+	}
+	return nil
 }
 
-func (s *Server) getAllTunnels() []*tunnel {
-	s.tunnelsMu.RLock()
-	defer s.tunnelsMu.RUnlock()
-	tunnels := make([]*tunnel, 0, len(s.tunnels))
-	for _, t := range s.tunnels {
-		tunnels = append(tunnels, t)
+func (s *Server) getAllSessions() []*session {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]*session, len(s.sessions))
+	copy(result, s.sessions)
+	return result
+}
+
+func (s *Server) addSession(ss *session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions = append(s.sessions, ss)
+}
+
+func (s *Server) removeSession(target *session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, ss := range s.sessions {
+		if ss == target {
+			s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
+			return
+		}
 	}
-	return tunnels
 }
 
 // ServerStats holds statistics of the server
@@ -124,7 +143,7 @@ type ServerStats struct {
 	Authorized  uint64
 	ReqTotal    uint64
 	ReqSuccess  uint64
-	tunnels     []TunnelStats
+	sessions    []SessionStats
 }
 
 // Stats returns the current server statistics
@@ -132,11 +151,13 @@ func (s *Server) Stats() (stats ServerStats) {
 	if s.l != nil {
 		stats.Accepted, stats.Served = s.l.Stats()
 	}
-	for _, t := range s.getAllTunnels() {
-		tstats := t.Stats()
-		stats.NumSessions += tstats.NumSessions
-		stats.NumStreams += tstats.NumStreams
-		stats.tunnels = append(stats.tunnels, tstats)
+	for _, ss := range s.getAllSessions() {
+		sstats := ss.Stats()
+		if sstats.Active {
+			stats.NumSessions++
+		}
+		stats.NumStreams += sstats.NumStreams
+		stats.sessions = append(stats.sessions, sstats)
 	}
 	stats.Rx, stats.Tx = s.flowStats.Read.Load(), s.flowStats.Written.Load()
 	stats.Authorized = s.stats.authorized.Load()
@@ -193,41 +214,13 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	}
 }
 
-// addMux adds a yamux session to the server's mux map
-func (s *Server) addMux(mux *yamux.Session, tag string) {
-	now := time.Now()
-	msg := fmt.Sprintf("%s: session established", tag)
-	slog.Info(msg)
-	s.recentEvents.Add(now, msg)
-
-	s.muxMu.Lock()
-	defer s.muxMu.Unlock()
-	s.mux[mux] = tag
-}
-
-// delMux removes a yamux session from the server's mux map
-func (s *Server) delMux(mux *yamux.Session) {
-	now := time.Now()
-	if tag, ok := func() (string, bool) {
-		s.muxMu.RLock()
-		defer s.muxMu.RUnlock()
-		tag, ok := s.mux[mux]
-		return tag, ok
-	}(); ok {
-		msg := fmt.Sprintf("%s: session closed", tag)
-		slog.Info(msg)
-		s.recentEvents.Add(now, msg)
-	}
-	s.muxMu.Lock()
-	defer s.muxMu.Unlock()
-	delete(s.mux, mux)
-}
-
-// startMux starts a yamux session over the given connection
-func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName string, t *tunnel, tag string) (*yamux.Session, error) {
+// startMux establishes a yamux session over conn.
+// If ss is non-nil (outbound), the yamux session is attached to the existing session object.
+// If ss is nil (inbound), a new transient session is created and added to the global list.
+func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName string, ss *session, tag string) (*yamux.Session, error) {
 	muxcfg := cfg.NewMuxConfig()
 	handshakeFunc := yamux.Server
-	if t != nil {
+	if ss != nil {
 		handshakeFunc = yamux.Client
 	}
 	mux, err := handshakeFunc(conn, muxcfg)
@@ -236,21 +229,32 @@ func (s *Server) startMux(conn net.Conn, cfg *config.File, peerName string, t *t
 		return nil, err
 	}
 	h := &ForwardHandler{s, peerName}
-	serveFunc := func() {
-		s.addMux(mux, tag)
-		defer s.delMux(mux)
-		s.Serve(mux, h)
-	}
-	if peerTun := s.findTunnel(peerName); peerTun != nil {
-		serveFunc = func() {
-			peerTun.addMux(mux, tag)
-			defer peerTun.delMux(mux)
+	if ss != nil {
+		// outbound: attach mux to the existing config-driven session
+		if err := s.g.Go(func() {
+			ss.addMux(mux, tag)
+			defer ss.delMux(mux)
 			s.Serve(mux, h)
+		}); err != nil {
+			ioClose(mux)
+			return nil, err
 		}
-	}
-	if err := s.g.Go(serveFunc); err != nil {
-		ioClose(mux)
-		return nil, err
+	} else {
+		// inbound: create a transient session for the duration of this connection
+		inbound := newSession(peerName, "", s)
+		s.addSession(inbound)
+		if err := s.g.Go(func() {
+			inbound.addMux(mux, tag)
+			defer func() {
+				inbound.delMux(mux)
+				s.removeSession(inbound)
+			}()
+			s.Serve(mux, h)
+		}); err != nil {
+			s.removeSession(inbound)
+			ioClose(mux)
+			return nil, err
+		}
 	}
 	return mux, nil
 }
@@ -266,8 +270,8 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 	return listener, err
 }
 
-// loadTunnels loads tunnels from the configuration file
-func (s *Server) loadTunnels(cfg *config.File) error {
+// loadSessions creates and stops config-driven sessions to match cfg.
+func (s *Server) loadSessions(cfg *config.File) error {
 	// collect all peer names that should be active
 	activePeers := make(map[string]struct{})
 	for name := range cfg.Service {
@@ -278,25 +282,33 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 		activePeers[""] = struct{}{}
 	}
 
-	s.tunnelsMu.Lock()
-	defer s.tunnelsMu.Unlock()
-	// 1. remove tunnels that are no longer in the config
-	for name, t := range s.tunnels {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// 1. stop sessions that are no longer in the config
+	for name, ss := range s.services {
 		if _, ok := activePeers[name]; !ok {
-			if err := t.Stop(); err != nil {
-				slog.Errorf("tunnel %q: %s", name, formats.Error(err))
+			if err := ss.Stop(); err != nil {
+				slog.Errorf("session %q: %s", name, formats.Error(err))
 			}
-			delete(s.tunnels, name)
+			for i, t := range s.sessions {
+				if t == ss {
+					s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
+					break
+				}
+			}
+			delete(s.services, name)
 		}
 	}
-	// 2. add new tunnels
+	// 2. start sessions for newly active peers
 	for name := range activePeers {
-		if _, exists := s.tunnels[name]; exists {
+		if _, exists := s.services[name]; exists {
 			continue
 		}
-		t := newTunnel(name, s)
-		s.tunnels[name] = t
-		if err := t.Start(); err != nil {
+		dialAddr := cfg.ServiceEntry(name).MuxConnect
+		ss := newSession(name, dialAddr, s)
+		s.services[name] = ss
+		s.sessions = append(s.sessions, ss)
+		if err := ss.Start(); err != nil {
 			return err
 		}
 	}
@@ -345,7 +357,7 @@ func (s *Server) Start() error {
 		}
 		s.apiListener = l
 	}
-	if err := s.loadTunnels(s.cfg); err != nil {
+	if err := s.loadSessions(s.cfg); err != nil {
 		return err
 	}
 	s.started = time.Now()
@@ -365,17 +377,14 @@ func (s *Server) Shutdown() error {
 	}
 	// cancel all contexts
 	s.ctx.close()
-	// stop all tunnels
+	// signal all goroutines to stop
 	s.g.Close()
-	// close all mux
-	func() {
-		s.muxMu.Lock()
-		defer s.muxMu.Unlock()
-		for mux := range s.mux {
+	// close all active mux sessions to unblock Serve loops
+	for _, ss := range s.getAllSessions() {
+		if mux := ss.getMux(); mux != nil {
 			ioClose(mux)
-			delete(s.mux, mux)
 		}
-	}()
+	}
 	// close all forwards
 	s.f.Close()
 	slog.Info("waiting for unfinished connections")
@@ -389,7 +398,7 @@ func (s *Server) LoadConfig(cfg *config.File) error {
 	if err != nil {
 		return err
 	}
-	s.loadTunnels(cfg)
+	s.loadSessions(cfg)
 	func() {
 		s.cfgMu.Lock()
 		defer s.cfgMu.Unlock()

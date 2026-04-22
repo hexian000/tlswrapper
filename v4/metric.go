@@ -240,19 +240,19 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.last.Timestamp = now
 	}
 
-	fprintf(w, "\n> Tunnels\n")
-	sort.Slice(stats.tunnels, func(i, j int) bool {
-		return stats.tunnels[i].Name < stats.tunnels[j].Name
+	fprintf(w, "\n> Sessions\n")
+	sort.Slice(stats.sessions, func(i, j int) bool {
+		return stats.sessions[i].Name < stats.sessions[j].Name
 	})
-	for _, t := range stats.tunnels {
-		if (t.LastChanged != time.Time{}) {
-			s := "offline"
-			if t.NumSessions > 0 {
-				s = fmt.Sprintf("%d (%d streams)", t.NumSessions, t.NumStreams)
+	for _, ss := range stats.sessions {
+		if (ss.LastChanged != time.Time{}) {
+			status := "offline"
+			if ss.Active {
+				status = fmt.Sprintf("%d streams", ss.NumStreams)
 			}
-			fprintf(w, "%-20q: %s %s\n", t.Name, t.LastChanged.Format(slog.TimeLayout), s)
+			fprintf(w, "%-20q: %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
 		} else {
-			fprintf(w, "%-20q: never seen\n", t.Name)
+			fprintf(w, "%-20q: never seen\n", ss.Name)
 		}
 	}
 

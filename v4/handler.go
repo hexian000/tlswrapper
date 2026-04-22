@@ -6,7 +6,6 @@ package tlswrapper
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -130,34 +129,36 @@ func (h *ForwardHandler) Serve(ctx context.Context, accepted net.Conn) {
 	h.s.stats.success.Add(1)
 }
 
-// TunnelHandler forwards connections over the tunnel
-type TunnelHandler struct {
-	l net.Listener
-	s *Server
-	t *tunnel
+// MuxHandler forwards connections over the tunnel
+type MuxHandler struct {
+	l  net.Listener
+	s  *Server
+	id string
 }
 
 // Serve handles an incoming connection
-func (h *TunnelHandler) Serve(ctx context.Context, accepted net.Conn) {
+func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
 	cfg, _ := h.s.getConfig()
 	cfg.SetTCPConnParams(accepted)
-	dialed, err := h.t.Dial(ctx)
+	ss := h.s.findSession(h.id)
+	if ss == nil {
+		slog.Warningf("%v -> %q: no active session", accepted.RemoteAddr(), h.id)
+		ioClose(accepted)
+		return
+	}
+	dialed, err := ss.Dial(ctx)
 	if err != nil {
-		if errors.Is(err, ErrDialInProgress) {
-			slog.Debugf("%v -> %q: %s", accepted.RemoteAddr(), h.t.peerName, formats.Error(err))
-		} else {
-			slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.t.peerName, formats.Error(err))
-		}
+		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.id, formats.Error(err))
 		ioClose(accepted)
 		return
 	}
 	if err := h.s.f.Forward(accepted, dialed); err != nil {
-		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.t.peerName, formats.Error(err))
+		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.id, formats.Error(err))
 		ioClose(accepted)
 		ioClose(dialed)
 		return
 	}
-	slog.Debugf("%v -> %q: forward established", h.l.Addr(), h.t.peerName)
+	slog.Debugf("%v -> %q: forward established", h.l.Addr(), h.id)
 }
 
 // EmptyHandler rejects all connections
