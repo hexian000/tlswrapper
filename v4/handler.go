@@ -71,6 +71,7 @@ type h2ConnHandler struct {
 	s       *Server
 	tag     string
 	peerID  string
+	helloOK bool          // set to true when /hello succeeds
 	inbound *session
 	ready   chan struct{} // closed after /hello completes
 	once    sync.Once     // ensures /hello is only accepted once
@@ -107,7 +108,10 @@ func (h *h2ConnHandler) handleHello(w http.ResponseWriter, r *http.Request) {
 		close(h.ready)
 		return
 	}
-	peerID := req.Extensions.Service.ID
+	var peerID string
+	if req.Extensions.Service != nil {
+		peerID = req.Extensions.Service.ID
+	}
 	if peerID != "" {
 		h.tag = fmt.Sprintf("%q <= %v", peerID, r.RemoteAddr)
 	}
@@ -118,7 +122,9 @@ func (h *h2ConnHandler) handleHello(w http.ResponseWriter, r *http.Request) {
 		Type: proto.Type,
 		Msg:  proto.MsgServerHello,
 	}
-	rsp.Extensions.Service.ID = cfg.Service.ID
+	if cfg.Service.ID != "" {
+		rsp.Extensions.Service = &proto.ServiceExt{ID: cfg.Service.ID}
+	}
 
 	w.Header().Set("Content-Type", proto.Type)
 	w.WriteHeader(http.StatusOK)
@@ -148,6 +154,7 @@ func (h *h2ConnHandler) handleHello(w http.ResponseWriter, r *http.Request) {
 	h.inbound.lastChanged = now
 	h.inbound.mu.Unlock()
 	h.s.stats.authorized.Add(1)
+	h.helloOK = true
 
 	close(h.ready)
 	slog.Debugf("%s: hello done", h.tag)
@@ -164,7 +171,7 @@ func (h *h2ConnHandler) handleTunnel(w http.ResponseWriter, r *http.Request) {
 	case <-r.Context().Done():
 		return
 	}
-	if h.peerID == "" && h.inbound.id == "" {
+	if !h.helloOK {
 		// hello failed
 		http.Error(w, "not authorized", http.StatusForbidden)
 		return
@@ -252,7 +259,7 @@ func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
 		ioClose(accepted)
 		return
 	}
-	dialed, err := ss.Dial(ctx)
+	dialed, err := ss.Dial(context.Background())
 	if err != nil {
 		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.id, formats.Error(err))
 		ioClose(accepted)

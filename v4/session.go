@@ -387,7 +387,9 @@ func (ss *session) h2Dial(ctx context.Context) (*http2.ClientConn, error) {
 		Type: proto.Type,
 		Msg:  proto.MsgClientHello,
 	}
-	helloReq.Extensions.Service.ID = cfg.Service.ID
+	if cfg.Service.ID != "" {
+		helloReq.Extensions.Service = &proto.ServiceExt{ID: cfg.Service.ID}
+	}
 
 	var buf bytes.Buffer
 	if err := proto.WriteTo(&buf, helloReq); err != nil {
@@ -417,7 +419,10 @@ func (ss *session) h2Dial(ctx context.Context) (*http2.ClientConn, error) {
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
-	rspID := rsp.Extensions.Service.ID
+	var rspID string
+	if rsp.Extensions.Service != nil {
+		rspID = rsp.Extensions.Service.ID
+	}
 	if rspID != "" && rspID != ss.id {
 		slog.Warningf("%s: peer id mismatch, remote claimed %q", tag, rspID)
 	}
