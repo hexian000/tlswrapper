@@ -21,7 +21,7 @@ import (
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/config"
-	"github.com/hexian000/tlswrapper/v4/proto"
+	"github.com/hexian000/tlswrapper/v4/h2mux"
 	"golang.org/x/net/http2"
 )
 
@@ -277,8 +277,8 @@ func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 	if dialAddr == "" {
 		dialAddr = ss.dialAddr
 	}
-	remoteAddr := h2Addr{dialAddr}
-	localAddr := h2Addr{"local"}
+	remoteAddr := h2mux.H2Addr{Addr: dialAddr}
+	localAddr := h2mux.H2Addr{Addr: "local"}
 
 	pr, pw := io.Pipe()
 	scheme := "https"
@@ -309,17 +309,14 @@ func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 
 	var decremented bool
 	var decOnce sync.Once
-	tc := newH2TunnelConn(pw, resp.Body, localAddr, remoteAddr)
-	// Wrap Close to decrement numStreams exactly once
-	origClose := tc.rb
-	decBody := &onCloseBody{ReadCloser: origClose, onClose: func() {
+	decBody := &onCloseBody{ReadCloser: resp.Body, onClose: func() {
 		decOnce.Do(func() {
 			decremented = true
 			ss.numStreams.Add(-1)
 		})
 	}}
 	_ = decremented
-	tc.rb = decBody
+	tc := h2mux.NewH2TunnelConn(pw, decBody, localAddr, remoteAddr)
 	return tc, nil
 }
 
@@ -383,16 +380,16 @@ func (ss *session) h2Dial(ctx context.Context) (*http2.ClientConn, error) {
 		scheme = "http"
 	}
 	helloURL := scheme + "://" + ss.dialAddr + "/hello"
-	helloReq := &proto.Message{
-		Type: proto.Type,
-		Msg:  proto.MsgClientHello,
+	helloReq := &h2mux.Message{
+		Type: h2mux.Type,
+		Msg:  h2mux.MsgClientHello,
 	}
 	if cfg.Service.ID != "" {
-		helloReq.Extensions.Service = &proto.ServiceExt{ID: cfg.Service.ID}
+		helloReq.Extensions.Service = &h2mux.ServiceExt{ID: cfg.Service.ID}
 	}
 
 	var buf bytes.Buffer
-	if err := proto.WriteTo(&buf, helloReq); err != nil {
+	if err := h2mux.WriteTo(&buf, helloReq); err != nil {
 		_ = h2conn.Close()
 		return nil, err
 	}
@@ -401,7 +398,7 @@ func (ss *session) h2Dial(ctx context.Context) (*http2.ClientConn, error) {
 		_ = h2conn.Close()
 		return nil, err
 	}
-	hreq.Header.Set("Content-Type", proto.Type)
+	hreq.Header.Set("Content-Type", h2mux.Type)
 
 	resp, err := h2conn.RoundTrip(hreq)
 	if err != nil {
@@ -413,7 +410,7 @@ func (ss *session) h2Dial(ctx context.Context) (*http2.ClientConn, error) {
 		_ = h2conn.Close()
 		return nil, fmt.Errorf("hello: unexpected status %d", resp.StatusCode)
 	}
-	rsp, err := proto.ReadFrom(resp.Body)
+	rsp, err := h2mux.ReadFrom(resp.Body)
 	if err != nil {
 		_ = h2conn.Close()
 		return nil, err

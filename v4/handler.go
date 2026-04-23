@@ -17,7 +17,7 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
-	"github.com/hexian000/tlswrapper/v4/proto"
+	"github.com/hexian000/tlswrapper/v4/h2mux"
 	"golang.org/x/net/http2"
 )
 
@@ -71,7 +71,7 @@ type h2ConnHandler struct {
 	s       *Server
 	tag     string
 	peerID  string
-	helloOK bool          // set to true when /hello succeeds
+	helloOK bool // set to true when /hello succeeds
 	inbound *session
 	ready   chan struct{} // closed after /hello completes
 	once    sync.Once     // ensures /hello is only accepted once
@@ -95,14 +95,14 @@ func (h *h2ConnHandler) handleHello(w http.ResponseWriter, r *http.Request) {
 		close(h.ready)
 		return
 	}
-	req, err := proto.ReadFrom(r.Body)
+	req, err := h2mux.ReadFrom(r.Body)
 	if err != nil {
 		slog.Errorf("%s: hello read: %s", h.tag, formats.Error(err))
 		http.Error(w, formats.Error(err), http.StatusBadRequest)
 		close(h.ready)
 		return
 	}
-	if req.Msg != proto.MsgClientHello {
+	if req.Msg != h2mux.MsgClientHello {
 		slog.Errorf("%s: hello: unexpected msgid %d", h.tag, req.Msg)
 		http.Error(w, "unexpected message", http.StatusBadRequest)
 		close(h.ready)
@@ -118,17 +118,17 @@ func (h *h2ConnHandler) handleHello(w http.ResponseWriter, r *http.Request) {
 	h.peerID = peerID
 
 	cfg, _ := h.s.getConfig()
-	rsp := &proto.Message{
-		Type: proto.Type,
-		Msg:  proto.MsgServerHello,
+	rsp := &h2mux.Message{
+		Type: h2mux.Type,
+		Msg:  h2mux.MsgServerHello,
 	}
 	if cfg.Service.ID != "" {
-		rsp.Extensions.Service = &proto.ServiceExt{ID: cfg.Service.ID}
+		rsp.Extensions.Service = &h2mux.ServiceExt{ID: cfg.Service.ID}
 	}
 
-	w.Header().Set("Content-Type", proto.Type)
+	w.Header().Set("Content-Type", h2mux.Type)
 	w.WriteHeader(http.StatusOK)
-	if err := proto.WriteTo(w, rsp); err != nil {
+	if err := h2mux.WriteTo(w, rsp); err != nil {
 		slog.Errorf("%s: hello write: %s", h.tag, formats.Error(err))
 		close(h.ready)
 		return
@@ -209,15 +209,15 @@ func (h *h2ConnHandler) handleTunnel(w http.ResponseWriter, r *http.Request) {
 		f.Flush()
 	}
 
-	local := h2Addr{"server"}
-	remote := h2Addr{r.RemoteAddr}
+	local := h2mux.H2Addr{Addr: "server"}
+	remote := h2mux.H2Addr{Addr: r.RemoteAddr}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		slog.Errorf("%s: ResponseWriter does not implement Flusher", tag)
 		return
 	}
 	bw := &bufioFlusher{bufio.NewWriterSize(w, 32*1024), flusher}
-	serverConn := newResponseBodyConn(bw, r.Body, local, remote)
+	serverConn := h2mux.NewResponseBodyConn(bw, r.Body, local, remote)
 
 	if err := h.s.f.ForwardSync(serverConn, dialed); err != nil {
 		slog.Errorf("%s: %v", tag, err)

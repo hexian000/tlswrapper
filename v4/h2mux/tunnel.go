@@ -1,7 +1,7 @@
 // tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
 // This code is licensed under MIT license (see LICENSE for details)
 
-package tlswrapper
+package h2mux
 
 import (
 	"io"
@@ -9,6 +9,18 @@ import (
 	"sync"
 	"time"
 )
+
+// H2Addr is a simple net.Addr implementation for HTTP/2 connections.
+type H2Addr struct{ Addr string }
+
+func (a H2Addr) Network() string { return "tcp" }
+func (a H2Addr) String() string  { return a.Addr }
+
+// FlushWriter is a writer that also supports flushing buffered data.
+type FlushWriter interface {
+	io.Writer
+	Flush()
+}
 
 // h2TunnelConn wraps an HTTP/2 request/response pair as a net.Conn for the client side.
 // Write sends data as the outbound request body; Read receives data from the response body.
@@ -20,7 +32,8 @@ type h2TunnelConn struct {
 	remoteAddr net.Addr
 }
 
-func newH2TunnelConn(pw *io.PipeWriter, rb io.ReadCloser, local, remote net.Addr) *h2TunnelConn {
+// NewH2TunnelConn wraps an HTTP/2 request/response pair as a net.Conn for the client side.
+func NewH2TunnelConn(pw *io.PipeWriter, rb io.ReadCloser, local, remote net.Addr) net.Conn {
 	return &h2TunnelConn{pw: pw, rb: rb, localAddr: local, remoteAddr: remote}
 }
 
@@ -54,18 +67,14 @@ func (c *h2TunnelConn) SetWriteDeadline(t time.Time) error { return nil }
 // responseBodyConn wraps an http.ResponseWriter + request body as a net.Conn for the server side.
 // Write sends data to the client (response body); Read receives data from the client (request body).
 type responseBodyConn struct {
-	w          flushWriter
+	w          FlushWriter
 	rb         io.ReadCloser
 	localAddr  net.Addr
 	remoteAddr net.Addr
 }
 
-type flushWriter interface {
-	io.Writer
-	Flush()
-}
-
-func newResponseBodyConn(w flushWriter, rb io.ReadCloser, local, remote net.Addr) *responseBodyConn {
+// NewResponseBodyConn wraps an http.ResponseWriter + request body as a net.Conn for the server side.
+func NewResponseBodyConn(w FlushWriter, rb io.ReadCloser, local, remote net.Addr) net.Conn {
 	return &responseBodyConn{w: w, rb: rb, localAddr: local, remoteAddr: remote}
 }
 
@@ -90,9 +99,3 @@ func (c *responseBodyConn) RemoteAddr() net.Addr { return c.remoteAddr }
 func (c *responseBodyConn) SetDeadline(t time.Time) error      { return nil }
 func (c *responseBodyConn) SetReadDeadline(t time.Time) error  { return nil }
 func (c *responseBodyConn) SetWriteDeadline(t time.Time) error { return nil }
-
-// h2Addr is a simple net.Addr implementation for HTTP/2 connections.
-type h2Addr struct{ addr string }
-
-func (a h2Addr) Network() string { return "tcp" }
-func (a h2Addr) String() string  { return a.addr }

@@ -1,18 +1,13 @@
 // tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
 // This code is licensed under MIT license (see LICENSE for details)
 
-package proto
+package h2mux
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"mime"
-	"net"
-
-	"github.com/hexian000/gosnippets/slog"
 )
 
 var (
@@ -44,43 +39,9 @@ type Message struct {
 }
 
 var (
-	ErrMsgTooLong           = errors.New("message too long")
 	ErrUnsupportedProtocol  = errors.New("unsupported protocol")
 	ErrIncompatiableVersion = errors.New("incompatible protocol version")
 )
-
-func sendmsg(w io.Writer, msg any) error {
-	b, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	if len(b) > math.MaxUint16 {
-		return ErrMsgTooLong
-	}
-	pkt := make([]byte, 2+len(b))
-	binary.BigEndian.PutUint16(pkt[:2], uint16(len(b)))
-	_ = copy(pkt[2:], b)
-	_, err = w.Write(pkt)
-	return err
-}
-
-func recvmsg(r io.Reader, msg any) error {
-	hdr := make([]byte, 2)
-	_, err := io.ReadFull(r, hdr)
-	if err != nil {
-		return err
-	}
-	b := make([]byte, int(binary.BigEndian.Uint16(hdr)))
-	_, err = io.ReadFull(r, b)
-	if err != nil {
-		return err
-	}
-	slog.Binaryf(slog.LevelVeryVerbose, b, 0, "recvmsg: %d bytes", len(b))
-	if err := json.Unmarshal(b, msg); err != nil {
-		return err
-	}
-	return nil
-}
 
 // ReadFrom decodes a Message from r using plain JSON (no binary framing).
 // Used for HTTP body decoding.
@@ -117,38 +78,4 @@ func checkType(s string) error {
 		return ErrIncompatiableVersion
 	}
 	return nil
-}
-
-// Roundtrip sends a request message and waits for the response
-func Roundtrip(conn net.Conn, req *Message) (*Message, error) {
-	if err := sendmsg(conn, req); err != nil {
-		return nil, err
-	}
-	rsp := &Message{}
-	if err := recvmsg(conn, rsp); err != nil {
-		return nil, err
-	}
-	if err := checkType(rsp.Type); err != nil {
-		slog.Verbosef("type: %q", rsp.Type)
-		return nil, err
-	}
-	return rsp, nil
-}
-
-// Read reads a Message from the given reader
-func Read(r io.Reader) (*Message, error) {
-	req := &Message{}
-	if err := recvmsg(r, req); err != nil {
-		return nil, err
-	}
-	if err := checkType(req.Type); err != nil {
-		slog.Verbosef("type: %q", req.Type)
-		return nil, err
-	}
-	return req, nil
-}
-
-// Write writes a Message to the given writer
-func Write(w io.Writer, rsp *Message) error {
-	return sendmsg(w, rsp)
 }
