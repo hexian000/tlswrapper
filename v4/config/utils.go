@@ -47,7 +47,7 @@ func newX509CertPool(authCerts []string) (*x509.CertPool, error) {
 
 // Timeout returns the session inactivity timeout
 func (c *File) Timeout() time.Duration {
-	return time.Duration(c.SessionTimeout) * time.Second
+	return time.Duration(c.PingTimeout) * time.Second
 }
 
 // SetMuxConnParams sets TCP parameters on the mux-layer connection
@@ -128,18 +128,23 @@ func (c *File) NewH2Server() *http2.Server {
 
 // NewH2Transport creates an http2.Transport configured from the current settings.
 func (c *File) NewH2Transport(tlscfg *tls.Config) *http2.Transport {
-	keepAlive := time.Duration(c.KeepAlive) * time.Second
-	if keepAlive < time.Second {
-		keepAlive = 25 * time.Second
+	keepAlive := 25 * time.Second
+	if c.KeepAlive > 0 {
+		keepAlive = time.Duration(c.KeepAlive) * time.Second
 	}
-	pingTimeout := time.Duration(c.SessionTimeout) * time.Second
-	if pingTimeout < time.Second {
-		pingTimeout = 60 * time.Second
+	pingTimeout := 15 * time.Second
+	if c.PingTimeout > 0 {
+		pingTimeout = time.Duration(c.PingTimeout) * time.Second
+	}
+	sendTimeout := 15 * time.Second
+	if c.SendTimeout > 0 {
+		sendTimeout = time.Duration(c.SendTimeout) * time.Second
 	}
 	return &http2.Transport{
-		TLSClientConfig: tlscfg,
-		ReadIdleTimeout: keepAlive,
-		PingTimeout:     pingTimeout,
-		AllowHTTP:       tlscfg == nil,
+		TLSClientConfig:  tlscfg,
+		ReadIdleTimeout:  keepAlive,
+		PingTimeout:      pingTimeout,
+		WriteByteTimeout: sendTimeout,
+		AllowHTTP:        tlscfg == nil,
 	}
 }

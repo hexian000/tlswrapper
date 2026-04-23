@@ -84,10 +84,10 @@ type File struct {
 	Connect string `json:"connect,omitempty"`
 	// Service identity and per-peer routing settings
 	Service Service `json:"service,omitempty"`
-	// Session inactivity timeout in seconds
-	SessionTimeout int `json:"timeout"`
 	// Application-level keepalive probe interval in seconds
 	KeepAlive int `json:"keepalive"`
+	// Session ping timeout in seconds
+	PingTimeout int `json:"timeout"`
 	// Send completion timeout in seconds
 	SendTimeout int `json:"send_timeout"`
 	// Session idle eviction timeout in seconds (0 = disabled)
@@ -116,10 +116,10 @@ type File struct {
 var Default = File{
 	Type: Type,
 
-	SessionTimeout: 60,
-	KeepAlive:      25,
-	SendTimeout:    15,
-	IdleTimeout:    0,
+	KeepAlive:   25,
+	PingTimeout: 15,
+	SendTimeout: 15,
+	IdleTimeout: 0,
 
 	Log:      "stdout",
 	LogLevel: slog.LevelNotice,
