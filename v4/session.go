@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -286,7 +287,7 @@ func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 		scheme = "http"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		scheme+"://"+dialAddr+"/tunnel", pr)
+		(&url.URL{Scheme: scheme, Host: dialAddr, Path: "/tunnel"}).String(), pr)
 	if err != nil {
 		_ = pw.Close()
 		return nil, err
@@ -379,7 +380,7 @@ func (ss *session) h2Dial(ctx context.Context) (*http2.ClientConn, error) {
 	if tlscfg == nil {
 		scheme = "http"
 	}
-	helloURL := scheme + "://" + ss.dialAddr + "/hello"
+	helloURL := (&url.URL{Scheme: scheme, Host: ss.dialAddr, Path: "/hello"}).String()
 	helloReq := &h2mux.Message{
 		Type: h2mux.Type,
 		Msg:  h2mux.MsgClientHello,
