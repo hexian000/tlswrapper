@@ -76,7 +76,7 @@ func newPlaintextConfig(t *testing.T, overrides map[string]any) *config.File {
 }
 
 // TestForwardBidirectional verifies end-to-end bidirectional TCP forwarding
-// through a plaintext tlswrapper tunnel:
+// through a plaintext tlswrapper session:
 //
 //	[test conn] → [client Listen] ──mux──> [server MuxListen] → [echo server]
 func TestForwardBidirectional(t *testing.T) {
@@ -87,7 +87,7 @@ func TestForwardBidirectional(t *testing.T) {
 	muxAddr := freePort(t)
 	clientListenAddr := freePort(t)
 
-	// 3. Tunnel server: accepts mux connections, forwards streams to the echo server.
+	// 3. Session server: accepts mux connections, forwards streams to the echo server.
 	srvCfg := newPlaintextConfig(t, map[string]any{
 		"mux_listen": muxAddr,
 		"connect":    echoAddr,
@@ -101,8 +101,8 @@ func TestForwardBidirectional(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = srv.Shutdown() })
 
-	// 4. Tunnel client: dials the mux server, exposes a local TCP listener.
-	// service.id is required: the server rejects tunnels from an anonymous peer.
+	// 4. Session client: dials the mux server, exposes a local TCP listener.
+	// service.id is required: the server rejects sessions from an anonymous peer.
 	cliCfg := newPlaintextConfig(t, map[string]any{
 		"mux_connect": muxAddr,
 		"listen":      clientListenAddr,
@@ -129,7 +129,7 @@ func TestForwardBidirectional(t *testing.T) {
 		t.Fatal("mux session not established within 5 s")
 	}
 
-	// 6. Connect through the tunnel and verify bidirectional forwarding.
+	// 6. Connect through the session and verify bidirectional forwarding.
 	conn, err := net.DialTimeout("tcp", clientListenAddr, 3*time.Second)
 	if err != nil {
 		t.Fatal("dial:", err)

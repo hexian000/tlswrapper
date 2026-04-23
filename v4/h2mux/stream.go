@@ -22,9 +22,9 @@ type FlushWriter interface {
 	Flush()
 }
 
-// h2TunnelConn wraps an HTTP/2 request/response pair as a net.Conn for the client side.
+// h2StreamConn wraps an HTTP/2 stream as a net.Conn for the client side.
 // Write sends data as the outbound request body; Read receives data from the response body.
-type h2TunnelConn struct {
+type h2StreamConn struct {
 	pw         *io.PipeWriter // write end → request body
 	rb         io.ReadCloser  // response body → read from
 	once       sync.Once
@@ -32,37 +32,37 @@ type h2TunnelConn struct {
 	remoteAddr net.Addr
 }
 
-// NewH2TunnelConn wraps an HTTP/2 request/response pair as a net.Conn for the client side.
-func NewH2TunnelConn(pw *io.PipeWriter, rb io.ReadCloser, local, remote net.Addr) net.Conn {
-	return &h2TunnelConn{pw: pw, rb: rb, localAddr: local, remoteAddr: remote}
+// NewH2StreamConn wraps an HTTP/2 stream as a net.Conn for the client side.
+func NewH2StreamConn(pw *io.PipeWriter, rb io.ReadCloser, local, remote net.Addr) net.Conn {
+	return &h2StreamConn{pw: pw, rb: rb, localAddr: local, remoteAddr: remote}
 }
 
-func (c *h2TunnelConn) Read(b []byte) (int, error) {
+func (c *h2StreamConn) Read(b []byte) (int, error) {
 	return c.rb.Read(b)
 }
 
-func (c *h2TunnelConn) Write(b []byte) (int, error) {
+func (c *h2StreamConn) Write(b []byte) (int, error) {
 	return c.pw.Write(b)
 }
 
-func (c *h2TunnelConn) closeOnce() {
+func (c *h2StreamConn) closeOnce() {
 	c.once.Do(func() {
 		_ = c.pw.Close()
 		_ = c.rb.Close()
 	})
 }
 
-func (c *h2TunnelConn) Close() error {
+func (c *h2StreamConn) Close() error {
 	c.closeOnce()
 	return nil
 }
 
-func (c *h2TunnelConn) LocalAddr() net.Addr  { return c.localAddr }
-func (c *h2TunnelConn) RemoteAddr() net.Addr { return c.remoteAddr }
+func (c *h2StreamConn) LocalAddr() net.Addr  { return c.localAddr }
+func (c *h2StreamConn) RemoteAddr() net.Addr { return c.remoteAddr }
 
-func (c *h2TunnelConn) SetDeadline(t time.Time) error      { return nil }
-func (c *h2TunnelConn) SetReadDeadline(t time.Time) error  { return nil }
-func (c *h2TunnelConn) SetWriteDeadline(t time.Time) error { return nil }
+func (c *h2StreamConn) SetDeadline(t time.Time) error      { return nil }
+func (c *h2StreamConn) SetReadDeadline(t time.Time) error  { return nil }
+func (c *h2StreamConn) SetWriteDeadline(t time.Time) error { return nil }
 
 // responseBodyConn wraps an http.ResponseWriter + request body as a net.Conn for the server side.
 // Write sends data to the client (response body); Read receives data from the client (request body).

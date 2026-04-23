@@ -26,7 +26,7 @@ type Handler interface {
 	Serve(context.Context, net.Conn)
 }
 
-// TLSHandler creates tunnels from incoming TLS connections
+// TLSHandler creates sessions from incoming TLS connections
 type TLSHandler struct {
 	s *Server
 
@@ -66,7 +66,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 }
 
 // h2ConnHandler is an http.Handler that handles one HTTP/2 connection (server side).
-// It routes /hello (JSON handshake) and /tunnel (bidirectional stream) paths.
+// It routes /hello (JSON handshake) and /stream (bidirectional stream) paths.
 type h2ConnHandler struct {
 	s       *Server
 	tag     string
@@ -77,13 +77,13 @@ type h2ConnHandler struct {
 	once    sync.Once     // ensures /hello is only accepted once
 }
 
-// ServeHTTP routes requests to handleHello or handleTunnel.
+// ServeHTTP routes requests to handleHello or handleStream.
 func (h *h2ConnHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/hello":
 		h.once.Do(func() { h.handleHello(w, r) })
-	case "/tunnel":
-		h.handleTunnel(w, r)
+	case "/stream":
+		h.handleStream(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -160,7 +160,7 @@ func (h *h2ConnHandler) handleHello(w http.ResponseWriter, r *http.Request) {
 	slog.Debugf("%s: hello done", h.tag)
 }
 
-func (h *h2ConnHandler) handleTunnel(w http.ResponseWriter, r *http.Request) {
+func (h *h2ConnHandler) handleStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -178,22 +178,22 @@ func (h *h2ConnHandler) handleTunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.s.stats.request.Add(1)
-	peerName := h.inbound.id
+	peerServiceId := h.inbound.id
 	cfg, _ := h.s.getConfig()
-	dialAddr := cfg.ServiceEntry(peerName).Connect
+	dialAddr := cfg.ServiceEntry(peerServiceId).Connect
 	if dialAddr == "" {
 		dialAddr = cfg.Connect
 	}
 	if dialAddr == "" {
 		peerDisplay := "?"
-		if peerName != "" {
-			peerDisplay = fmt.Sprintf("%q", peerName)
+		if peerServiceId != "" {
+			peerDisplay = fmt.Sprintf("%q", peerServiceId)
 		}
-		slog.Warningf("tunnel %s: no connect address configured", peerDisplay)
+		slog.Warningf("stream %s: no connect address configured", peerDisplay)
 		http.Error(w, "no connect address", http.StatusServiceUnavailable)
 		return
 	}
-	tag := fmt.Sprintf("%q -> %s", peerName, dialAddr)
+	tag := fmt.Sprintf("%q -> %s", peerServiceId, dialAddr)
 
 	ctx := r.Context()
 	dialed, err := h.s.dialDirect(ctx, dialAddr)
@@ -223,7 +223,7 @@ func (h *h2ConnHandler) handleTunnel(w http.ResponseWriter, r *http.Request) {
 		slog.Errorf("%s: %v", tag, err)
 		return
 	}
-	slog.Debugf("%s: tunnel done", tag)
+	slog.Debugf("%s: stream done", tag)
 	h.s.stats.success.Add(1)
 }
 
@@ -242,7 +242,7 @@ func (bf *bufioFlusher) Flush() {
 	bf.f.Flush()
 }
 
-// MuxHandler forwards connections over the tunnel
+// MuxHandler forwards connections over the session
 type MuxHandler struct {
 	l  net.Listener
 	s  *Server

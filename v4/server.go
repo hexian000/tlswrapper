@@ -48,7 +48,7 @@ type Server struct {
 	recentEvents eventlog.Recent
 
 	mu       sync.RWMutex
-	services map[string]*session // map[peerName]session — config-driven sessions
+	services map[string]*session // map[peerServiceId]session — config-driven sessions
 	sessions []*session          // all sessions (inbound + outbound)
 	ctx      contextMgr
 
@@ -99,12 +99,12 @@ func maxStreams(cfg *config.File) int {
 	return cfg.MaxStreams
 }
 
-// findSession returns the first session with the given peerName that has an active connection.
-func (s *Server) findSession(peerName string) *session {
+// findSession returns the first session with the given peerServiceId that has an active connection.
+func (s *Server) findSession(peerServiceId string) *session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, ss := range s.sessions {
-		if ss.id == peerName && ss.getH2conn() != nil {
+		if ss.id == peerServiceId && ss.getH2conn() != nil {
 			return ss
 		}
 	}

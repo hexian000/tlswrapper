@@ -102,7 +102,7 @@ type File struct {
 	MaxStreams int `json:"max_streams"`
 	// Unauthenticated connection throttle in "start:rate:full" format
 	MaxStartups string `json:"max_startups,omitempty"`
-	// Disable automatic tunnel redial (client mode)
+	// Disable automatic session redial (client mode)
 	NoRedial bool `json:"no_redial,omitempty"`
 	// TLS configuration (nil = plaintext mode)
 	TLS *TLS `json:"tls,omitempty"`

@@ -30,7 +30,7 @@ import (
 // Inbound sessions (accepted from a TCP listener) have dialAddr == "".
 // Outbound sessions (dialled by MuxConnect) own a redial loop in run().
 type session struct {
-	id       string // used for logging and lookup
+	id       string // peer service ID; used for logging and lookup
 	dialAddr string // MuxConnect address; empty for inbound sessions
 	s        *Server
 	l        net.Listener // local TCP listener (only on config-driven sessions with Listen)
@@ -47,9 +47,9 @@ type session struct {
 	lastChanged time.Time
 }
 
-func newSession(peerName, dialAddr string, s *Server) *session {
+func newSession(peerServiceId, dialAddr string, s *Server) *session {
 	return &session{
-		id:        peerName,
+		id:        peerServiceId,
 		dialAddr:  dialAddr,
 		s:         s,
 		closeSig:  make(chan struct{}),
@@ -266,7 +266,7 @@ func (ss *session) getH2conn() *http2.ClientConn {
 	return ss.h2conn
 }
 
-// Dial opens a new HTTP/2 stream (POST /tunnel) over the session's connection.
+// Dial opens a new HTTP/2 stream (POST /stream) over the session's connection.
 // Returns a net.Conn backed by the request/response body pair.
 func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 	h2conn := ss.getH2conn()
@@ -305,7 +305,7 @@ func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 		ss.numStreams.Add(-1)
 		_ = pw.Close()
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("tunnel: unexpected status %d", resp.StatusCode)
+		return nil, fmt.Errorf("stream: unexpected status %d", resp.StatusCode)
 	}
 
 	var decremented bool
@@ -317,7 +317,7 @@ func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 		})
 	}}
 	_ = decremented
-	tc := h2mux.NewH2TunnelConn(pw, decBody, localAddr, remoteAddr)
+	tc := h2mux.NewH2StreamConn(pw, decBody, localAddr, remoteAddr)
 	return tc, nil
 }
 
