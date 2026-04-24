@@ -16,11 +16,11 @@ fi
 set -e
 mkdir -p build
 OUTDIR="$(realpath ./build)"
-MODROOT="./v3"
+MODROOT="./v4"
 PACKAGE="./cmd/tlswrapper"
 GOFLAGS="${GOFLAGS} -buildmode=exe -mod=readonly -trimpath -v"
 GCFLAGS="${GCFLAGS}"
-LDFLAGS="-X github.com/hexian000/tlswrapper/v3.Version=${VERSION}"
+LDFLAGS="-X github.com/hexian000/tlswrapper/v4.Version=${VERSION}"
 
 cd "${MODROOT}"
 go mod vendor

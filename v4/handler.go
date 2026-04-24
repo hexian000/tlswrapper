@@ -56,7 +56,12 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	cfg.SetMuxConnParams(conn)
 	conn = snet.FlowMeter(conn, h.s.flowStats)
 	if tlscfg != nil {
-		conn = tls.Server(conn, tlscfg)
+		tlsConn := tls.Server(conn, tlscfg)
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			slog.Errorf("%s: tls handshake: %s", tag, formats.Error(err))
+			return
+		}
+		conn = tlsConn
 	} else {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}

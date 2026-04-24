@@ -287,7 +287,7 @@ func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 		scheme = "http"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		(&url.URL{Scheme: scheme, Host: dialAddr, Path: "/tunnel"}).String(), pr)
+		(&url.URL{Scheme: scheme, Host: dialAddr, Path: "/stream"}).String(), pr)
 	if err != nil {
 		_ = pw.Close()
 		return nil, err
