@@ -203,7 +203,9 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 				return
 			}
 			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
+				slog.Warningf("serve: %s", formats.Error(err))
 				time.Sleep(500 * time.Millisecond)
+				continue
 			}
 			slog.Errorf("serve: %s", formats.Error(err))
 			return
@@ -382,7 +384,9 @@ func (s *Server) LoadConfig(cfg *config.File) error {
 	if err != nil {
 		return err
 	}
-	s.loadSessions(cfg)
+	if err := s.loadSessions(cfg); err != nil {
+		return err
+	}
 	func() {
 		s.cfgMu.Lock()
 		defer s.cfgMu.Unlock()

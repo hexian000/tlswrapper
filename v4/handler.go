@@ -264,7 +264,7 @@ func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
 		ioClose(accepted)
 		return
 	}
-	dialed, err := ss.Dial(context.Background())
+	dialed, err := ss.Dial(ctx)
 	if err != nil {
 		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.id, formats.Error(err))
 		ioClose(accepted)
