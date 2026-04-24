@@ -22,6 +22,7 @@ import (
 	"github.com/hexian000/tlswrapper/v4/config"
 	"github.com/hexian000/tlswrapper/v4/eventlog"
 	"github.com/hexian000/tlswrapper/v4/forwarder"
+	"github.com/hexian000/tlswrapper/v4/h2mux"
 	"golang.org/x/net/http2"
 )
 
@@ -104,7 +105,7 @@ func (s *Server) findSession(peerServiceId string) *session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, ss := range s.sessions {
-		if ss.id == peerServiceId && ss.getH2conn() != nil {
+		if ss.id == peerServiceId && ss.getH2sess() != nil {
 			return ss
 		}
 	}
@@ -220,26 +221,100 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 
 // serveH2Conn handles one inbound connection as an HTTP/2 server.
 // It blocks until the connection is closed.
-func (s *Server) serveH2Conn(conn net.Conn, tag string) {
-	inbound := newSession("", "", s)
+func (s *Server) serveH2Conn(conn net.Conn) {
+	cfg, _ := s.getConfig()
+	h2sess := h2mux.NewServerSession(conn.LocalAddr(), conn.RemoteAddr(), cfg.Service.ID)
+	if err := s.g.Go(func() {
+		s.h2server.ServeConn(conn, &http2.ServeConnOpts{Handler: h2sess})
+		_ = h2sess.Close()
+	}); err != nil {
+		_ = h2sess.Close()
+		return
+	}
+	select {
+	case <-h2sess.ReadyC():
+	case <-h2sess.CloseChan():
+		return
+	case <-s.g.CloseC():
+		_ = h2sess.Close()
+		return
+	}
+	if !h2sess.HelloOK() {
+		return
+	}
+	now := time.Now()
+	msg := fmt.Sprintf("%s: session established", h2sess.Tag())
+	slog.Notice(msg)
+	s.recentEvents.Add(now, msg)
+	s.stats.authorized.Add(1)
+	inbound := newSession(h2sess.PeerID(), "", s)
+	inbound.h2sess = h2sess
+	inbound.lastChanged = now
 	s.addSession(inbound)
-	h := newH2ConnHandler(s, inbound, tag)
+	s.numSessions.Add(1)
 	defer func() {
 		now := time.Now()
-		// decrement session counter if it was incremented in handleHello
-		inbound.mu.Lock()
-		if inbound.h2conn != nil || inbound.lastChanged != (time.Time{}) {
-			msg := fmt.Sprintf("%s: session closed", tag)
-			slog.Notice(msg)
-			s.recentEvents.Add(now, msg)
-			if inbound.lastChanged != (time.Time{}) {
-				s.numSessions.Add(^uint32(0))
-			}
-		}
-		inbound.mu.Unlock()
+		msg := fmt.Sprintf("%s: session closed", h2sess.Tag())
+		slog.Notice(msg)
+		s.recentEvents.Add(now, msg)
+		s.numSessions.Add(^uint32(0))
 		s.removeSession(inbound)
 	}()
-	configureH2Server(s.h2server, conn, h)
+	for {
+		stream, err := h2sess.Accept()
+		if err != nil {
+			return
+		}
+		if err := s.g.Go(func() {
+			s.handleInboundStream(h2sess.PeerID(), stream)
+		}); err != nil {
+			ioClose(stream)
+			return
+		}
+	}
+}
+
+// handleInboundStream forwards one accepted server-side stream to the configured connect address.
+func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
+	type doner interface{ Done() }
+	defer func() {
+		if d, ok := stream.(doner); ok {
+			d.Done()
+		}
+	}()
+	defer stream.Close()
+	s.stats.request.Add(1)
+	cfg, _ := s.getConfig()
+	dialAddr := cfg.ServiceEntry(peerID).Connect
+	if dialAddr == "" {
+		dialAddr = cfg.Connect
+	}
+	if dialAddr == "" {
+		peerDisplay := "?"
+		if peerID != "" {
+			peerDisplay = fmt.Sprintf("%q", peerID)
+		}
+		slog.Warningf("stream %s: no connect address configured", peerDisplay)
+		return
+	}
+	tag := fmt.Sprintf("%q -> %s", peerID, dialAddr)
+	ctx := s.ctx.withTimeout()
+	if ctx == nil {
+		return
+	}
+	defer s.ctx.cancel(ctx)
+	dialed, err := s.dialDirect(ctx, dialAddr)
+	if err != nil {
+		slog.Errorf("%s: %v", tag, err)
+		return
+	}
+	if err := s.f.ForwardSync(stream, dialed); err != nil {
+		slog.Errorf("%s: forward: %v", tag, err)
+		_ = dialed.Close()
+		return
+	}
+	slog.Debugf("%s: stream done", tag)
+	s.stats.success.Add(1)
 }
 
 // Listen starts listening on the given address
@@ -367,8 +442,8 @@ func (s *Server) Shutdown() error {
 	s.g.Close()
 	// close all active HTTP/2 sessions to unblock Serve loops
 	for _, ss := range s.getAllSessions() {
-		if h2conn := ss.getH2conn(); h2conn != nil {
-			_ = h2conn.Close()
+		if h2sess := ss.getH2sess(); h2sess != nil {
+			_ = h2sess.Close()
 		}
 	}
 	// close all forwards

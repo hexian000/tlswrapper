@@ -4,21 +4,16 @@
 package tlswrapper
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
-	"net/http"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
-	"github.com/hexian000/tlswrapper/v4/h2mux"
-	"golang.org/x/net/http2"
 )
 
 // Handler is a generic interface that handles incoming connections
@@ -67,184 +62,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
-	h.s.serveH2Conn(conn, tag)
-}
-
-// h2ConnHandler is an http.Handler that handles one HTTP/2 connection (server side).
-// It routes /hello (JSON handshake) and /stream (bidirectional stream) paths.
-type h2ConnHandler struct {
-	s       *Server
-	tag     string
-	peerID  string
-	helloOK bool // set to true when /hello succeeds
-	inbound *session
-	ready   chan struct{} // closed after /hello completes
-	once    sync.Once     // ensures /hello is only accepted once
-}
-
-// ServeHTTP routes requests to handleHello or handleStream.
-func (h *h2ConnHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.URL.Path {
-	case "/hello":
-		h.once.Do(func() { h.handleHello(w, r) })
-	case "/stream":
-		h.handleStream(w, r)
-	default:
-		http.NotFound(w, r)
-	}
-}
-
-func (h *h2ConnHandler) handleHello(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		close(h.ready)
-		return
-	}
-	req, err := h2mux.ReadFrom(r.Body)
-	if err != nil {
-		slog.Errorf("%s: hello read: %s", h.tag, formats.Error(err))
-		http.Error(w, formats.Error(err), http.StatusBadRequest)
-		close(h.ready)
-		return
-	}
-	if req.Msg != h2mux.MsgClientHello {
-		slog.Errorf("%s: hello: unexpected msgid %d", h.tag, req.Msg)
-		http.Error(w, "unexpected message", http.StatusBadRequest)
-		close(h.ready)
-		return
-	}
-	var peerID string
-	if req.Extensions.Service != nil {
-		peerID = req.Extensions.Service.ID
-	}
-	if peerID != "" {
-		h.tag = fmt.Sprintf("%q <= %v", peerID, r.RemoteAddr)
-	}
-	h.peerID = peerID
-
-	cfg, _ := h.s.getConfig()
-	rsp := &h2mux.Message{
-		Type: h2mux.Type,
-		Msg:  h2mux.MsgServerHello,
-	}
-	if cfg.Service.ID != "" {
-		rsp.Extensions.Service = &h2mux.ServiceExt{ID: cfg.Service.ID}
-	}
-
-	w.Header().Set("Content-Type", h2mux.Type)
-	w.WriteHeader(http.StatusOK)
-	if err := h2mux.WriteTo(w, rsp); err != nil {
-		slog.Errorf("%s: hello write: %s", h.tag, formats.Error(err))
-		close(h.ready)
-		return
-	}
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-
-	// update inbound session with peer identity
-	h.inbound.mu.Lock()
-	h.inbound.id = peerID
-	h.inbound.lastChanged = time.Now()
-	h.inbound.mu.Unlock()
-
-	now := time.Now()
-	msg := fmt.Sprintf("%s: session established", h.tag)
-	slog.Notice(msg)
-	h.s.recentEvents.Add(now, msg)
-	h.inbound.mu.Lock()
-	if h.inbound.h2conn == nil {
-		h.s.numSessions.Add(1)
-	}
-	h.inbound.lastChanged = now
-	h.inbound.mu.Unlock()
-	h.s.stats.authorized.Add(1)
-	h.helloOK = true
-
-	close(h.ready)
-	slog.Debugf("%s: hello done", h.tag)
-}
-
-func (h *h2ConnHandler) handleStream(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	// Wait until /hello completes (or connection closes)
-	select {
-	case <-h.ready:
-	case <-r.Context().Done():
-		return
-	}
-	if !h.helloOK {
-		// hello failed
-		http.Error(w, "not authorized", http.StatusForbidden)
-		return
-	}
-
-	h.s.stats.request.Add(1)
-	peerServiceId := h.inbound.id
-	cfg, _ := h.s.getConfig()
-	dialAddr := cfg.ServiceEntry(peerServiceId).Connect
-	if dialAddr == "" {
-		dialAddr = cfg.Connect
-	}
-	if dialAddr == "" {
-		peerDisplay := "?"
-		if peerServiceId != "" {
-			peerDisplay = fmt.Sprintf("%q", peerServiceId)
-		}
-		slog.Warningf("stream %s: no connect address configured", peerDisplay)
-		http.Error(w, "no connect address", http.StatusServiceUnavailable)
-		return
-	}
-	tag := fmt.Sprintf("%q -> %s", peerServiceId, dialAddr)
-
-	ctx := r.Context()
-	dialed, err := h.s.dialDirect(ctx, dialAddr)
-	if err != nil {
-		slog.Errorf("%s: %v", tag, err)
-		http.Error(w, formats.Error(err), http.StatusBadGateway)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.WriteHeader(http.StatusOK)
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-
-	local := h2mux.H2Addr{Addr: "server"}
-	remote := h2mux.H2Addr{Addr: r.RemoteAddr}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		slog.Errorf("%s: ResponseWriter does not implement Flusher", tag)
-		return
-	}
-	bw := &bufioFlusher{bufio.NewWriterSize(w, 32*1024), flusher}
-	serverConn := h2mux.NewResponseBodyConn(bw, r.Body, local, remote)
-
-	if err := h.s.f.ForwardSync(serverConn, dialed); err != nil {
-		slog.Errorf("%s: %v", tag, err)
-		return
-	}
-	slog.Debugf("%s: stream done", tag)
-	h.s.stats.success.Add(1)
-}
-
-// bufioFlusher wraps a bufio.Writer and the underlying http.Flusher together.
-type bufioFlusher struct {
-	bw *bufio.Writer
-	f  http.Flusher
-}
-
-func (bf *bufioFlusher) Write(p []byte) (int, error) {
-	return bf.bw.Write(p)
-}
-
-func (bf *bufioFlusher) Flush() {
-	_ = bf.bw.Flush()
-	bf.f.Flush()
+	h.s.serveH2Conn(conn)
 }
 
 // MuxHandler forwards connections over the session
@@ -285,19 +103,4 @@ type EmptyHandler struct{}
 // Serve handles an incoming connection
 func (h *EmptyHandler) Serve(_ context.Context, accepted net.Conn) {
 	ioClose(accepted)
-}
-
-// serveH2ConnHandler is a helper used in serveH2Conn; kept here for clarity.
-func newH2ConnHandler(s *Server, inbound *session, tag string) *h2ConnHandler {
-	return &h2ConnHandler{
-		s:       s,
-		tag:     tag,
-		inbound: inbound,
-		ready:   make(chan struct{}),
-	}
-}
-
-// configureH2Server sets up the HTTP/2 server for a connection.
-func configureH2Server(s *http2.Server, conn net.Conn, h http.Handler) {
-	s.ServeConn(conn, &http2.ServeConnOpts{Handler: h})
 }
