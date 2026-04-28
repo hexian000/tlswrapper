@@ -300,7 +300,8 @@ func (ss *session) h2Dial(ctx context.Context) (*h2mux.Session, error) {
 	}
 
 	transport := cfg.NewH2Transport(tlscfg)
-	h2conn, err := transport.NewClientConn(conn)
+	wrappedConn, connCloseCh := h2mux.NotifyConnClose(conn)
+	h2conn, err := transport.NewClientConn(wrappedConn)
 	if err != nil {
 		ioClose(conn)
 		return nil, err
@@ -308,7 +309,7 @@ func (ss *session) h2Dial(ctx context.Context) (*h2mux.Session, error) {
 	_ = conn.SetDeadline(time.Time{})
 
 	localID := cfg.Service.ID
-	h2sess, err := h2mux.NewClientSession(ctx, h2conn, ss.dialAddr, scheme, localID, tag)
+	h2sess, err := h2mux.NewClientSession(ctx, h2conn, connCloseCh, ss.dialAddr, scheme, localID, tag)
 	if err != nil {
 		_ = h2conn.Close()
 		return nil, err

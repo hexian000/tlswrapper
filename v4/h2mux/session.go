@@ -15,13 +15,39 @@ import (
 	"net/url"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"golang.org/x/net/http2"
 )
 
 // ErrSessionClosed is returned by Accept and Open when the session has been closed.
 var ErrSessionClosed = errors.New("session closed")
+
+// notifyConn wraps a net.Conn and signals when a Read returns an error (e.g. EOF),
+// allowing the caller to detect connection closure without polling.
+type notifyConn struct {
+	net.Conn
+	onReadErr chan struct{}
+}
+
+func (c *notifyConn) Read(b []byte) (n int, err error) {
+	n, err = c.Conn.Read(b)
+	if err != nil {
+		select {
+		case c.onReadErr <- struct{}{}:
+		default:
+		}
+	}
+	return
+}
+
+// NotifyConnClose wraps conn so that when a Read on the underlying connection
+// returns an error (e.g. EOF or network error), the returned channel is signaled.
+// Pass the returned net.Conn to http2.Transport.NewClientConn, and pass the
+// channel to NewClientSession.
+func NotifyConnClose(conn net.Conn) (net.Conn, <-chan struct{}) {
+	ch := make(chan struct{}, 1)
+	return &notifyConn{Conn: conn, onReadErr: ch}, ch
+}
 
 // Session wraps an HTTP/2 connection and provides yamux-style Open/Accept stream
 // multiplexing. A Session is either client-mode (NewClientSession, after an outbound
@@ -53,10 +79,13 @@ type Session struct {
 
 // NewClientSession sends a /hello handshake over the already-established h2conn and
 // returns a client-mode Session. scheme must be "https" or "http". tag is a
-// human-readable label used for logging.
+// human-readable label used for logging. connCloseCh is a channel signaled when
+// the underlying net.Conn's Read returns an error; use h2mux.ConnClosedCh to
+// create one before wrapping the conn with http2.Transport.NewClientConn.
 func NewClientSession(
 	ctx context.Context,
 	h2conn *http2.ClientConn,
+	connCloseCh <-chan struct{},
 	dialAddr, scheme, localID, tag string,
 ) (*Session, error) {
 	s := &Session{
@@ -105,20 +134,13 @@ func NewClientSession(
 		s.peerID = rsp.Extensions.Service.ID
 	}
 
-	// Poll h2conn for closure and propagate it to closedCh.
+	// Detect h2conn closure via the underlying net.Conn's Read error
+	// and propagate it to closedCh. No polling needed.
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if h2conn.State().Closed {
-					_ = s.Close()
-					return
-				}
-			case <-s.closedCh:
-				return
-			}
+		select {
+		case <-connCloseCh:
+			_ = s.Close()
+		case <-s.closedCh:
 		}
 	}()
 
