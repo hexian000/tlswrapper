@@ -142,7 +142,7 @@ func (s *Session) dialStreamForServer(requestID string) {
 	if err != nil {
 		return
 	}
-	conn := newClientSideStream(cs, s.localAddr, s.remoteAddr)
+	conn := newClientSideStream(cs, s.localAddr, s.remoteAddr, func() { s.numStreams.Add(-1) })
 	s.numStreams.Add(1)
 	select {
 	case s.acceptCh <- conn:
@@ -192,7 +192,7 @@ func (s *Session) Open(ctx context.Context) (net.Conn, error) {
 			return nil, err
 		}
 		s.numStreams.Add(1)
-		return newClientSideStream(cs, s.localAddr, s.remoteAddr), nil
+		return newClientSideStream(cs, s.localAddr, s.remoteAddr, func() { s.numStreams.Add(-1) }), nil
 	}
 
 	// Server side: send OpenRequest and wait for client to dial back.
@@ -270,7 +270,7 @@ func (s *Session) IsClosed() bool {
 // CloseChan returns a channel that is closed when the session closes.
 func (s *Session) CloseChan() <-chan struct{} { return s.closedCh }
 
-// NumStreams returns the monotonically increasing count of streams opened.
+// NumStreams returns the current number of active streams.
 func (s *Session) NumStreams() int { return int(s.numStreams.Load()) }
 
 // PeerID returns the remote service identity.

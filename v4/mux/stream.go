@@ -40,6 +40,7 @@ type grpcStream struct {
 	sender     chunkSender
 	recver     chunkRecver
 	closeWrite func() error // half-close write side
+	onClose    func()       // called once on first Close()
 
 	readBuf    []byte
 	localAddr  net.Addr
@@ -92,6 +93,9 @@ func (s *grpcStream) Close() error {
 	s.closeOnce.Do(func() {
 		_ = s.closeWrite()
 		close(s.doneCh)
+		if s.onClose != nil {
+			s.onClose()
+		}
 	})
 	return nil
 }
@@ -109,11 +113,13 @@ func (s *grpcStream) SetWriteDeadline(t time.Time) error { return nil }
 func newClientSideStream(
 	cs muxpb.Mux_StreamClient,
 	localAddr, remoteAddr net.Addr,
+	onClose func(),
 ) net.Conn {
 	return &grpcStream{
 		sender:     cs,
 		recver:     cs,
 		closeWrite: cs.CloseSend,
+		onClose:    onClose,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
 		doneCh:     make(chan struct{}),
@@ -127,11 +133,13 @@ func newClientSideStream(
 func newServerSideStream(
 	ss muxpb.Mux_StreamServer,
 	localAddr, remoteAddr net.Addr,
+	onClose func(),
 ) *grpcStream {
 	return &grpcStream{
 		sender:     ss,
 		recver:     ss,
 		closeWrite: func() error { return nil },
+		onClose:    onClose,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
 		doneCh:     make(chan struct{}),

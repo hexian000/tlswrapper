@@ -311,7 +311,7 @@ func (svc *muxServer) Stream(stream muxpb.Mux_StreamServer) error {
 		}
 	}
 
-	conn := newServerSideStream(stream, svc.localAddr, svc.remoteAddr)
+	conn := newServerSideStream(stream, svc.localAddr, svc.remoteAddr, func() { sess.numStreams.Add(-1) })
 	sess.DeliverStream(requestID, conn)
 
 	// Keep the handler alive until Close() is called on conn (or context is done).
