@@ -40,19 +40,16 @@ func (c *notifyConn) Read(b []byte) (n int, err error) {
 	return
 }
 
-// NotifyConnClose wraps conn so that when a Read on the underlying connection
+// notifyConnClose wraps conn so that when a Read on the underlying connection
 // returns an error (e.g. EOF or network error), the returned channel is signaled.
-// Pass the returned net.Conn to http2.Transport.NewClientConn, and pass the
-// channel to NewClientSession.
-func NotifyConnClose(conn net.Conn) (net.Conn, <-chan struct{}) {
+func notifyConnClose(conn net.Conn) (net.Conn, <-chan struct{}) {
 	ch := make(chan struct{}, 1)
 	return &notifyConn{Conn: conn, onReadErr: ch}, ch
 }
 
 // Session wraps an HTTP/2 connection and provides yamux-style Open/Accept stream
-// multiplexing. A Session is either client-mode (NewClientSession, after an outbound
-// TCP+TLS dial) or server-mode (NewServerSession, used as an http.Handler with
-// http2.Server.ServeConn).
+// multiplexing. A Session is either client-mode (returned by Client) or
+// server-mode (returned by Server).
 type Session struct {
 	isServer   bool
 	mu         sync.RWMutex
@@ -70,6 +67,7 @@ type Session struct {
 	scheme   string
 
 	// server mode only
+	rawConn   net.Conn // underlying connection; Close() closes this to stop ServeConn
 	acceptCh  chan net.Conn
 	ready     chan struct{}
 	helloOnce sync.Once
@@ -77,12 +75,9 @@ type Session struct {
 	localID   string
 }
 
-// NewClientSession sends a /hello handshake over the already-established h2conn and
-// returns a client-mode Session. scheme must be "https" or "http". tag is a
-// human-readable label used for logging. connCloseCh is a channel signaled when
-// the underlying net.Conn's Read returns an error; use h2mux.ConnClosedCh to
-// create one before wrapping the conn with http2.Transport.NewClientConn.
-func NewClientSession(
+// newClientSession sends a /hello handshake over the already-established h2conn and
+// returns a client-mode Session.
+func newClientSession(
 	ctx context.Context,
 	h2conn *http2.ClientConn,
 	connCloseCh <-chan struct{},
@@ -91,8 +86,8 @@ func NewClientSession(
 	s := &Session{
 		isServer:   false,
 		tag:        tag,
-		localAddr:  H2Addr{Addr: "local"},
-		remoteAddr: H2Addr{Addr: dialAddr},
+		localAddr:  h2Addr{Addr: "local"},
+		remoteAddr: h2Addr{Addr: dialAddr},
 		closedCh:   make(chan struct{}),
 		h2conn:     h2conn,
 		dialAddr:   dialAddr,
@@ -100,15 +95,15 @@ func NewClientSession(
 	}
 
 	// Build and send ClientHello via POST /hello.
-	helloReq := &Message{
-		Type: Type,
-		Msg:  MsgClientHello,
+	helloReq := &message{
+		Type: protoType,
+		Msg:  msgClientHello,
 	}
 	if localID != "" {
-		helloReq.Extensions.Service = &ServiceExt{ID: localID}
+		helloReq.Extensions.Service = &serviceExt{ID: localID}
 	}
 	var buf bytes.Buffer
-	if err := WriteTo(&buf, helloReq); err != nil {
+	if err := writeTo(&buf, helloReq); err != nil {
 		return nil, err
 	}
 	helloURL := (&url.URL{Scheme: scheme, Host: dialAddr, Path: "/hello"}).String()
@@ -116,7 +111,7 @@ func NewClientSession(
 	if err != nil {
 		return nil, err
 	}
-	hreq.Header.Set("Content-Type", Type)
+	hreq.Header.Set("Content-Type", protoType)
 
 	resp, err := h2conn.RoundTrip(hreq)
 	if err != nil {
@@ -126,7 +121,7 @@ func NewClientSession(
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("hello: unexpected status %d", resp.StatusCode)
 	}
-	rsp, err := ReadFrom(resp.Body)
+	rsp, err := readFrom(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -147,13 +142,8 @@ func NewClientSession(
 	return s, nil
 }
 
-// NewServerSession returns a server-mode Session that implements http.Handler.
-// The caller must run:
-//
-//	h2server.ServeConn(conn, &http2.ServeConnOpts{Handler: sess})
-//
-// and call sess.Close() when ServeConn returns.
-func NewServerSession(localAddr, remoteAddr net.Addr, localID string) *Session {
+// newServerSession returns a server-mode Session that implements http.Handler.
+func newServerSession(localAddr, remoteAddr net.Addr, localID string) *Session {
 	return &Session{
 		isServer:   true,
 		tag:        fmt.Sprintf("? <= %v", remoteAddr),
@@ -185,13 +175,13 @@ func (s *Session) handleHello(w http.ResponseWriter, r *http.Request) {
 		close(s.ready)
 		return
 	}
-	req, err := ReadFrom(r.Body)
+	req, err := readFrom(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		close(s.ready)
 		return
 	}
-	if req.Msg != MsgClientHello {
+	if req.Msg != msgClientHello {
 		http.Error(w, "unexpected message", http.StatusBadRequest)
 		close(s.ready)
 		return
@@ -201,16 +191,16 @@ func (s *Session) handleHello(w http.ResponseWriter, r *http.Request) {
 		peerID = req.Extensions.Service.ID
 	}
 
-	rsp := &Message{
-		Type: Type,
-		Msg:  MsgServerHello,
+	rsp := &message{
+		Type: protoType,
+		Msg:  msgServerHello,
 	}
 	if s.localID != "" {
-		rsp.Extensions.Service = &ServiceExt{ID: s.localID}
+		rsp.Extensions.Service = &serviceExt{ID: s.localID}
 	}
-	w.Header().Set("Content-Type", Type)
+	w.Header().Set("Content-Type", protoType)
 	w.WriteHeader(http.StatusOK)
-	if err := WriteTo(w, rsp); err != nil {
+	if err := writeTo(w, rsp); err != nil {
 		close(s.ready)
 		return
 	}
@@ -258,7 +248,7 @@ func (s *Session) handleStream(w http.ResponseWriter, r *http.Request) {
 	// so that ServeHTTP can return and end the HTTP/2 stream.
 	done := make(chan struct{})
 	bw := &h2BufFlusher{bufio.NewWriterSize(w, 32*1024), flusher}
-	base := NewResponseBodyConn(bw, r.Body, s.localAddr, s.remoteAddr)
+	base := newResponseBodyConn(bw, r.Body, s.localAddr, s.remoteAddr)
 	conn := &serverStreamConn{
 		Conn:       base,
 		done:       done,
@@ -317,7 +307,7 @@ func (s *Session) Open(ctx context.Context) (net.Conn, error) {
 	decBody := &onCloseBody{ReadCloser: resp.Body, onClose: func() {
 		decOnce.Do(func() { s.numStreams.Add(-1) })
 	}}
-	return NewH2StreamConn(pw, decBody, s.localAddr, s.remoteAddr), nil
+	return newH2StreamConn(pw, decBody, s.localAddr, s.remoteAddr), nil
 }
 
 // Accept returns the next incoming stream (server mode). Blocks until a stream
@@ -335,16 +325,6 @@ func (s *Session) Accept() (net.Conn, error) {
 			return nil, ErrSessionClosed
 		}
 	}
-}
-
-// ReadyC returns a channel that is closed after /hello completes (server mode).
-func (s *Session) ReadyC() <-chan struct{} { return s.ready }
-
-// HelloOK reports whether /hello completed successfully (server mode).
-func (s *Session) HelloOK() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.helloOK
 }
 
 // PeerID returns the remote service ID received during the handshake.
@@ -380,21 +360,26 @@ func (s *Session) IsClosed() bool {
 // CloseChan returns a channel that is closed when the session closes.
 func (s *Session) CloseChan() <-chan struct{} { return s.closedCh }
 
-// Close shuts down the session. For client mode it also closes the underlying
-// http2.ClientConn. Safe to call multiple times.
+// Close shuts down the session. For client mode it closes the underlying
+// http2.ClientConn; for server mode it closes the underlying net.Conn (which
+// terminates the ServeConn goroutine). Safe to call multiple times.
 func (s *Session) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.closedCh)
-		if !s.isServer {
+		if s.isServer {
+			if s.rawConn != nil {
+				_ = s.rawConn.Close()
+			}
+		} else {
 			_ = s.h2conn.Close()
 		}
 	})
 	return nil
 }
 
-// serverStreamConn wraps a net.Conn and signals done (via Done()) when
-// explicitly told to, unblocking handleStream's ServeHTTP goroutine so the
-// HTTP/2 stream lifetime matches the stream connection lifetime.
+// serverStreamConn wraps a net.Conn and signals done when closed or half-closed,
+// unblocking handleStream's ServeHTTP goroutine so the HTTP/2 stream lifetime
+// matches the stream connection lifetime.
 type serverStreamConn struct {
 	net.Conn
 	done       chan struct{}
@@ -402,12 +387,22 @@ type serverStreamConn struct {
 	numStreams *atomic.Int32
 }
 
+// Close signals done (unblocking ServeHTTP) and then closes the underlying conn
+// (releasing the request body). Implements net.Conn.
 func (c *serverStreamConn) Close() error {
+	c.done_()
 	return c.Conn.Close()
 }
 
-// Done signals that forwarding is complete and ServeHTTP may return.
-func (c *serverStreamConn) Done() {
+// CloseWrite signals the end of the write (response) side, unblocking ServeHTTP
+// without closing the read (request body) side. Implements forwarder.CloseWriter.
+func (c *serverStreamConn) CloseWrite() error {
+	c.done_()
+	return nil
+}
+
+// done_ signals done exactly once, decrementing numStreams and closing the done channel.
+func (c *serverStreamConn) done_() {
 	c.doneOnce.Do(func() {
 		c.numStreams.Add(-1)
 		close(c.done)
@@ -425,7 +420,7 @@ func (b *onCloseBody) Close() error {
 	return b.ReadCloser.Close()
 }
 
-// h2BufFlusher combines a bufio.Writer with an http.Flusher to implement FlushWriter.
+// h2BufFlusher combines a bufio.Writer with an http.Flusher to implement flushWriter.
 type h2BufFlusher struct {
 	bw *bufio.Writer
 	f  http.Flusher

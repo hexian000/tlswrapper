@@ -23,7 +23,6 @@ import (
 	"github.com/hexian000/tlswrapper/v4/eventlog"
 	"github.com/hexian000/tlswrapper/v4/forwarder"
 	"github.com/hexian000/tlswrapper/v4/h2mux"
-	"golang.org/x/net/http2"
 )
 
 const network = "tcp"
@@ -43,7 +42,6 @@ type Server struct {
 	l           hlistener.Listener
 	apiListener net.Listener
 	f           forwarder.Forwarder
-	h2server    *http2.Server
 
 	flowStats    *snet.FlowStats
 	recentEvents eventlog.Recent
@@ -89,7 +87,6 @@ func NewServer(cfg *config.File) (*Server, error) {
 		return nil, err
 	}
 	s.tlscfg = tlscfg
-	s.h2server = cfg.NewH2Server()
 	return s, nil
 }
 
@@ -219,27 +216,17 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	}
 }
 
-// serveH2Conn handles one inbound connection as an HTTP/2 server.
-// It blocks until the connection is closed.
-func (s *Server) serveH2Conn(conn net.Conn) {
-	cfg, _ := s.getConfig()
-	h2sess := h2mux.NewServerSession(conn.LocalAddr(), conn.RemoteAddr(), cfg.Service.ID)
+// serveH2Conn handles one inbound h2mux session.
+// It blocks until the session is closed.
+func (s *Server) serveH2Conn(h2sess *h2mux.Session) {
+	// When the group closes, close h2sess to unblock Accept().
 	if err := s.g.Go(func() {
-		s.h2server.ServeConn(conn, &http2.ServeConnOpts{Handler: h2sess})
-		_ = h2sess.Close()
+		select {
+		case <-s.g.CloseC():
+			_ = h2sess.Close()
+		case <-h2sess.CloseChan():
+		}
 	}); err != nil {
-		_ = h2sess.Close()
-		return
-	}
-	select {
-	case <-h2sess.ReadyC():
-	case <-h2sess.CloseChan():
-		return
-	case <-s.g.CloseC():
-		_ = h2sess.Close()
-		return
-	}
-	if !h2sess.HelloOK() {
 		return
 	}
 	now := time.Now()
@@ -276,17 +263,10 @@ func (s *Server) serveH2Conn(conn net.Conn) {
 
 // handleInboundStream forwards one accepted server-side stream to the configured connect address.
 func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
-	type doner interface{ Done() }
-	streamDone := func() {
-		if d, ok := stream.(doner); ok {
-			d.Done()
-		}
-	}
 	started := false
 	defer func() {
 		if !started {
 			_ = stream.Close()
-			streamDone()
 		}
 	}()
 	s.stats.request.Add(1)
@@ -325,7 +305,6 @@ func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
 		Done: func() {
 			slog.Debugf("%s: stream finished", tag)
 			s.stats.success.Add(1)
-			streamDone()
 		},
 	}); err != nil {
 		slog.Errorf("%s: forward: %v", tag, err)

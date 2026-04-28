@@ -261,7 +261,7 @@ func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 	return h2sess.Open(ctx)
 }
 
-// h2Dial dials to the remote, performs TLS, and establishes an HTTP/2 session.
+// h2Dial dials to the remote, performs TLS (if configured), and establishes an h2mux session.
 func (ss *session) h2Dial(ctx context.Context) (*h2mux.Session, error) {
 	cfg, tlscfg := ss.getConfig()
 	if ss.dialAddr == "" {
@@ -277,41 +277,21 @@ func (ss *session) h2Dial(ctx context.Context) (*h2mux.Session, error) {
 		return nil, err
 	}
 	tag := fmt.Sprintf("%q => %v", ss.id, rawConn.RemoteAddr())
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := rawConn.SetDeadline(deadline); err != nil {
-			ioClose(rawConn)
-			return nil, err
-		}
-	}
-	cfg.SetMuxConnParams(rawConn)
-	rawConn = snet.FlowMeter(rawConn, ss.s.flowStats)
-	var conn net.Conn = rawConn
-	scheme := "https"
-	if tlscfg != nil {
-		tlsConn := tls.Client(rawConn, tlscfg)
-		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			ioClose(rawConn)
-			return nil, err
-		}
-		conn = tlsConn
-	} else {
-		scheme = "http"
+	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
-
-	transport := cfg.NewH2Transport(tlscfg)
-	wrappedConn, connCloseCh := h2mux.NotifyConnClose(conn)
-	h2conn, err := transport.NewClientConn(wrappedConn)
-	if err != nil {
-		ioClose(conn)
-		return nil, err
+	cfg.SetMuxConnParams(rawConn)
+	conn := snet.FlowMeter(rawConn, ss.s.flowStats)
+	h2cfg := &h2mux.Config{
+		TLSConfig:    tlscfg,
+		LocalID:      cfg.Service.ID,
+		KeepAlive:    time.Duration(cfg.KeepAlive) * time.Second,
+		PingTimeout:  time.Duration(cfg.PingTimeout) * time.Second,
+		WriteTimeout: time.Duration(cfg.SendTimeout) * time.Second,
 	}
-	_ = conn.SetDeadline(time.Time{})
-
-	localID := cfg.Service.ID
-	h2sess, err := h2mux.NewClientSession(ctx, h2conn, connCloseCh, ss.dialAddr, scheme, localID, tag)
+	h2sess, err := h2mux.Client(ctx, conn, h2cfg)
 	if err != nil {
-		_ = h2conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 

@@ -5,7 +5,6 @@ package tlswrapper
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -15,6 +14,7 @@ import (
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/forwarder"
+	"github.com/hexian000/tlswrapper/v4/h2mux"
 )
 
 // Handler is a generic interface that handles incoming connections
@@ -42,28 +42,25 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	defer h.halfOpen.Add(^uint32(0))
 	start := time.Now()
 	tag := fmt.Sprintf("? <= %v", conn.RemoteAddr())
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := conn.SetDeadline(deadline); err != nil {
-			slog.Errorf("%s: %s", tag, formats.Error(err))
-			return
-		}
-	}
 	cfg, tlscfg := h.s.getConfig()
 	cfg.SetMuxConnParams(conn)
 	conn = snet.FlowMeter(conn, h.s.flowStats)
-	if tlscfg != nil {
-		tlsConn := tls.Server(conn, tlscfg)
-		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			slog.Errorf("%s: tls handshake: %s", tag, formats.Error(err))
-			return
-		}
-		conn = tlsConn
-	} else {
+	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
-	_ = conn.SetDeadline(time.Time{})
+	h2cfg := &h2mux.Config{
+		TLSConfig:            tlscfg,
+		LocalID:              cfg.Service.ID,
+		MaxConcurrentStreams: uint32(cfg.Mux.MaxHalfOpen),
+		IdleTimeout:          cfg.Timeout(),
+	}
+	h2sess, err := h2mux.Server(ctx, conn, h2cfg)
+	if err != nil {
+		slog.Errorf("%s: %s", tag, formats.Error(err))
+		return
+	}
 	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
-	h.s.serveH2Conn(conn)
+	h.s.serveH2Conn(h2sess)
 }
 
 // MuxHandler forwards connections over the session

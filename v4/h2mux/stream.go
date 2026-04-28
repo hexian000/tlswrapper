@@ -10,14 +10,14 @@ import (
 	"time"
 )
 
-// H2Addr is a simple net.Addr implementation for HTTP/2 connections.
-type H2Addr struct{ Addr string }
+// h2Addr is a simple net.Addr implementation for HTTP/2 connections.
+type h2Addr struct{ Addr string }
 
-func (a H2Addr) Network() string { return "tcp" }
-func (a H2Addr) String() string  { return a.Addr }
+func (a h2Addr) Network() string { return "tcp" }
+func (a h2Addr) String() string  { return a.Addr }
 
-// FlushWriter is a writer that also supports flushing buffered data.
-type FlushWriter interface {
+// flushWriter is a writer that also supports flushing buffered data.
+type flushWriter interface {
 	io.Writer
 	Flush()
 }
@@ -32,8 +32,8 @@ type h2StreamConn struct {
 	remoteAddr net.Addr
 }
 
-// NewH2StreamConn wraps an HTTP/2 stream as a net.Conn for the client side.
-func NewH2StreamConn(pw *io.PipeWriter, rb io.ReadCloser, local, remote net.Addr) net.Conn {
+// newH2StreamConn wraps an HTTP/2 stream as a net.Conn for the client side.
+func newH2StreamConn(pw *io.PipeWriter, rb io.ReadCloser, local, remote net.Addr) net.Conn {
 	return &h2StreamConn{pw: pw, rb: rb, localAddr: local, remoteAddr: remote}
 }
 
@@ -73,14 +73,14 @@ func (c *h2StreamConn) SetWriteDeadline(t time.Time) error { return nil }
 // responseBodyConn wraps an http.ResponseWriter + request body as a net.Conn for the server side.
 // Write sends data to the client (response body); Read receives data from the client (request body).
 type responseBodyConn struct {
-	w          FlushWriter
+	w          flushWriter
 	rb         io.ReadCloser
 	localAddr  net.Addr
 	remoteAddr net.Addr
 }
 
-// NewResponseBodyConn wraps an http.ResponseWriter + request body as a net.Conn for the server side.
-func NewResponseBodyConn(w FlushWriter, rb io.ReadCloser, local, remote net.Addr) net.Conn {
+// newResponseBodyConn wraps an http.ResponseWriter + request body as a net.Conn for the server side.
+func newResponseBodyConn(w flushWriter, rb io.ReadCloser, local, remote net.Addr) net.Conn {
 	return &responseBodyConn{w: w, rb: rb, localAddr: local, remoteAddr: remote}
 }
 
@@ -96,8 +96,8 @@ func (c *responseBodyConn) Write(b []byte) (int, error) {
 	return n, err
 }
 
-// Close is a no-op: the HTTP handler return will close the stream.
-func (c *responseBodyConn) Close() error { return nil }
+// Close closes the request body, releasing resources held by the HTTP/2 stream.
+func (c *responseBodyConn) Close() error { return c.rb.Close() }
 
 func (c *responseBodyConn) LocalAddr() net.Addr  { return c.localAddr }
 func (c *responseBodyConn) RemoteAddr() net.Addr { return c.remoteAddr }

@@ -14,7 +14,6 @@ import (
 
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
-	"golang.org/x/net/http2"
 )
 
 // SetLogger sets up logging according to config
@@ -111,40 +110,4 @@ func (w *logWrapper) Write(p []byte) (n int, err error) {
 		w.Println(calldepth, slog.LevelError, nil, string(p))
 	}
 	return len(p), nil
-}
-
-// NewH2Server creates an http2.Server configured from the current settings.
-// MaxStreams maps to MaxConcurrentStreams; if zero defaults to 256.
-func (c *File) NewH2Server() *http2.Server {
-	maxStreams := uint32(c.Mux.MaxHalfOpen)
-	if maxStreams == 0 {
-		maxStreams = 256
-	}
-	return &http2.Server{
-		MaxConcurrentStreams: maxStreams,
-		IdleTimeout:          time.Duration(c.IdleTimeout) * time.Second,
-	}
-}
-
-// NewH2Transport creates an http2.Transport configured from the current settings.
-func (c *File) NewH2Transport(tlscfg *tls.Config) *http2.Transport {
-	keepAlive := 25 * time.Second
-	if c.KeepAlive > 0 {
-		keepAlive = time.Duration(c.KeepAlive) * time.Second
-	}
-	pingTimeout := 15 * time.Second
-	if c.PingTimeout > 0 {
-		pingTimeout = time.Duration(c.PingTimeout) * time.Second
-	}
-	sendTimeout := 15 * time.Second
-	if c.SendTimeout > 0 {
-		sendTimeout = time.Duration(c.SendTimeout) * time.Second
-	}
-	return &http2.Transport{
-		TLSClientConfig:  tlscfg,
-		ReadIdleTimeout:  keepAlive,
-		PingTimeout:      pingTimeout,
-		WriteByteTimeout: sendTimeout,
-		AllowHTTP:        tlscfg == nil,
-	}
 }
