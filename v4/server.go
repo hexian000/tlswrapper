@@ -22,7 +22,7 @@ import (
 	"github.com/hexian000/tlswrapper/v4/config"
 	"github.com/hexian000/tlswrapper/v4/eventlog"
 	"github.com/hexian000/tlswrapper/v4/forwarder"
-	"github.com/hexian000/tlswrapper/v4/h2mux"
+	"github.com/hexian000/tlswrapper/v4/mux"
 )
 
 const network = "tcp"
@@ -216,9 +216,9 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	}
 }
 
-// serveH2Conn handles one inbound h2mux session.
+// serveH2Conn handles one inbound mux session.
 // It blocks until the session is closed.
-func (s *Server) serveH2Conn(h2sess *h2mux.Session) {
+func (s *Server) serveH2Conn(h2sess *mux.Session) {
 	// When the group closes, close h2sess to unblock Accept().
 	if err := s.g.Go(func() {
 		select {

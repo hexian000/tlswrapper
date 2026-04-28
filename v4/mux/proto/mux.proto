@@ -1,0 +1,63 @@
+// tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
+// This code is licensed under MIT license (see LICENSE for details)
+
+syntax = "proto3";
+
+package tlswrapper.mux.v1;
+
+option go_package = "github.com/hexian000/tlswrapper/v4/mux/proto";
+
+// Chunk carries payload bytes for a logical stream (one gRPC Stream RPC).
+// eof=true signals a write-side half-close from the server (in-band CloseWrite).
+message Chunk {
+  bytes data = 1;
+  bool  eof  = 2;
+}
+
+// ClientHello is sent by the client as the first message on the Control stream.
+message ClientHello {
+  string service_id     = 1;
+  bool   reject_inbound = 2;
+}
+
+// ServerHello is sent by the server in response to ClientHello on the Control stream.
+message ServerHello {
+  string service_id     = 1;
+  bool   reject_inbound = 2;
+}
+
+// OpenRequest is sent by the server on the Control stream to ask the client to
+// open a new Stream RPC back to the server. The client identifies the resulting
+// Stream RPC by sending request_id in the outgoing gRPC metadata.
+message OpenRequest {
+  string request_id = 1;
+}
+
+// ControlMessage is the envelope for all messages on the Control stream.
+message ControlMessage {
+  oneof body {
+    ClientHello client_hello = 1;
+    ServerHello server_hello = 2;
+    OpenRequest open_request = 3;
+  }
+}
+
+// MuxService provides logical stream multiplexing over one gRPC connection.
+//
+// Lifecycle:
+//  1. Client calls Control; sends Hello; server replies with HelloAck.
+//     The control stream stays open for the lifetime of the session.
+//  2. Client-initiated streams: client calls Stream directly.
+//  3. Server-initiated streams: server sends OpenRequest on Control;
+//     client calls Stream with x-mux-request-id metadata set to request_id.
+service MuxService {
+  // Control is a long-lived bidi stream used for session handshake and
+  // server-side stream initiation.
+  rpc Control(stream ControlMessage) returns (stream ControlMessage);
+
+  // Stream is a single logical bidirectional byte stream.
+  // Client-initiated: no special metadata required.
+  // Server-initiated: client sets x-mux-request-id metadata to the
+  // request_id from the OpenRequest message received on Control.
+  rpc Stream(stream Chunk) returns (stream Chunk);
+}

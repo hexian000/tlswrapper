@@ -17,7 +17,7 @@ import (
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/config"
-	"github.com/hexian000/tlswrapper/v4/h2mux"
+	"github.com/hexian000/tlswrapper/v4/mux"
 )
 
 // session manages exactly one outbound or inbound mux connection for a named peer.
@@ -30,7 +30,7 @@ type session struct {
 	l        net.Listener // local TCP listener (only on config-driven sessions with Listen)
 
 	mu          sync.RWMutex
-	h2sess      *h2mux.Session
+	h2sess      *mux.Session
 	idleSince   time.Time // when h2sess became stream-less (zero = not idle)
 	closeSig    chan struct{}
 	redialSig   chan struct{}
@@ -205,7 +205,7 @@ func (ss *session) run() {
 	}
 }
 
-func (ss *session) addH2sess(h2sess *h2mux.Session) {
+func (ss *session) addH2sess(h2sess *mux.Session) {
 	now := time.Now()
 	msg := fmt.Sprintf("%s: session established", h2sess.Tag())
 	slog.Notice(msg)
@@ -221,7 +221,7 @@ func (ss *session) addH2sess(h2sess *h2mux.Session) {
 	ss.lastChanged = now
 }
 
-func (ss *session) delH2sess(h2sess *h2mux.Session) {
+func (ss *session) delH2sess(h2sess *mux.Session) {
 	now := time.Now()
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
@@ -243,7 +243,7 @@ func (ss *session) delH2sess(h2sess *h2mux.Session) {
 	}
 }
 
-func (ss *session) getH2sess() *h2mux.Session {
+func (ss *session) getH2sess() *mux.Session {
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
 	if ss.h2sess == nil || ss.h2sess.IsClosed() {
@@ -252,7 +252,7 @@ func (ss *session) getH2sess() *h2mux.Session {
 	return ss.h2sess
 }
 
-// Dial opens a new stream over the session's active h2mux connection.
+// Dial opens a new stream over the session's active mux connection.
 func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 	h2sess := ss.getH2sess()
 	if h2sess == nil {
@@ -261,8 +261,8 @@ func (ss *session) Dial(ctx context.Context) (net.Conn, error) {
 	return h2sess.Open(ctx)
 }
 
-// h2Dial dials to the remote, performs TLS (if configured), and establishes an h2mux session.
-func (ss *session) h2Dial(ctx context.Context) (*h2mux.Session, error) {
+// h2Dial dials to the remote, performs TLS (if configured), and establishes an mux session.
+func (ss *session) h2Dial(ctx context.Context) (*mux.Session, error) {
 	cfg, tlscfg := ss.getConfig()
 	if ss.dialAddr == "" {
 		return nil, ErrNoDialAddress
@@ -282,14 +282,14 @@ func (ss *session) h2Dial(ctx context.Context) (*h2mux.Session, error) {
 	}
 	cfg.SetMuxConnParams(rawConn)
 	conn := snet.FlowMeter(rawConn, ss.s.flowStats)
-	h2cfg := &h2mux.Config{
+	h2cfg := &mux.Config{
 		TLSConfig:    tlscfg,
 		LocalID:      cfg.Service.ID,
 		KeepAlive:    time.Duration(cfg.KeepAlive) * time.Second,
 		PingTimeout:  time.Duration(cfg.PingTimeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.SendTimeout) * time.Second,
 	}
-	h2sess, err := h2mux.Client(ctx, conn, h2cfg)
+	h2sess, err := mux.Client(ctx, conn, h2cfg)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err

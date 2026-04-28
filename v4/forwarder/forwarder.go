@@ -20,7 +20,7 @@ import (
 var ErrConnLimit = errors.New("connection limit is exceeded")
 
 // CloseWriter is implemented by connections that support a half-close (write-side shutdown),
-// such as *net.TCPConn or h2mux client streams.
+// such as *net.TCPConn or mux client streams.
 type CloseWriter interface {
 	CloseWrite() error
 }

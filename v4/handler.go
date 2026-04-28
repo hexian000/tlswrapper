@@ -14,7 +14,7 @@ import (
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/forwarder"
-	"github.com/hexian000/tlswrapper/v4/h2mux"
+	"github.com/hexian000/tlswrapper/v4/mux"
 )
 
 // Handler is a generic interface that handles incoming connections
@@ -48,13 +48,13 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
-	h2cfg := &h2mux.Config{
+	h2cfg := &mux.Config{
 		TLSConfig:            tlscfg,
 		LocalID:              cfg.Service.ID,
 		MaxConcurrentStreams: uint32(cfg.Mux.MaxHalfOpen),
 		IdleTimeout:          cfg.Timeout(),
 	}
-	h2sess, err := h2mux.Server(ctx, conn, h2cfg)
+	h2sess, err := mux.Server(ctx, conn, h2cfg)
 	if err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
