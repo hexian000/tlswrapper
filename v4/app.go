@@ -54,11 +54,11 @@ func (f *AppFlags) Validate() error {
 	if f.GenCerts != "" {
 		return nil
 	}
-	if f.Config == "" {
-		return errors.New("config file is not specified")
-	}
 	if f.DumpConfig {
 		return nil
+	}
+	if f.Config == "" {
+		return errors.New("config file is not specified")
 	}
 	return nil
 }

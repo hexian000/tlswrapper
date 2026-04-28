@@ -36,10 +36,17 @@ func ioClose(c io.Closer) {
 
 // dumpConfig dumps the configuration file to stdout
 func dumpConfig(f *AppFlags) int {
-	cfg, err := config.LoadFile(f.Config)
-	if err != nil {
-		slog.Fatal("dumpconfig: ", formats.Error(err))
-		return 1
+	var cfg *config.File
+	if f.Config == "" {
+		def := config.Default
+		cfg = &def
+	} else {
+		var err error
+		cfg, err = config.LoadFile(f.Config)
+		if err != nil {
+			slog.Fatal("dumpconfig: ", formats.Error(err))
+			return 1
+		}
 	}
 	b, err := cfg.Dump()
 	if err != nil {
