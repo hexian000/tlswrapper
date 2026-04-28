@@ -152,12 +152,18 @@ func (s *Server) Stats() (stats ServerStats) {
 	if s.l != nil {
 		stats.Accepted, stats.Served = s.l.Stats()
 	}
+	sessionMap := make(map[string]SessionStats)
 	for _, ss := range s.getAllSessions() {
 		sstats := ss.Stats()
 		if sstats.Active {
 			stats.NumSessions++
 		}
 		stats.NumStreams += sstats.NumStreams
+		if prev, ok := sessionMap[sstats.Name]; !ok || sstats.LastChanged.After(prev.LastChanged) {
+			sessionMap[sstats.Name] = sstats
+		}
+	}
+	for _, sstats := range sessionMap {
 		stats.sessions = append(stats.sessions, sstats)
 	}
 	stats.Rx, stats.Tx = s.flowStats.Read.Load(), s.flowStats.Written.Load()

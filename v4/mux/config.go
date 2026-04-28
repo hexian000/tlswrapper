@@ -84,6 +84,10 @@ func (c *Config) grpcServerOptions() []grpc.ServerOption {
 			Timeout:           c.pingTimeout(),
 			MaxConnectionIdle: c.IdleTimeout,
 		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
 		grpc.MaxConcurrentStreams(c.maxConcurrentStreams()),
 	}
 }
