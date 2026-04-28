@@ -353,9 +353,8 @@ const file_mux_proto_rawDesc = "" +
 	"\fclient_hello\x18\x01 \x01(\v2\x1e.tlswrapper.mux.v1.ClientHelloH\x00R\vclientHello\x12C\n" +
 	"\fserver_hello\x18\x02 \x01(\v2\x1e.tlswrapper.mux.v1.ServerHelloH\x00R\vserverHello\x12C\n" +
 	"\fopen_request\x18\x03 \x01(\v2\x1e.tlswrapper.mux.v1.OpenRequestH\x00R\vopenRequestB\x06\n" +
-	"\x04body2\xa3\x01\n" +
-	"\n" +
-	"MuxService\x12S\n" +
+	"\x04body2\x9c\x01\n" +
+	"\x03Mux\x12S\n" +
 	"\aControl\x12!.tlswrapper.mux.v1.ControlMessage\x1a!.tlswrapper.mux.v1.ControlMessage(\x010\x01\x12@\n" +
 	"\x06Stream\x12\x18.tlswrapper.mux.v1.Chunk\x1a\x18.tlswrapper.mux.v1.Chunk(\x010\x01B.Z,github.com/hexian000/tlswrapper/v4/mux/protob\x06proto3"
 
@@ -383,10 +382,10 @@ var file_mux_proto_depIdxs = []int32{
 	1, // 0: tlswrapper.mux.v1.ControlMessage.client_hello:type_name -> tlswrapper.mux.v1.ClientHello
 	2, // 1: tlswrapper.mux.v1.ControlMessage.server_hello:type_name -> tlswrapper.mux.v1.ServerHello
 	3, // 2: tlswrapper.mux.v1.ControlMessage.open_request:type_name -> tlswrapper.mux.v1.OpenRequest
-	4, // 3: tlswrapper.mux.v1.MuxService.Control:input_type -> tlswrapper.mux.v1.ControlMessage
-	0, // 4: tlswrapper.mux.v1.MuxService.Stream:input_type -> tlswrapper.mux.v1.Chunk
-	4, // 5: tlswrapper.mux.v1.MuxService.Control:output_type -> tlswrapper.mux.v1.ControlMessage
-	0, // 6: tlswrapper.mux.v1.MuxService.Stream:output_type -> tlswrapper.mux.v1.Chunk
+	4, // 3: tlswrapper.mux.v1.Mux.Control:input_type -> tlswrapper.mux.v1.ControlMessage
+	0, // 4: tlswrapper.mux.v1.Mux.Stream:input_type -> tlswrapper.mux.v1.Chunk
+	4, // 5: tlswrapper.mux.v1.Mux.Control:output_type -> tlswrapper.mux.v1.ControlMessage
+	0, // 6: tlswrapper.mux.v1.Mux.Stream:output_type -> tlswrapper.mux.v1.Chunk
 	5, // [5:7] is the sub-list for method output_type
 	3, // [3:5] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name

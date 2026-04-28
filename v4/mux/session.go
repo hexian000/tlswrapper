@@ -28,9 +28,9 @@ const metaRequestIDKey = "x-mux-request-id"
 // Session represents a mux session over a single gRPC connection.
 type Session struct {
 	ctrl            controlStream
-	grpcClient      muxpb.MuxServiceClient // non-nil on client side only
-	streamCtx       context.Context        // client-side: context for Stream RPCs
-	streamCtxCancel context.CancelFunc     // client-side: cancels all Stream RPCs on Close
+	grpcClient      muxpb.MuxClient    // non-nil on client side only
+	streamCtx       context.Context    // client-side: context for Stream RPCs
+	streamCtxCancel context.CancelFunc // client-side: cancels all Stream RPCs on Close
 
 	pendingMu sync.Mutex
 	pending   map[string]chan net.Conn // request_id -> delivery channel
@@ -46,15 +46,15 @@ type Session struct {
 	remoteAddr net.Addr
 
 	numStreams atomic.Int32
-	openSeq   atomic.Int64
-	closedCh  chan struct{}
-	closeOnce sync.Once
-	cleanup   func()
+	openSeq    atomic.Int64
+	closedCh   chan struct{}
+	closeOnce  sync.Once
+	cleanup    func()
 }
 
 func newClientSession(
 	ctrl controlStream,
-	grpcClient muxpb.MuxServiceClient,
+	grpcClient muxpb.MuxClient,
 	streamCtx context.Context,
 	streamCtxCancel context.CancelFunc,
 	cleanup func(),

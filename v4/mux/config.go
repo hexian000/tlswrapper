@@ -162,7 +162,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (*Session, error) {
 	// sessionCtx lives for the entire session lifetime and is cancelled on Close().
 	sessionCtx, cancel := context.WithCancel(context.Background())
 
-	grpcClient := muxpb.NewMuxServiceClient(cc)
+	grpcClient := muxpb.NewMuxClient(cc)
 
 	// Open the Control stream with sessionCtx so it lives for the session lifetime.
 	// (Using ctx here would cancel the stream when the caller's deadline expires.)
@@ -222,9 +222,9 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (*Session, error) {
 	), nil
 }
 
-// muxServiceServer is the gRPC server-side implementation for one mux session.
-type muxServiceServer struct {
-	muxpb.UnimplementedMuxServiceServer
+// muxServer is the gRPC server-side implementation for one mux session.
+type muxServer struct {
+	muxpb.UnimplementedMuxServer
 	cfg        *Config
 	localAddr  net.Addr
 	remoteAddr net.Addr
@@ -238,8 +238,8 @@ type muxServiceServer struct {
 	sessReady chan struct{} // closed once sess is set
 }
 
-func newMuxServiceServer(cfg *Config, localAddr, remoteAddr net.Addr) *muxServiceServer {
-	return &muxServiceServer{
+func newMuxServer(cfg *Config, localAddr, remoteAddr net.Addr) *muxServer {
+	return &muxServer{
 		cfg:        cfg,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
@@ -250,7 +250,7 @@ func newMuxServiceServer(cfg *Config, localAddr, remoteAddr net.Addr) *muxServic
 
 // Control is the long-lived control stream handler. It performs the server-side
 // handshake, creates the Session, and then stays open until the session closes.
-func (svc *muxServiceServer) Control(stream muxpb.MuxService_ControlServer) error {
+func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
 	peerID, peerRejectsInbound, err := doServerHandshake(stream, svc.cfg.LocalID, svc.cfg.RejectInbound)
 	if err != nil {
 		return err
@@ -287,7 +287,7 @@ func (svc *muxServiceServer) Control(stream muxpb.MuxService_ControlServer) erro
 }
 
 // Stream handles a single logical stream RPC.
-func (svc *muxServiceServer) Stream(stream muxpb.MuxService_StreamServer) error {
+func (svc *muxServer) Stream(stream muxpb.Mux_StreamServer) error {
 	// Wait for the Control handshake to complete before accepting streams.
 	select {
 	case <-svc.sessReady:
@@ -336,9 +336,9 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (*Session, error) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 
-	svc := newMuxServiceServer(cfg, conn.LocalAddr(), conn.RemoteAddr())
+	svc := newMuxServer(cfg, conn.LocalAddr(), conn.RemoteAddr())
 	grpcSrv := grpc.NewServer(cfg.grpcServerOptions()...)
-	muxpb.RegisterMuxServiceServer(grpcSrv, svc)
+	muxpb.RegisterMuxServer(grpcSrv, svc)
 
 	listener := newOneConnListener(conn)
 	serveDone := make(chan struct{})

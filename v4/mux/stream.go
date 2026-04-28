@@ -111,7 +111,7 @@ func (s *grpcStream) SetWriteDeadline(t time.Time) error { return nil }
 // newClientSideStream wraps a client-side gRPC Stream RPC as a net.Conn.
 // Half-close uses CloseSend().
 func newClientSideStream(
-	cs muxpb.MuxService_StreamClient,
+	cs muxpb.Mux_StreamClient,
 	localAddr, remoteAddr net.Addr,
 ) net.Conn {
 	return &grpcStream{
@@ -129,7 +129,7 @@ func newClientSideStream(
 // The returned *grpcStream's doneCh is closed by Close(), allowing the
 // server-side Stream handler to detect when it may return.
 func newServerSideStream(
-	ss muxpb.MuxService_StreamServer,
+	ss muxpb.Mux_StreamServer,
 	localAddr, remoteAddr net.Addr,
 ) *grpcStream {
 	return &grpcStream{

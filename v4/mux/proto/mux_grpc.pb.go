@@ -22,15 +22,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MuxService_Control_FullMethodName = "/tlswrapper.mux.v1.MuxService/Control"
-	MuxService_Stream_FullMethodName  = "/tlswrapper.mux.v1.MuxService/Stream"
+	Mux_Control_FullMethodName = "/tlswrapper.mux.v1.Mux/Control"
+	Mux_Stream_FullMethodName  = "/tlswrapper.mux.v1.Mux/Stream"
 )
 
-// MuxServiceClient is the client API for MuxService service.
+// MuxClient is the client API for Mux service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// MuxService provides logical stream multiplexing over one gRPC connection.
+// Mux provides logical stream multiplexing over one gRPC connection.
 //
 // Lifecycle:
 //  1. Client calls Control; sends Hello; server replies with HelloAck.
@@ -38,7 +38,7 @@ const (
 //  2. Client-initiated streams: client calls Stream directly.
 //  3. Server-initiated streams: server sends OpenRequest on Control;
 //     client calls Stream with x-mux-request-id metadata set to request_id.
-type MuxServiceClient interface {
+type MuxClient interface {
 	// Control is a long-lived bidi stream used for session handshake and
 	// server-side stream initiation.
 	Control(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlMessage, ControlMessage], error)
@@ -49,17 +49,17 @@ type MuxServiceClient interface {
 	Stream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Chunk, Chunk], error)
 }
 
-type muxServiceClient struct {
+type muxClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewMuxServiceClient(cc grpc.ClientConnInterface) MuxServiceClient {
-	return &muxServiceClient{cc}
+func NewMuxClient(cc grpc.ClientConnInterface) MuxClient {
+	return &muxClient{cc}
 }
 
-func (c *muxServiceClient) Control(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlMessage, ControlMessage], error) {
+func (c *muxClient) Control(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlMessage, ControlMessage], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &MuxService_ServiceDesc.Streams[0], MuxService_Control_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Mux_ServiceDesc.Streams[0], Mux_Control_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -68,11 +68,11 @@ func (c *muxServiceClient) Control(ctx context.Context, opts ...grpc.CallOption)
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type MuxService_ControlClient = grpc.BidiStreamingClient[ControlMessage, ControlMessage]
+type Mux_ControlClient = grpc.BidiStreamingClient[ControlMessage, ControlMessage]
 
-func (c *muxServiceClient) Stream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Chunk, Chunk], error) {
+func (c *muxClient) Stream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Chunk, Chunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &MuxService_ServiceDesc.Streams[1], MuxService_Stream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Mux_ServiceDesc.Streams[1], Mux_Stream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -81,13 +81,13 @@ func (c *muxServiceClient) Stream(ctx context.Context, opts ...grpc.CallOption) 
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type MuxService_StreamClient = grpc.BidiStreamingClient[Chunk, Chunk]
+type Mux_StreamClient = grpc.BidiStreamingClient[Chunk, Chunk]
 
-// MuxServiceServer is the server API for MuxService service.
-// All implementations must embed UnimplementedMuxServiceServer
+// MuxServer is the server API for Mux service.
+// All implementations must embed UnimplementedMuxServer
 // for forward compatibility.
 //
-// MuxService provides logical stream multiplexing over one gRPC connection.
+// Mux provides logical stream multiplexing over one gRPC connection.
 //
 // Lifecycle:
 //  1. Client calls Control; sends Hello; server replies with HelloAck.
@@ -95,7 +95,7 @@ type MuxService_StreamClient = grpc.BidiStreamingClient[Chunk, Chunk]
 //  2. Client-initiated streams: client calls Stream directly.
 //  3. Server-initiated streams: server sends OpenRequest on Control;
 //     client calls Stream with x-mux-request-id metadata set to request_id.
-type MuxServiceServer interface {
+type MuxServer interface {
 	// Control is a long-lived bidi stream used for session handshake and
 	// server-side stream initiation.
 	Control(grpc.BidiStreamingServer[ControlMessage, ControlMessage]) error
@@ -104,74 +104,74 @@ type MuxServiceServer interface {
 	// Server-initiated: client sets x-mux-request-id metadata to the
 	// request_id from the OpenRequest message received on Control.
 	Stream(grpc.BidiStreamingServer[Chunk, Chunk]) error
-	mustEmbedUnimplementedMuxServiceServer()
+	mustEmbedUnimplementedMuxServer()
 }
 
-// UnimplementedMuxServiceServer must be embedded to have
+// UnimplementedMuxServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedMuxServiceServer struct{}
+type UnimplementedMuxServer struct{}
 
-func (UnimplementedMuxServiceServer) Control(grpc.BidiStreamingServer[ControlMessage, ControlMessage]) error {
+func (UnimplementedMuxServer) Control(grpc.BidiStreamingServer[ControlMessage, ControlMessage]) error {
 	return status.Error(codes.Unimplemented, "method Control not implemented")
 }
-func (UnimplementedMuxServiceServer) Stream(grpc.BidiStreamingServer[Chunk, Chunk]) error {
+func (UnimplementedMuxServer) Stream(grpc.BidiStreamingServer[Chunk, Chunk]) error {
 	return status.Error(codes.Unimplemented, "method Stream not implemented")
 }
-func (UnimplementedMuxServiceServer) mustEmbedUnimplementedMuxServiceServer() {}
-func (UnimplementedMuxServiceServer) testEmbeddedByValue()                    {}
+func (UnimplementedMuxServer) mustEmbedUnimplementedMuxServer() {}
+func (UnimplementedMuxServer) testEmbeddedByValue()             {}
 
-// UnsafeMuxServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to MuxServiceServer will
+// UnsafeMuxServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MuxServer will
 // result in compilation errors.
-type UnsafeMuxServiceServer interface {
-	mustEmbedUnimplementedMuxServiceServer()
+type UnsafeMuxServer interface {
+	mustEmbedUnimplementedMuxServer()
 }
 
-func RegisterMuxServiceServer(s grpc.ServiceRegistrar, srv MuxServiceServer) {
-	// If the following call panics, it indicates UnimplementedMuxServiceServer was
+func RegisterMuxServer(s grpc.ServiceRegistrar, srv MuxServer) {
+	// If the following call panics, it indicates UnimplementedMuxServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&MuxService_ServiceDesc, srv)
+	s.RegisterService(&Mux_ServiceDesc, srv)
 }
 
-func _MuxService_Control_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(MuxServiceServer).Control(&grpc.GenericServerStream[ControlMessage, ControlMessage]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type MuxService_ControlServer = grpc.BidiStreamingServer[ControlMessage, ControlMessage]
-
-func _MuxService_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(MuxServiceServer).Stream(&grpc.GenericServerStream[Chunk, Chunk]{ServerStream: stream})
+func _Mux_Control_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MuxServer).Control(&grpc.GenericServerStream[ControlMessage, ControlMessage]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type MuxService_StreamServer = grpc.BidiStreamingServer[Chunk, Chunk]
+type Mux_ControlServer = grpc.BidiStreamingServer[ControlMessage, ControlMessage]
 
-// MuxService_ServiceDesc is the grpc.ServiceDesc for MuxService service.
+func _Mux_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MuxServer).Stream(&grpc.GenericServerStream[Chunk, Chunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Mux_StreamServer = grpc.BidiStreamingServer[Chunk, Chunk]
+
+// Mux_ServiceDesc is the grpc.ServiceDesc for Mux service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var MuxService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "tlswrapper.mux.v1.MuxService",
-	HandlerType: (*MuxServiceServer)(nil),
+var Mux_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "tlswrapper.mux.v1.Mux",
+	HandlerType: (*MuxServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Control",
-			Handler:       _MuxService_Control_Handler,
+			Handler:       _Mux_Control_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},
 		{
 			StreamName:    "Stream",
-			Handler:       _MuxService_Stream_Handler,
+			Handler:       _Mux_Stream_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},
