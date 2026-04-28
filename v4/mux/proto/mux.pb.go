@@ -25,11 +25,9 @@ const (
 )
 
 // Chunk carries payload bytes for a logical stream (one gRPC Stream RPC).
-// eof=true signals a write-side half-close from the server (in-band CloseWrite).
 type Chunk struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
-	Eof           bool                   `protobuf:"varint,2,opt,name=eof,proto3" json:"eof,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -69,13 +67,6 @@ func (x *Chunk) GetData() []byte {
 		return x.Data
 	}
 	return nil
-}
-
-func (x *Chunk) GetEof() bool {
-	if x != nil {
-		return x.Eof
-	}
-	return false
 }
 
 // ClientHello is sent by the client as the first message on the Control stream.
@@ -334,10 +325,9 @@ var File_mux_proto protoreflect.FileDescriptor
 
 const file_mux_proto_rawDesc = "" +
 	"\n" +
-	"\tmux.proto\x12\x11tlswrapper.mux.v1\"-\n" +
+	"\tmux.proto\x12\x11tlswrapper.mux.v1\"\x1b\n" +
 	"\x05Chunk\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\x12\x10\n" +
-	"\x03eof\x18\x02 \x01(\bR\x03eof\"S\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"S\n" +
 	"\vClientHello\x12\x1d\n" +
 	"\n" +
 	"service_id\x18\x01 \x01(\tR\tserviceId\x12%\n" +

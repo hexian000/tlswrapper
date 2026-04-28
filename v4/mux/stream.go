@@ -31,9 +31,8 @@ type chunkRecver interface {
 // grpcStream is a single gRPC bidi stream that implements net.Conn.
 // It wraps either a client-side or server-side Stream RPC.
 //
-//   - Client half-close: CloseSend() on the underlying ClientStream.
-//   - Server half-close: send Chunk{Eof: true} in-band (gRPC server streams
-//     have no CloseSend equivalent in the Go API).
+// Half-close is only supported on the client side via CloseSend().
+// Server-side CloseWrite is a no-op; the peer sees EOF when the handler returns.
 //
 // doneCh is closed on the first Close() call. Server-side Stream handlers
 // (which must stay alive while the stream is in use) wait on doneCh.
@@ -64,9 +63,6 @@ func (s *grpcStream) Read(b []byte) (int, error) {
 				return 0, io.EOF
 			}
 			return 0, err
-		}
-		if chunk.Eof {
-			return 0, io.EOF
 		}
 		if len(chunk.Data) > 0 {
 			s.readBuf = chunk.Data
@@ -125,7 +121,7 @@ func newClientSideStream(
 }
 
 // newServerSideStream wraps a server-side gRPC Stream RPC as a net.Conn.
-// Half-close sends an in-band Chunk{Eof: true}.
+// CloseWrite is a no-op; the peer sees EOF when the handler returns.
 // The returned *grpcStream's doneCh is closed by Close(), allowing the
 // server-side Stream handler to detect when it may return.
 func newServerSideStream(
@@ -133,11 +129,9 @@ func newServerSideStream(
 	localAddr, remoteAddr net.Addr,
 ) *grpcStream {
 	return &grpcStream{
-		sender: ss,
-		recver: ss,
-		closeWrite: func() error {
-			return ss.Send(&muxpb.Chunk{Eof: true})
-		},
+		sender:     ss,
+		recver:     ss,
+		closeWrite: func() error { return nil },
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
 		doneCh:     make(chan struct{}),
