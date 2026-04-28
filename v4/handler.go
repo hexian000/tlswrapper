@@ -14,6 +14,7 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
+	"github.com/hexian000/tlswrapper/v4/forwarder"
 )
 
 // Handler is a generic interface that handles incoming connections
@@ -88,13 +89,25 @@ func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
 		ioClose(accepted)
 		return
 	}
-	if err := h.s.f.Forward(accepted, dialed); err != nil {
-		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.id, formats.Error(err))
+	tag := fmt.Sprintf("%v -> %q", accepted.RemoteAddr(), h.id)
+	if err := h.s.f.Start(accepted, dialed, forwarder.HandlerFuncs{
+		HalfClose: func(conn net.Conn, err error) {
+			if err != nil {
+				slog.Debugf("%s: half-close %v: %s", tag, conn.RemoteAddr(), formats.Error(err))
+			} else {
+				slog.Debugf("%s: half-close %v", tag, conn.RemoteAddr())
+			}
+		},
+		Done: func() {
+			slog.Debugf("%s: forward finished", tag)
+		},
+	}); err != nil {
+		slog.Errorf("%s: %s", tag, formats.Error(err))
 		ioClose(accepted)
 		ioClose(dialed)
 		return
 	}
-	slog.Debugf("%v -> %q: forward established", h.l.Addr(), h.id)
+	slog.Debugf("%s: forward established", tag)
 }
 
 // EmptyHandler rejects all connections

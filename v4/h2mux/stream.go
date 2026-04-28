@@ -57,6 +57,12 @@ func (c *h2StreamConn) Close() error {
 	return nil
 }
 
+// CloseWrite closes the write end of the stream, signalling EOF to the peer
+// while keeping the read end open to drain remaining data.
+func (c *h2StreamConn) CloseWrite() error {
+	return c.pw.Close()
+}
+
 func (c *h2StreamConn) LocalAddr() net.Addr  { return c.localAddr }
 func (c *h2StreamConn) RemoteAddr() net.Addr { return c.remoteAddr }
 

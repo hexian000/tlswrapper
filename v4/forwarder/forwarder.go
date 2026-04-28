@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/hexian000/gosnippets/formats"
@@ -18,10 +19,49 @@ import (
 // ErrConnLimit is returned when the maximum number of concurrent connections is exceeded
 var ErrConnLimit = errors.New("connection limit is exceeded")
 
-// Forwarder interface defines methods for forwarding connections
+// CloseWriter is implemented by connections that support a half-close (write-side shutdown),
+// such as *net.TCPConn or h2mux client streams.
+type CloseWriter interface {
+	CloseWrite() error
+}
+
+// EventHandler receives notifications from a forwarded connection pair.
+type EventHandler interface {
+	// OnHalfClose is called when one copy direction finishes.
+	// conn is the source connection of that direction (the side that sent EOF or the error).
+	// err is the raw error returned by io.Copy; nil means clean EOF.
+	// Called exactly twice, once per direction; may be called concurrently.
+	OnHalfClose(conn net.Conn, err error)
+	// OnDone is called once both copy directions have finished and all resources are released.
+	// Called exactly once, from a single goroutine.
+	OnDone()
+}
+
+// HandlerFuncs is a convenience adapter that implements EventHandler.
+// Nil function fields are safely ignored.
+type HandlerFuncs struct {
+	HalfClose func(net.Conn, error)
+	Done      func()
+}
+
+func (h HandlerFuncs) OnHalfClose(conn net.Conn, err error) {
+	if h.HalfClose != nil {
+		h.HalfClose(conn, err)
+	}
+}
+
+func (h HandlerFuncs) OnDone() {
+	if h.Done != nil {
+		h.Done()
+	}
+}
+
+// Forwarder manages bidirectional forwarding between connection pairs.
 type Forwarder interface {
-	Forward(accepted net.Conn, dialed net.Conn) error
-	ForwardSync(accepted net.Conn, dialed net.Conn) error
+	// Start begins forwarding data between accepted and dialed.
+	// handler may be nil. If Start returns nil, handler.OnDone is called exactly once
+	// after both directions finish and resources are released.
+	Start(accepted net.Conn, dialed net.Conn, handler EventHandler) error
 	Count() int
 	Close()
 }
@@ -62,10 +102,11 @@ func (f *forwarder) delConn(accepted net.Conn, dialed net.Conn) {
 	delete(f.conn, dialed)
 }
 
-func (f *forwarder) connCopy(dst net.Conn, src net.Conn) {
+// connCopy copies from src to dst and returns the io.Copy error (nil on clean EOF).
+func (f *forwarder) connCopy(dst net.Conn, src net.Conn) error {
 	defer func() {
-		if err := recover(); err != nil {
-			slog.Stackf(slog.LevelError, 0, "panic: %v", err)
+		if r := recover(); r != nil {
+			slog.Stackf(slog.LevelError, 0, "panic: %v", r)
 		}
 	}()
 	_, err := io.Copy(dst, src)
@@ -73,12 +114,12 @@ func (f *forwarder) connCopy(dst net.Conn, src net.Conn) {
 		!errors.Is(err, net.ErrClosed) &&
 		!errors.Is(err, syscall.EPIPE) {
 		slog.Warningf("stream error: %s", formats.Error(err))
-		return
 	}
+	return err
 }
 
-// Forward forwards data between accepted and dialed connections
-func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
+// Start begins forwarding data between accepted and dialed connections.
+func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandler) error {
 	select {
 	case <-f.g.CloseC():
 		return routines.ErrClosed
@@ -91,66 +132,62 @@ func (f *forwarder) Forward(accepted net.Conn, dialed net.Conn) error {
 		f.delConn(accepted, dialed)
 		<-f.counter
 	}
-	cleanupOnce := &sync.Once{}
-	if err := f.g.Go(func() {
-		defer cleanupOnce.Do(cleanup)
-		f.connCopy(accepted, dialed)
-	}); err != nil {
-		cleanupOnce.Do(cleanup)
-		return err
-	}
-	if err := f.g.Go(func() {
-		defer cleanupOnce.Do(cleanup)
-		f.connCopy(dialed, accepted)
-	}); err != nil {
-		cleanupOnce.Do(cleanup)
-		return err
-	}
-	return nil
-}
-
-// ForwardSync forwards data between accepted and dialed connections and blocks until both directions are done.
-func (f *forwarder) ForwardSync(accepted net.Conn, dialed net.Conn) error {
-	select {
-	case <-f.g.CloseC():
-		return routines.ErrClosed
-	case f.counter <- struct{}{}:
-	default:
-		return ErrConnLimit
-	}
-	f.addConn(accepted, dialed)
-	cleanup := func() {
-		f.delConn(accepted, dialed)
-		<-f.counter
-	}
-	var wg sync.WaitGroup
-	wg.Add(2)
-	cleanupOnce := &sync.Once{}
+	var remaining atomic.Int32
+	remaining.Store(2)
+	closeOnce := &sync.Once{}
 	run := func(dst, src net.Conn) {
-		defer wg.Done()
-		f.connCopy(dst, src)
-		// closing both connections unblocks the other direction
-		cleanupOnce.Do(func() {
-			_ = accepted.Close()
-			_ = dialed.Close()
-		})
+		err := f.connCopy(dst, src)
+		// On clean EOF, attempt a half-close so the peer can drain remaining data.
+		// On error or if half-close is not supported, force-close both connections.
+		if err == nil {
+			if cw, ok := dst.(CloseWriter); ok {
+				_ = cw.CloseWrite()
+			} else {
+				closeOnce.Do(func() {
+					_ = accepted.Close()
+					_ = dialed.Close()
+				})
+			}
+		} else {
+			closeOnce.Do(func() {
+				_ = accepted.Close()
+				_ = dialed.Close()
+			})
+		}
+		if handler != nil {
+			handler.OnHalfClose(src, err)
+		}
+		if remaining.Add(-1) == 0 {
+			cleanup()
+			if handler != nil {
+				handler.OnDone()
+			}
+		}
 	}
 	if err := f.g.Go(func() { run(accepted, dialed) }); err != nil {
 		cleanup()
 		return err
 	}
 	if err := f.g.Go(func() { run(dialed, accepted) }); err != nil {
-		// first goroutine already started; signal it to stop
-		cleanupOnce.Do(func() {
+		// Signal the first goroutine to stop.
+		closeOnce.Do(func() {
 			_ = accepted.Close()
 			_ = dialed.Close()
 		})
-		wg.Wait()
-		cleanup()
+		// The second direction never ran; synthesise its OnHalfClose (src=accepted)
+		// so the handler always receives exactly two calls.
+		if handler != nil {
+			handler.OnHalfClose(accepted, err)
+		}
+		if remaining.Add(-1) == 0 {
+			// First goroutine already finished; we are responsible for cleanup.
+			cleanup()
+			if handler != nil {
+				handler.OnDone()
+			}
+		}
 		return err
 	}
-	wg.Wait()
-	cleanup()
 	return nil
 }
 

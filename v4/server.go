@@ -277,12 +277,18 @@ func (s *Server) serveH2Conn(conn net.Conn) {
 // handleInboundStream forwards one accepted server-side stream to the configured connect address.
 func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
 	type doner interface{ Done() }
-	defer func() {
+	streamDone := func() {
 		if d, ok := stream.(doner); ok {
 			d.Done()
 		}
+	}
+	started := false
+	defer func() {
+		if !started {
+			_ = stream.Close()
+			streamDone()
+		}
 	}()
-	defer stream.Close()
 	s.stats.request.Add(1)
 	cfg, _ := s.getConfig()
 	dialAddr := cfg.ServiceEntry(peerID).Connect
@@ -308,13 +314,25 @@ func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
 		slog.Errorf("%s: %v", tag, err)
 		return
 	}
-	if err := s.f.ForwardSync(stream, dialed); err != nil {
+	if err := s.f.Start(stream, dialed, forwarder.HandlerFuncs{
+		HalfClose: func(conn net.Conn, err error) {
+			if err != nil {
+				slog.Debugf("%s: half-close %v: %s", tag, conn.RemoteAddr(), formats.Error(err))
+			} else {
+				slog.Debugf("%s: half-close %v", tag, conn.RemoteAddr())
+			}
+		},
+		Done: func() {
+			slog.Debugf("%s: stream finished", tag)
+			s.stats.success.Add(1)
+			streamDone()
+		},
+	}); err != nil {
 		slog.Errorf("%s: forward: %v", tag, err)
 		_ = dialed.Close()
 		return
 	}
-	slog.Debugf("%s: stream done", tag)
-	s.stats.success.Add(1)
+	started = true
 }
 
 // Listen starts listening on the given address
