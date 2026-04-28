@@ -27,32 +27,32 @@ type CloseWriter interface {
 
 // EventHandler receives notifications from a forwarded connection pair.
 type EventHandler interface {
-	// OnHalfClose is called when one copy direction finishes.
+	// OnHalfClosed is called when one copy direction finishes.
 	// conn is the source connection of that direction (the side that sent EOF or the error).
 	// err is the raw error returned by io.Copy; nil means clean EOF.
 	// Called exactly twice, once per direction; may be called concurrently.
-	OnHalfClose(conn net.Conn, err error)
-	// OnDone is called once both copy directions have finished and all resources are released.
+	OnHalfClosed(conn net.Conn, err error)
+	// OnClosed is called once both copy directions have finished and all resources are released.
 	// Called exactly once, from a single goroutine.
-	OnDone()
+	OnClosed()
 }
 
 // HandlerFuncs is a convenience adapter that implements EventHandler.
 // Nil function fields are safely ignored.
 type HandlerFuncs struct {
-	HalfClose func(net.Conn, error)
-	Done      func()
+	HalfClosed func(net.Conn, error)
+	Closed     func()
 }
 
-func (h HandlerFuncs) OnHalfClose(conn net.Conn, err error) {
-	if h.HalfClose != nil {
-		h.HalfClose(conn, err)
+func (h HandlerFuncs) OnHalfClosed(conn net.Conn, err error) {
+	if h.HalfClosed != nil {
+		h.HalfClosed(conn, err)
 	}
 }
 
-func (h HandlerFuncs) OnDone() {
-	if h.Done != nil {
-		h.Done()
+func (h HandlerFuncs) OnClosed() {
+	if h.Closed != nil {
+		h.Closed()
 	}
 }
 
@@ -155,12 +155,12 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 			})
 		}
 		if handler != nil {
-			handler.OnHalfClose(src, err)
+			handler.OnHalfClosed(src, err)
 		}
 		if remaining.Add(-1) == 0 {
 			cleanup()
 			if handler != nil {
-				handler.OnDone()
+				handler.OnClosed()
 			}
 		}
 	}
@@ -177,13 +177,13 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 		// The second direction never ran; synthesise its OnHalfClose (src=accepted)
 		// so the handler always receives exactly two calls.
 		if handler != nil {
-			handler.OnHalfClose(accepted, err)
+			handler.OnHalfClosed(accepted, err)
 		}
 		if remaining.Add(-1) == 0 {
 			// First goroutine already finished; we are responsible for cleanup.
 			cleanup()
 			if handler != nil {
-				handler.OnDone()
+				handler.OnClosed()
 			}
 		}
 		return err

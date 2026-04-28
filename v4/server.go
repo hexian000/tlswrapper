@@ -295,14 +295,14 @@ func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
 		return
 	}
 	if err := s.f.Start(stream, dialed, forwarder.HandlerFuncs{
-		HalfClose: func(conn net.Conn, err error) {
+		HalfClosed: func(conn net.Conn, err error) {
 			if err != nil {
 				slog.Debugf("%s: half-close %v: %s", tag, conn.RemoteAddr(), formats.Error(err))
 			} else {
 				slog.Debugf("%s: half-close %v", tag, conn.RemoteAddr())
 			}
 		},
-		Done: func() {
+		Closed: func() {
 			slog.Debugf("%s: stream finished", tag)
 			s.stats.success.Add(1)
 		},

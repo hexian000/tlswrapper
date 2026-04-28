@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -59,7 +60,7 @@ func (c *Config) maxConcurrentStreams() uint32 {
 	if c.MaxConcurrentStreams > 0 {
 		return c.MaxConcurrentStreams
 	}
-	return 256
+	return math.MaxUint32 - 1 // reserve 1 for the control stream
 }
 
 func (c *Config) grpcDialOptions() []grpc.DialOption {

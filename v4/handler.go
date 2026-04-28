@@ -88,14 +88,14 @@ func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
 	}
 	tag := fmt.Sprintf("%v -> %q", accepted.RemoteAddr(), h.id)
 	if err := h.s.f.Start(accepted, dialed, forwarder.HandlerFuncs{
-		HalfClose: func(conn net.Conn, err error) {
+		HalfClosed: func(conn net.Conn, err error) {
 			if err != nil {
 				slog.Debugf("%s: half-close %v: %s", tag, conn.RemoteAddr(), formats.Error(err))
 			} else {
 				slog.Debugf("%s: half-close %v", tag, conn.RemoteAddr())
 			}
 		},
-		Done: func() {
+		Closed: func() {
 			slog.Debugf("%s: forward finished", tag)
 		},
 	}); err != nil {
