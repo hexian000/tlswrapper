@@ -207,7 +207,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (*Session, error) {
 		return nil, ctx.Err()
 	}
 	if peerID != "" {
-		tag = fmt.Sprintf("%q => %q@%v", cfg.LocalID, peerID, dialAddr)
+		tag = fmt.Sprintf("%q => %q", cfg.LocalID, peerID)
 	}
 
 	cleanup := func() {
