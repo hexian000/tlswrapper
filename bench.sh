@@ -5,15 +5,33 @@ set -eu
 SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY="${SCRIPTDIR}/build/tlswrapper"
 LOGDIR="${SCRIPTDIR}/build"
+
+MUX_TLS_PORT=8443
+# NETEM_DELAY=100ms
+NETEM_DELAY=""
 PIDS=""
 
-# Add 100ms latency rootlessly by re-execing inside a user+network namespace.
-# Inside the new namespace we have CAP_NET_ADMIN and can apply tc netem.
-if [ -z "${BENCH_NETNS:-}" ]; then
-    exec unshare --user --net --map-root-user -- env BENCH_NETNS=1 "$0" "$@"
+if [ -n "${NETEM_DELAY}" ]; then
+    # Add latency rootlessly by re-execing inside a user+network namespace.
+    # Inside the new namespace we have CAP_NET_ADMIN and can apply tc netem.
+    if [ -z "${BENCH_NETNS:-}" ]; then
+        exec unshare --user --net --map-root-user -- env BENCH_NETNS=1 "$0" "$@"
+    fi
+    ip link set lo up
+    # Delay only the multiplexd TLS transport on port 8443.
+    # Leave the local iperf legs on loopback unshaped.
+    tc qdisc add dev lo root handle 1: prio bands 2 \
+        priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+    tc qdisc add dev lo parent 1:1 handle 10: netem delay "${NETEM_DELAY}"
+    tc filter add dev lo protocol ip parent 1:0 prio 1 u32 \
+        match ip protocol 6 0xff \
+        match ip dport "${MUX_TLS_PORT}" 0xffff \
+        flowid 1:1
+    tc filter add dev lo protocol ip parent 1:0 prio 1 u32 \
+        match ip protocol 6 0xff \
+        match ip sport "${MUX_TLS_PORT}" 0xffff \
+        flowid 1:1
 fi
-ip link set lo up
-tc qdisc add dev lo root netem delay 100ms
 
 cleanup() {
     # shellcheck disable=SC2086

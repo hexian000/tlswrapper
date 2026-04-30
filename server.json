@@ -10,9 +10,13 @@
       "@client-cert.pem"
     ]
   },
+  "-mux": {
+    "stream_window": 16777216,
+    "session_window": 16777216
+  },
   "timeout": 60,
   "keepalive": 25,
-  "loglevel": 0,
+  "loglevel": 5,
   "max_streams": 1000,
   "max_startups": "10:30:60"
 }
