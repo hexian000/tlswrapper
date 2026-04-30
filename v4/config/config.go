@@ -36,6 +36,10 @@ type Mux struct {
 	NoDelay bool `json:"nodelay"`
 	// Listen backlog for the mux socket
 	Backlog int `json:"backlog"`
+	// Fixed HTTP/2 connection-level flow-control window size in bytes (0 = gRPC dynamic flow control)
+	SessionWindow int `json:"session_window"`
+	// Fixed HTTP/2 stream-level flow-control window size in bytes (0 = gRPC dynamic flow control)
+	StreamWindow int `json:"stream_window"`
 	// Maximum concurrent streams per connection; maps to HTTP/2 MaxConcurrentStreams (0 = default 256)
 	MaxHalfOpen int `json:"max_halfopen"`
 }

@@ -6,6 +6,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"mime"
 	"os"
 	"strconv"
@@ -161,6 +162,12 @@ func (c *File) Validate() error {
 	clampInt(&c.SendTimeout, 5, c.PingTimeout)
 	if c.IdleTimeout != 0 {
 		clampInt(&c.IdleTimeout, 5, 31557600)
+	}
+	if c.Mux.SessionWindow != 0 {
+		clampInt(&c.Mux.SessionWindow, 65535, math.MaxInt32)
+	}
+	if c.Mux.StreamWindow != 0 {
+		clampInt(&c.Mux.StreamWindow, 65535, math.MaxInt32)
 	}
 	clampInt(&c.TCP.Backlog, 1, 4096)
 	return nil

@@ -2,7 +2,7 @@
 
 [![MIT License](https://img.shields.io/github/license/hexian000/tlswrapper)](https://github.com/hexian000/tlswrapper/blob/master/LICENSE)
 [![Build](https://github.com/hexian000/tlswrapper/actions/workflows/build.yaml/badge.svg)](https://github.com/hexian000/tlswrapper/actions/workflows/build.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/hexian000/tlswrapper/v3)](https://goreportcard.com/report/github.com/hexian000/tlswrapper/v3)
+[![Go Report Card](https://goreportcard.com/badge/github.com/hexian000/tlswrapper/v4)](https://goreportcard.com/report/github.com/hexian000/tlswrapper/v4)
 [![Downloads](https://img.shields.io/github/downloads/hexian000/tlswrapper/total.svg)](https://github.com/hexian000/tlswrapper/releases)
 [![Release](https://img.shields.io/github/release/hexian000/tlswrapper.svg?style=flat)](https://github.com/hexian000/tlswrapper/releases)
 
@@ -47,7 +47,7 @@ Status: **Stable**
 +-------------------------------+
 |          TCP traffic          |
 +-------------------------------+
-|   yamux stream multiplexing   |
+|   gRPC / HTTP/2 multiplexing  |
 +-------------------------------+
 |   mutual TLS 1.3 (optional)   |
 +-------------------------------+
@@ -138,6 +138,7 @@ Feel free to add more services, or bring up forwards/reverses between the same i
 - `"tls.authcerts"`: authorized peer certificates list; bundles are supported
 - `"service.peers"`: peer identity to mux endpoint mapping (client mode)
 - `"service.listen"`: peer identity to local listen address mapping
+- `"mux.session_window"` / `"mux.stream_window"`: optional fixed HTTP/2 connection/stream flow-control windows in bytes; leave both at `0` to keep gRPC dynamic flow control, or set either one to pin that window size explicitly
 
 See [source code](v4/config/config.go) for a complete list of all available options.
 
@@ -161,11 +162,11 @@ cd tlswrapper
 ./m.sh d
 
 # or install the latest development version
-go install github.com/hexian000/tlswrapper/v3/cmd/tlswrapper@master
+go install github.com/hexian000/tlswrapper/v4/cmd/tlswrapper@master
 ```
 
 ## Credits
 
 - [go](https://github.com/golang/go)
 - [gosnippets](https://github.com/hexian000/gosnippets)
-- [yamux](https://github.com/hashicorp/yamux)
+- [grpc-go](https://github.com/grpc/grpc-go)

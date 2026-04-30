@@ -283,11 +283,13 @@ func (ss *session) h2Dial(ctx context.Context) (*mux.Session, error) {
 	cfg.SetMuxConnParams(rawConn)
 	conn := snet.FlowMeter(rawConn, ss.s.flowStats)
 	h2cfg := &mux.Config{
-		TLSConfig:    tlscfg,
-		LocalID:      cfg.Service.ID,
-		KeepAlive:    time.Duration(cfg.KeepAlive) * time.Second,
-		PingTimeout:  time.Duration(cfg.PingTimeout) * time.Second,
-		WriteTimeout: time.Duration(cfg.SendTimeout) * time.Second,
+		TLSConfig:     tlscfg,
+		LocalID:       cfg.Service.ID,
+		KeepAlive:     time.Duration(cfg.KeepAlive) * time.Second,
+		PingTimeout:   time.Duration(cfg.PingTimeout) * time.Second,
+		WriteTimeout:  time.Duration(cfg.SendTimeout) * time.Second,
+		SessionWindow: int32(cfg.Mux.SessionWindow),
+		StreamWindow:  int32(cfg.Mux.StreamWindow),
 	}
 	h2sess, err := mux.Client(ctx, conn, h2cfg)
 	if err != nil {

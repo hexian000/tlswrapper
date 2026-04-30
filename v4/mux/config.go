@@ -33,14 +33,27 @@ type Config struct {
 	RejectInbound bool
 
 	// Client-side transport tuning.
-	KeepAlive    time.Duration // default 25s
-	PingTimeout  time.Duration // default 15s
-	WriteTimeout time.Duration // not used by gRPC; retained for API compatibility
+	KeepAlive     time.Duration // default 25s
+	PingTimeout   time.Duration // default 15s
+	WriteTimeout  time.Duration // not used by gRPC; retained for API compatibility
+	SessionWindow int32         // 0 = gRPC dynamic flow control
+	StreamWindow  int32         // 0 = gRPC dynamic flow control
 
 	// Server-side listener tuning.
 	MaxConcurrentStreams uint32        // default 256
 	IdleTimeout          time.Duration // default 0 (no idle timeout)
 }
+
+func windowSize(v int32) int32 {
+	if v >= 65535 {
+		return v
+	}
+	return 0
+}
+
+func (c *Config) sessionWindow() int32 { return windowSize(c.SessionWindow) }
+
+func (c *Config) streamWindow() int32 { return windowSize(c.StreamWindow) }
 
 func (c *Config) keepAlive() time.Duration {
 	if c.KeepAlive > 0 {
@@ -64,7 +77,7 @@ func (c *Config) maxConcurrentStreams() uint32 {
 }
 
 func (c *Config) grpcDialOptions() []grpc.DialOption {
-	return []grpc.DialOption{
+	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                c.keepAlive(),
@@ -74,10 +87,17 @@ func (c *Config) grpcDialOptions() []grpc.DialOption {
 		grpc.WithDisableRetry(),
 		grpc.WithDisableServiceConfig(),
 	}
+	if window := c.sessionWindow(); window > 0 {
+		opts = append(opts, grpc.WithStaticConnWindowSize(window))
+	}
+	if window := c.streamWindow(); window > 0 {
+		opts = append(opts, grpc.WithStaticStreamWindowSize(window))
+	}
+	return opts
 }
 
 func (c *Config) grpcServerOptions() []grpc.ServerOption {
-	return []grpc.ServerOption{
+	opts := []grpc.ServerOption{
 		grpc.Creds(insecure.NewCredentials()),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:              c.keepAlive(),
@@ -90,6 +110,13 @@ func (c *Config) grpcServerOptions() []grpc.ServerOption {
 		}),
 		grpc.MaxConcurrentStreams(c.maxConcurrentStreams()),
 	}
+	if window := c.sessionWindow(); window > 0 {
+		opts = append(opts, grpc.StaticConnWindowSize(window))
+	}
+	if window := c.streamWindow(); window > 0 {
+		opts = append(opts, grpc.StaticStreamWindowSize(window))
+	}
+	return opts
 }
 
 // oneConnListener is a net.Listener that serves exactly one pre-established connection.

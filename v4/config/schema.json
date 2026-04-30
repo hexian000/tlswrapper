@@ -7,6 +7,7 @@
         "type": {
             "description": "MIME type identifying the config format and version.",
             "type": "string",
+            "default": "application/x-tlswrapper-config; version=4",
             "const": "application/x-tlswrapper-config; version=4"
         },
         "log": {
@@ -41,11 +42,11 @@
             "type": "string"
         },
         "timeout": {
-            "description": "Session inactivity timeout in seconds. Clamped to [5, 86400]. Default: 60.",
+            "description": "Session ping timeout in seconds. Clamped to [5, 86400]. Default: 15.",
             "type": "integer",
             "minimum": 5,
             "maximum": 86400,
-            "default": 60
+            "default": 15
         },
         "keepalive": {
             "description": "Keepalive probe interval in seconds. Clamped to [1, timeout]. Default: 25.",
@@ -76,24 +77,22 @@
             "default": 4
         },
         "max_sessions": {
-            "description": "Maximum number of concurrent mux sessions. 0 means unlimited.",
+            "description": "Maximum number of concurrent mux sessions. 0 means unlimited. Default: 128.",
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "default": 128
         },
         "max_streams": {
-            "description": "Maximum concurrent streams per session. 0 uses the internal default (1024).",
+            "description": "Maximum concurrent streams per session. 0 uses the internal default (1024). Default: 0.",
             "type": "integer",
-            "minimum": 0
-        },
-        "stream_window": {
-            "description": "yamux flow-control window size in bytes per stream. Default: 262144.",
-            "type": "integer",
-            "default": 262144
+            "minimum": 0,
+            "default": 0
         },
         "max_startups": {
             "description": "Unauthenticated connection throttle in 'start:rate:full' format. Beyond 'start' connections, each new one is dropped with probability 'rate'% until the queue reaches 'full'.",
             "type": "string",
             "pattern": "^[0-9]+:[0-9]+:[0-9]+$",
+            "default": "10:30:60",
             "examples": [
                 "10:30:60"
             ]
@@ -119,6 +118,7 @@
                     "minItems": 1
                 }
             },
+            "required": ["cert", "key", "authcerts"],
             "additionalProperties": false
         },
         "mux": {
@@ -136,30 +136,31 @@
                     "default": true
                 },
                 "backlog": {
-                    "description": "Listen backlog for the mux socket. Clamped to [1, 4096]. Default: 16.",
+                    "description": "Listen backlog for the mux socket. Default: 16.",
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 4096,
                     "default": 16
                 },
-                "max_halfopen": {
-                    "description": "Maximum half-open (unacknowledged SYN) streams per session. 0 disables the limit; otherwise clamped to [1, 4096]. Default: 256.",
+                "session_window": {
+                    "description": "Fixed HTTP/2 connection-level flow-control window size in bytes. 0 leaves it unset. If either session_window or stream_window is non-zero, gRPC static flow control is used and any unset window stays at gRPC's default initial size. Non-zero values are clamped to [65535, 2147483647]. Default: 0.",
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 4096,
+                    "maximum": 2147483647,
+                    "default": 0
+                },
+                "stream_window": {
+                    "description": "Fixed HTTP/2 stream-level flow-control window size in bytes. 0 leaves it unset. If either session_window or stream_window is non-zero, gRPC static flow control is used and any unset window stays at gRPC's default initial size. Non-zero values are clamped to [65535, 2147483647]. Default: 0.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647,
+                    "default": 0
+                },
+                "max_halfopen": {
+                    "description": "Maximum concurrent streams per mux session. 0 disables the explicit limit. Default: 256.",
+                    "type": "integer",
+                    "minimum": 0,
                     "default": 256
-                },
-                "stream_open_timeout": {
-                    "description": "Stream open timeout in seconds. Default: 30.",
-                    "type": "integer",
-                    "minimum": 1,
-                    "default": 30
-                },
-                "stream_close_timeout": {
-                    "description": "Stream close timeout in seconds. Default: 120.",
-                    "type": "integer",
-                    "minimum": 1,
-                    "default": 120
                 }
             },
             "additionalProperties": false
@@ -169,9 +170,9 @@
             "type": "object",
             "properties": {
                 "keepalive": {
-                    "description": "Enable TCP keepalive on local sockets. Default: true.",
+                    "description": "Enable TCP keepalive on local sockets. Default: false.",
                     "type": "boolean",
-                    "default": true
+                    "default": false
                 },
                 "nodelay": {
                     "description": "Enable TCP_NODELAY on local sockets. Default: true.",

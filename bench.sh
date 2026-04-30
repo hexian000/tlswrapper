@@ -7,52 +7,46 @@ BINARY="${SCRIPTDIR}/build/tlswrapper"
 LOGDIR="${SCRIPTDIR}/build"
 PIDS=""
 
+# Add 100ms latency rootlessly by re-execing inside a user+network namespace.
+# Inside the new namespace we have CAP_NET_ADMIN and can apply tc netem.
+if [ -z "${BENCH_NETNS:-}" ]; then
+    exec unshare --user --net --map-root-user -- env BENCH_NETNS=1 "$0" "$@"
+fi
+ip link set lo up
+tc qdisc add dev lo root netem delay 100ms
+
 cleanup() {
     # shellcheck disable=SC2086
     [ -n "$PIDS" ] && kill $PIDS 2>/dev/null || true
-    sleep 1
+    sleep 0.2
     [ -n "$PIDS" ] && kill -9 $PIDS 2>/dev/null || true
     wait 2>/dev/null || true
 }
 
 trap cleanup EXIT INT TERM
 
-wait_port() {
-    _host="$1"
-    _port="$2"
-    _tries=50
-    while [ "$_tries" -gt 0 ]; do
-        nc -z "$_host" "$_port" 2>/dev/null && return 0
-        sleep 0.1
-        _tries=$((_tries - 1))
-    done
-    printf 'timeout waiting for %s:%s\n' "$_host" "$_port" >&2
-    return 1
-}
-
 # Generate certificates if not present
 if [ ! -f "${SCRIPTDIR}/server-cert.pem" ] || [ ! -f "${SCRIPTDIR}/client-cert.pem" ]; then
     printf 'Generating certificates...\n'
-    (cd "${SCRIPTDIR}" && timeout 30 "${BINARY}" --gencerts client,server)
+    (cd "${SCRIPTDIR}" && timeout 30 "${BINARY}" -gencerts client,server)
 fi
 
 # Start iperf3 server on port 5201
 printf 'Starting iperf3 server...\n'
 iperf3 -s -p 5201 >"${LOGDIR}/iperf3-server.log" 2>&1 &
 PIDS="$!"
-wait_port 127.0.0.1 5201
 
 # Start tlswrapper server
 printf 'Starting tlswrapper server...\n'
 "${BINARY}" -c "${SCRIPTDIR}/server.json" >"${LOGDIR}/tlswrapper-server.log" 2>&1 &
 PIDS="$PIDS $!"
-wait_port 127.0.0.1 8443
 
 # Start tlswrapper client
 printf 'Starting tlswrapper client...\n'
-"${BINARY}" -c "${SCRIPTDIR}/client.json" >"${LOGDIR}/multiplexd-client.log" 2>&1 &
+"${BINARY}" -c "${SCRIPTDIR}/client.json" >"${LOGDIR}/tlswrapper-client.log" 2>&1 &
 PIDS="$PIDS $!"
-wait_port 127.0.0.1 5202
+
+sleep 1
 
 # Run iperf3 uplink benchmark
 printf 'Running iperf3 uplink benchmark...\n'
