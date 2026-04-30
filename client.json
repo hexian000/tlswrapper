@@ -12,6 +12,5 @@
   "timeout": 60,
   "idle_timeout": 0,
   "keepalive": 25,
-  "stream_window": 16384,
-  "loglevel": 8
+  "loglevel": 0
 }

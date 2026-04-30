@@ -12,7 +12,7 @@
   },
   "timeout": 60,
   "keepalive": 25,
-  "loglevel": 8,
+  "loglevel": 0,
   "max_streams": 1000,
   "max_startups": "10:30:60"
 }
