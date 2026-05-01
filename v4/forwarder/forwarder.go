@@ -19,6 +19,14 @@ import (
 // ErrConnLimit is returned when the maximum number of concurrent connections is exceeded
 var ErrConnLimit = errors.New("connection limit is exceeded")
 
+// copyBufPool pools 32 KiB buffers reused across io.CopyBuffer calls.
+var copyBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 32*1024)
+		return &b
+	},
+}
+
 // CloseWriter is implemented by connections that support a half-close (write-side shutdown),
 // such as *net.TCPConn or mux client streams.
 type CloseWriter interface {
@@ -102,14 +110,16 @@ func (f *forwarder) delConn(accepted net.Conn, dialed net.Conn) {
 	delete(f.conn, dialed)
 }
 
-// connCopy copies from src to dst and returns the io.Copy error (nil on clean EOF).
+// connCopy copies from src to dst and returns the io.CopyBuffer error (nil on clean EOF).
 func (f *forwarder) connCopy(dst net.Conn, src net.Conn) error {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Stackf(slog.LevelError, 0, "panic: %v", r)
 		}
 	}()
-	_, err := io.Copy(dst, src)
+	bp := copyBufPool.Get().(*[]byte)
+	_, err := io.CopyBuffer(dst, src, *bp)
+	copyBufPool.Put(bp)
 	if err != nil &&
 		!errors.Is(err, net.ErrClosed) &&
 		!errors.Is(err, syscall.EPIPE) {

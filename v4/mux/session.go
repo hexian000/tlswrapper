@@ -6,8 +6,8 @@ package mux
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -196,7 +196,7 @@ func (s *Session) Open(ctx context.Context) (net.Conn, error) {
 	}
 
 	// Server side: send OpenRequest and wait for client to dial back.
-	rid := fmt.Sprintf("%d", s.openSeq.Add(1))
+	rid := strconv.FormatInt(s.openSeq.Add(1), 10)
 	ch := make(chan net.Conn, 1)
 	s.pendingMu.Lock()
 	s.pending[rid] = ch

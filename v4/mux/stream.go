@@ -12,6 +12,9 @@ import (
 	muxpb "github.com/hexian000/tlswrapper/v4/mux/proto"
 )
 
+// chunkPool pools *muxpb.Chunk values to reduce per-write allocations.
+var chunkPool = sync.Pool{New: func() any { return &muxpb.Chunk{} }}
+
 // h2Addr is a simple net.Addr implementation used as a fallback.
 type h2Addr struct{ Addr string }
 
@@ -76,7 +79,12 @@ func (s *grpcStream) Write(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
-	if err := s.sender.Send(&muxpb.Chunk{Data: b}); err != nil {
+	c := chunkPool.Get().(*muxpb.Chunk)
+	c.Data = b
+	err := s.sender.Send(c)
+	c.Data = nil
+	chunkPool.Put(c)
+	if err != nil {
 		return 0, err
 	}
 	return len(b), nil
