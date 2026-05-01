@@ -188,7 +188,7 @@ func (t *tunnel) run() {
 			t.l = nil
 		}
 		if t.ss != nil {
-			_ = t.ss.Close()
+			ioClose(t.ss)
 			t.ss = nil
 		}
 	}()
@@ -280,7 +280,7 @@ func (t *tunnel) dial(ctx context.Context) (*mux.Session, error) {
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
-	setMuxConnParams(cfg.Mux, rawConn)
+	setTCPConnParams(cfg.Mux.TCP, rawConn)
 	conn := snet.FlowMeter(rawConn, t.s.flowStats)
 	h2cfg := &mux.Config{
 		TLSConfig:     tlscfg,

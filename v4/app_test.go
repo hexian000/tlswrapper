@@ -58,7 +58,7 @@ func newPlaintextConfig(t *testing.T, overrides map[string]any) *config.File {
 		"keepalive":    5,
 		"send_timeout": 8,
 		"max_startups": "10:30:60",
-		"mux":          map[string]any{"nodelay": true, "backlog": 4, "max_halfopen": 16},
+		"mux":          map[string]any{"tcp": map[string]any{"nodelay": true, "backlog": 4}, "max_halfopen": 16},
 		"tcp":          map[string]any{"nodelay": true, "backlog": 4},
 	}
 	for k, v := range overrides {

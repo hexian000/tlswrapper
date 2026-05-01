@@ -43,7 +43,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	start := time.Now()
 	tag := fmt.Sprintf("? <= %v", conn.RemoteAddr())
 	cfg, tlscfg := h.s.getConfig()
-	setMuxConnParams(cfg.Mux, conn)
+	setTCPConnParams(cfg.Mux.TCP, conn)
 	conn = snet.FlowMeter(conn, h.s.flowStats)
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)

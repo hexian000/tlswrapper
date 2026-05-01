@@ -137,6 +137,32 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
+	t.Run("clamps-mux-backlog-low", func(t *testing.T) {
+		c := Default
+		c.Mux.TCP.Backlog = 0
+		if err := c.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if c.Mux.TCP.Backlog != 1 {
+			t.Fatalf("Mux.TCP.Backlog = %d, want 1", c.Mux.TCP.Backlog)
+		}
+	})
+
+	t.Run("clamps-socket-buffers-low", func(t *testing.T) {
+		c := Default
+		c.Mux.TCP.ReadBuffer = -1
+		c.TCP.WriteBuffer = -1
+		if err := c.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if c.Mux.TCP.ReadBuffer != 1 {
+			t.Fatalf("Mux.TCP.RcvBuf = %d, want 1", c.Mux.TCP.ReadBuffer)
+		}
+		if c.TCP.WriteBuffer != 1 {
+			t.Fatalf("TCP.SndBuf = %d, want 1", c.TCP.WriteBuffer)
+		}
+	})
+
 	t.Run("rejects-wrong-type", func(t *testing.T) {
 		c := Default
 		c.Type = "text/plain"
@@ -201,6 +227,32 @@ func TestLoad(t *testing.T) {
 		}
 		if cfg.APIListen != "127.0.0.1:9090" {
 			t.Fatalf("APIListen = %q, want %q", cfg.APIListen, "127.0.0.1:9090")
+		}
+	})
+
+	t.Run("loads-socket-buffers", func(t *testing.T) {
+		data, _ := json.Marshal(map[string]any{
+			"type": Type,
+			"mux": map[string]any{
+				"tcp": map[string]any{
+					"rcvbuf": 4096,
+					"sndbuf": 8192,
+				},
+			},
+			"tcp": map[string]any{
+				"rcvbuf": 16384,
+				"sndbuf": 32768,
+			},
+		})
+		cfg, err := Load(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Mux.TCP.ReadBuffer != 4096 || cfg.Mux.TCP.WriteBuffer != 8192 {
+			t.Fatalf("Mux.TCP buffers = (%d,%d), want (4096,8192)", cfg.Mux.TCP.ReadBuffer, cfg.Mux.TCP.WriteBuffer)
+		}
+		if cfg.TCP.ReadBuffer != 16384 || cfg.TCP.WriteBuffer != 32768 {
+			t.Fatalf("TCP buffers = (%d,%d), want (16384,32768)", cfg.TCP.ReadBuffer, cfg.TCP.WriteBuffer)
 		}
 	})
 }

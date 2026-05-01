@@ -169,6 +169,19 @@ func (c *File) Validate() error {
 	if c.Mux.StreamWindow != 0 {
 		clampInt(&c.Mux.StreamWindow, 65535, math.MaxInt32)
 	}
+	if c.Mux.TCP.ReadBuffer != 0 {
+		clampInt(&c.Mux.TCP.ReadBuffer, 1, math.MaxInt32)
+	}
+	if c.Mux.TCP.WriteBuffer != 0 {
+		clampInt(&c.Mux.TCP.WriteBuffer, 1, math.MaxInt32)
+	}
+	clampInt(&c.Mux.TCP.Backlog, 1, 4096)
+	if c.TCP.ReadBuffer != 0 {
+		clampInt(&c.TCP.ReadBuffer, 1, math.MaxInt32)
+	}
+	if c.TCP.WriteBuffer != 0 {
+		clampInt(&c.TCP.WriteBuffer, 1, math.MaxInt32)
+	}
 	clampInt(&c.TCP.Backlog, 1, 4096)
 	return nil
 }

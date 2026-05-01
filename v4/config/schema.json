@@ -122,25 +122,46 @@
             "additionalProperties": false
         },
         "mux": {
-            "description": "Socket and buffer settings for the mux (transport-level) connection.",
+            "description": "Socket and flow-control settings for the mux (transport-level) connection.",
             "type": "object",
             "properties": {
-                "keepalive": {
-                    "description": "Enable TCP keepalive on the mux socket. Default: false.",
-                    "type": "boolean",
-                    "default": false
-                },
-                "nodelay": {
-                    "description": "Enable TCP_NODELAY on the mux socket. Default: true.",
-                    "type": "boolean",
-                    "default": true
-                },
-                "backlog": {
-                    "description": "Listen backlog for the mux socket. Default: 16.",
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 4096,
-                    "default": 16
+                "tcp": {
+                    "description": "TCP socket options for the mux socket.",
+                    "type": "object",
+                    "properties": {
+                        "keepalive": {
+                            "description": "Enable TCP keepalive on the mux socket. Default: false.",
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "nodelay": {
+                            "description": "Enable TCP_NODELAY on the mux socket. Default: true.",
+                            "type": "boolean",
+                            "default": true
+                        },
+                        "rcvbuf": {
+                            "description": "Socket receive buffer size in bytes for the mux socket. 0 leaves the OS default unchanged. Non-zero values are clamped to [1, 2147483647]. Default: 0.",
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 2147483647,
+                            "default": 0
+                        },
+                        "sndbuf": {
+                            "description": "Socket send buffer size in bytes for the mux socket. 0 leaves the OS default unchanged. Non-zero values are clamped to [1, 2147483647]. Default: 0.",
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 2147483647,
+                            "default": 0
+                        },
+                        "backlog": {
+                            "description": "Listen backlog for the mux socket. Clamped to [1, 4096]. Default: 16.",
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 4096,
+                            "default": 16
+                        }
+                    },
+                    "additionalProperties": false
                 },
                 "session_window": {
                     "description": "Fixed HTTP/2 connection-level flow-control window size in bytes. 0 leaves it unset. If either session_window or stream_window is non-zero, gRPC static flow control is used and any unset window stays at gRPC's default initial size. Non-zero values are clamped to [65535, 2147483647]. Default: 0.",
@@ -178,6 +199,20 @@
                     "description": "Enable TCP_NODELAY on local sockets. Default: true.",
                     "type": "boolean",
                     "default": true
+                },
+                "rcvbuf": {
+                    "description": "Socket receive buffer size in bytes for local sockets. 0 leaves the OS default unchanged. Non-zero values are clamped to [1, 2147483647]. Default: 0.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647,
+                    "default": 0
+                },
+                "sndbuf": {
+                    "description": "Socket send buffer size in bytes for local sockets. 0 leaves the OS default unchanged. Non-zero values are clamped to [1, 2147483647]. Default: 0.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647,
+                    "default": 0
                 },
                 "backlog": {
                     "description": "Listen backlog for the local listener. Clamped to [1, 4096]. Default: 16.",

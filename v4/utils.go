@@ -21,22 +21,33 @@ func ioClose(c io.Closer) {
 	}
 }
 
-// setMuxConnParams applies TCP socket options for the mux-layer connection
-func setMuxConnParams(mux config.Mux, conn net.Conn) {
-	tcpConn, ok := conn.(*net.TCPConn)
-	if !ok {
-		return
-	}
-	_ = tcpConn.SetNoDelay(mux.NoDelay)
-	_ = tcpConn.SetKeepAlive(mux.KeepAlive)
+type tcpConn interface {
+	SetNoDelay(bool) error
+	SetKeepAlive(bool) error
+	SetReadBuffer(bytes int) error
+	SetWriteBuffer(bytes int) error
 }
 
-// setTCPConnParams applies TCP socket options for a local (application-side) connection
+// setTCPConnParams applies TCP socket options to a connection.
 func setTCPConnParams(tcp config.TCP, conn net.Conn) {
-	tcpConn, ok := conn.(*net.TCPConn)
+	tcpConn, ok := conn.(tcpConn)
 	if !ok {
 		return
 	}
-	_ = tcpConn.SetNoDelay(tcp.NoDelay)
-	_ = tcpConn.SetKeepAlive(tcp.KeepAlive)
+	if err := tcpConn.SetNoDelay(tcp.NoDelay); err != nil {
+		slog.Warningf("SetNoDelay: %s", formats.Error(err))
+	}
+	if err := tcpConn.SetKeepAlive(tcp.KeepAlive); err != nil {
+		slog.Warningf("SetKeepAlive: %s", formats.Error(err))
+	}
+	if tcp.ReadBuffer > 0 {
+		if err := tcpConn.SetReadBuffer(tcp.ReadBuffer); err != nil {
+			slog.Warningf("SetReadBuffer %d: %s", tcp.ReadBuffer, formats.Error(err))
+		}
+	}
+	if tcp.WriteBuffer > 0 {
+		if err := tcpConn.SetWriteBuffer(tcp.WriteBuffer); err != nil {
+			slog.Warningf("SetWriteBuffer %d: %s", tcp.WriteBuffer, formats.Error(err))
+		}
+	}
 }

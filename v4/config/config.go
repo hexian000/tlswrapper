@@ -28,14 +28,10 @@ type TLS struct {
 	AuthCerts []string `json:"authcerts"`
 }
 
-// Mux holds socket and buffer settings for the mux (transport-level) connection.
+// Mux holds settings for the mux (transport-level) connection.
 type Mux struct {
-	// Enable OS-level TCP keepalive on the mux socket
-	KeepAlive bool `json:"keepalive"`
-	// Enable TCP_NODELAY on the mux socket
-	NoDelay bool `json:"nodelay"`
-	// Listen backlog for the mux socket
-	Backlog int `json:"backlog"`
+	// TCP socket options for the mux socket
+	TCP TCP `json:"tcp"`
 	// Fixed HTTP/2 connection-level flow-control window size in bytes (0 = gRPC dynamic flow control)
 	SessionWindow int `json:"session_window"`
 	// Fixed HTTP/2 stream-level flow-control window size in bytes (0 = gRPC dynamic flow control)
@@ -44,13 +40,17 @@ type Mux struct {
 	MaxHalfOpen int `json:"max_halfopen"`
 }
 
-// TCP holds socket options for local (application-side) TCP connections.
+// TCP holds TCP socket options.
 type TCP struct {
-	// Enable TCP keepalive on local sockets
+	// Enable TCP keepalive
 	KeepAlive bool `json:"keepalive"`
-	// Enable TCP_NODELAY on local sockets
+	// Enable TCP_NODELAY
 	NoDelay bool `json:"nodelay"`
-	// Listen backlog for the local listener
+	// Receive buffer size in bytes (0 = OS default)
+	ReadBuffer int `json:"rcvbuf"`
+	// Send buffer size in bytes (0 = OS default)
+	WriteBuffer int `json:"sndbuf"`
+	// Listen backlog for the socket listener
 	Backlog int `json:"backlog"`
 }
 
@@ -133,8 +133,11 @@ var Default = File{
 	MaxStartups: "10:30:60",
 
 	Mux: Mux{
-		NoDelay:     true,
-		Backlog:     16,
+		TCP: TCP{
+			KeepAlive: false,
+			NoDelay:   true,
+			Backlog:   16,
+		},
 		MaxHalfOpen: 256,
 	},
 	TCP: TCP{
