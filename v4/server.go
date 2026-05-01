@@ -47,8 +47,8 @@ type Server struct {
 	recentEvents eventlog.Recent
 
 	mu       sync.RWMutex
-	services map[string]*session // map[peerServiceId]session — config-driven sessions
-	sessions []*session          // all sessions (inbound + outbound)
+	services map[string]*tunnel // map[peerServiceId]session — config-driven sessions
+	sessions []*tunnel          // all sessions (inbound + outbound)
 	ctx      contextMgr
 
 	dialer net.Dialer
@@ -69,7 +69,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
 		cfg:      cfg,
-		services: make(map[string]*session),
+		services: make(map[string]*tunnel),
 		ctx: contextMgr{
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
@@ -98,7 +98,7 @@ func maxStreams(cfg *config.File) int {
 }
 
 // findSession returns the first session with the given peerServiceId that has an active connection.
-func (s *Server) findSession(peerServiceId string) *session {
+func (s *Server) findSession(peerServiceId string) *tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, ss := range s.sessions {
@@ -109,21 +109,21 @@ func (s *Server) findSession(peerServiceId string) *session {
 	return nil
 }
 
-func (s *Server) getAllSessions() []*session {
+func (s *Server) getAllSessions() []*tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]*session, len(s.sessions))
+	result := make([]*tunnel, len(s.sessions))
 	copy(result, s.sessions)
 	return result
 }
 
-func (s *Server) addSession(ss *session) {
+func (s *Server) addSession(ss *tunnel) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions = append(s.sessions, ss)
 }
 
-func (s *Server) removeSession(target *session) {
+func (s *Server) removeSession(target *tunnel) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, ss := range s.sessions {
@@ -241,7 +241,7 @@ func (s *Server) serveH2Conn(h2sess *mux.Session) {
 	s.recentEvents.Add(now, msg)
 	s.stats.authorized.Add(1)
 	inbound := newSession(h2sess.PeerID(), "", s)
-	inbound.h2sess = h2sess
+	inbound.ss = h2sess
 	inbound.lastChanged = now
 	s.addSession(inbound)
 	s.numSessions.Add(1)
