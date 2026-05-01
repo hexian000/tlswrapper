@@ -31,7 +31,7 @@ type tunnel struct {
 
 	mu          sync.RWMutex
 	ss          *mux.Session
-	idleSince   time.Time // when h2sess became stream-less (zero = not idle)
+	idleSince   time.Time // when ss became stream-less (zero = not idle)
 	closeSig    chan struct{}
 	redialSig   chan struct{}
 	redialCount int
@@ -254,11 +254,11 @@ func (t *tunnel) getSession() *mux.Session {
 
 // OpenStream opens a new stream over the session's active mux connection.
 func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
-	h2sess := t.getSession()
-	if h2sess == nil {
+	ss := t.getSession()
+	if ss == nil {
 		return nil, ErrNoSession
 	}
-	return h2sess.Open(ctx)
+	return ss.Open(ctx)
 }
 
 // dial dials to the remote, performs TLS (if configured), and establishes an mux session.
@@ -291,24 +291,24 @@ func (t *tunnel) dial(ctx context.Context) (*mux.Session, error) {
 		SessionWindow: int32(cfg.Mux.SessionWindow),
 		StreamWindow:  int32(cfg.Mux.StreamWindow),
 	}
-	h2sess, err := mux.Client(ctx, conn, h2cfg)
+	ss, err := mux.Client(ctx, conn, h2cfg)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
 
-	t.addSession(h2sess)
+	t.addSession(ss)
 	// When the session closes, trigger a redial.
 	if err := t.s.g.Go(func() {
-		defer t.delSession(h2sess)
-		<-h2sess.CloseChan()
+		defer t.delSession(ss)
+		<-ss.CloseChan()
 	}); err != nil {
-		t.delSession(h2sess)
+		t.delSession(ss)
 		return nil, err
 	}
 
 	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
-	return h2sess, nil
+	return ss, nil
 }
 
 // SessionStats holds statistics of a session.

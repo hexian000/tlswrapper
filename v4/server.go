@@ -222,44 +222,44 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	}
 }
 
-// serveH2Conn handles one inbound mux session.
+// serveSession handles one inbound mux session.
 // It blocks until the session is closed.
-func (s *Server) serveH2Conn(h2sess *mux.Session) {
-	// When the group closes, close h2sess to unblock Accept().
+func (s *Server) serveSession(ss *mux.Session) {
+	// When the group closes, close ss to unblock Accept().
 	if err := s.g.Go(func() {
 		select {
 		case <-s.g.CloseC():
-			_ = h2sess.Close()
-		case <-h2sess.CloseChan():
+			_ = ss.Close()
+		case <-ss.CloseChan():
 		}
 	}); err != nil {
 		return
 	}
 	now := time.Now()
-	msg := fmt.Sprintf("%s: session established", h2sess.Tag())
+	msg := fmt.Sprintf("%s: session established", ss.Tag())
 	slog.Notice(msg)
 	s.recentEvents.Add(now, msg)
 	s.stats.authorized.Add(1)
-	inbound := newTunnel(h2sess.PeerID(), "", s)
-	inbound.ss = h2sess
+	inbound := newTunnel(ss.PeerID(), "", s)
+	inbound.ss = ss
 	inbound.lastChanged = now
 	s.addSession(inbound)
 	s.numSessions.Add(1)
 	defer func() {
 		now := time.Now()
-		msg := fmt.Sprintf("%s: session closed", h2sess.Tag())
+		msg := fmt.Sprintf("%s: session closed", ss.Tag())
 		slog.Notice(msg)
 		s.recentEvents.Add(now, msg)
 		s.numSessions.Add(^uint32(0))
 		s.removeSession(inbound)
 	}()
 	for {
-		stream, err := h2sess.Accept()
+		stream, err := ss.Accept()
 		if err != nil {
 			return
 		}
 		if err := s.g.Go(func() {
-			s.handleInboundStream(h2sess.PeerID(), stream)
+			s.handleInboundStream(ss.PeerID(), stream)
 		}); err != nil {
 			ioClose(stream)
 			return
@@ -445,8 +445,8 @@ func (s *Server) Shutdown() error {
 	s.g.Close()
 	// close all active HTTP/2 sessions to unblock Serve loops
 	for _, ss := range s.getAllSessions() {
-		if h2sess := ss.getSession(); h2sess != nil {
-			_ = h2sess.Close()
+		if ss := ss.getSession(); ss != nil {
+			_ = ss.Close()
 		}
 	}
 	// close all forwards

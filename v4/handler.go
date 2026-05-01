@@ -56,13 +56,13 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 		MaxConcurrentStreams: uint32(cfg.Mux.MaxHalfOpen),
 		IdleTimeout:          cfg.Timeout(),
 	}
-	h2sess, err := mux.Server(ctx, conn, h2cfg)
+	ss, err := mux.Server(ctx, conn, h2cfg)
 	if err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
 	}
 	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
-	h.s.serveH2Conn(h2sess)
+	h.s.serveSession(ss)
 }
 
 // MuxHandler forwards connections over the session

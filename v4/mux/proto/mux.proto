@@ -26,7 +26,8 @@ message ServerHello {
 
 // OpenRequest is sent by the server on the Control stream to ask the client to
 // open a new Stream RPC back to the server. The client identifies the resulting
-// Stream RPC by sending request_id in the outgoing gRPC metadata.
+// Stream RPC by setting x-mux-request-id in the outgoing gRPC metadata to
+// request_id.
 message OpenRequest {
   string request_id = 1;
 }
@@ -43,7 +44,7 @@ message ControlMessage {
 // Mux provides logical stream multiplexing over one gRPC connection.
 //
 // Lifecycle:
-//  1. Client calls Control; sends Hello; server replies with HelloAck.
+//  1. Client calls Control; sends ClientHello; server replies with ServerHello.
 //     The control stream stays open for the lifetime of the session.
 //  2. Client-initiated streams: client calls Stream directly.
 //  3. Server-initiated streams: server sends OpenRequest on Control;

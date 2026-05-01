@@ -11,6 +11,7 @@ package proto
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -33,7 +34,7 @@ const (
 // Mux provides logical stream multiplexing over one gRPC connection.
 //
 // Lifecycle:
-//  1. Client calls Control; sends Hello; server replies with HelloAck.
+//  1. Client calls Control; sends ClientHello; server replies with ServerHello.
 //     The control stream stays open for the lifetime of the session.
 //  2. Client-initiated streams: client calls Stream directly.
 //  3. Server-initiated streams: server sends OpenRequest on Control;
@@ -90,7 +91,7 @@ type Mux_StreamClient = grpc.BidiStreamingClient[Chunk, Chunk]
 // Mux provides logical stream multiplexing over one gRPC connection.
 //
 // Lifecycle:
-//  1. Client calls Control; sends Hello; server replies with HelloAck.
+//  1. Client calls Control; sends ClientHello; server replies with ServerHello.
 //     The control stream stays open for the lifetime of the session.
 //  2. Client-initiated streams: client calls Stream directly.
 //  3. Server-initiated streams: server sends OpenRequest on Control;

@@ -10,11 +10,12 @@
 package proto
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -177,7 +178,8 @@ func (x *ServerHello) GetRejectInbound() bool {
 
 // OpenRequest is sent by the server on the Control stream to ask the client to
 // open a new Stream RPC back to the server. The client identifies the resulting
-// Stream RPC by sending request_id in the outgoing gRPC metadata.
+// Stream RPC by setting x-mux-request-id in the outgoing gRPC metadata to
+// request_id.
 type OpenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
