@@ -18,12 +18,14 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/config"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const maxContentLength = 4194304
@@ -266,166 +268,146 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Prometheus text exposition format helpers
-
-func sanitizeLabelValue(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(s)
-}
-
-func writePromHelp(w io.Writer, name, help string) {
-	fprintf(w, "# HELP %s %s\n", name, help)
-}
-
-func writePromType(w io.Writer, name, typ string) {
-	fprintf(w, "# TYPE %s %s\n", name, typ)
-}
-
-func writePromGauge(w io.Writer, name, help string, value float64, labels ...string) {
-	writePromHelp(w, name, help)
-	writePromType(w, name, "gauge")
-	if len(labels) > 0 {
-		fprintf(w, "%s{%s} %s\n", name, strings.Join(labels, ","), formatFloat(value))
-	} else {
-		fprintf(w, "%s %s\n", name, formatFloat(value))
-	}
-}
-
-func writePromCounter(w io.Writer, name, help string, value float64, labels ...string) {
-	writePromHelp(w, name, help)
-	writePromType(w, name, "counter")
-	if len(labels) > 0 {
-		fprintf(w, "%s{%s} %s\n", name, strings.Join(labels, ","), formatFloat(value))
-	} else {
-		fprintf(w, "%s %s\n", name, formatFloat(value))
-	}
-}
-
-func formatFloat(v float64) string {
-	return strconv.FormatFloat(v, 'g', -1, 64)
-}
-
-func label(key, value string) string {
-	return fmt.Sprintf(`%s="%s"`, key, sanitizeLabelValue(value))
-}
-
-type apiMetricsHandler struct {
+type serverMetricsCollector struct {
 	s *Server
+
+	uptimeDesc          *prometheus.Desc
+	sessionsDesc        *prometheus.Desc
+	streamsDesc         *prometheus.Desc
+	rxBytesDesc         *prometheus.Desc
+	txBytesDesc         *prometheus.Desc
+	acceptedDesc        *prometheus.Desc
+	servedDesc          *prometheus.Desc
+	authorizedDesc      *prometheus.Desc
+	requestsDesc        *prometheus.Desc
+	requestsSuccessDesc *prometheus.Desc
+	sessionUpDesc       *prometheus.Desc
+	sessionStreamsDesc  *prometheus.Desc
 }
 
-// ServeHTTP handles Prometheus-compatible metrics requests
-func (h *apiMetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
+func newServerMetricsCollector(s *Server) prometheus.Collector {
+	return &serverMetricsCollector{
+		s: s,
+		uptimeDesc: prometheus.NewDesc(
+			"tlswrapper_uptime_seconds",
+			"Server uptime in seconds.",
+			nil, nil),
+		sessionsDesc: prometheus.NewDesc(
+			"tlswrapper_sessions",
+			"Number of active sessions.",
+			nil, nil),
+		streamsDesc: prometheus.NewDesc(
+			"tlswrapper_streams",
+			"Number of active streams.",
+			nil, nil),
+		rxBytesDesc: prometheus.NewDesc(
+			"tlswrapper_rx_bytes_total",
+			"Total bytes received.",
+			nil, nil),
+		txBytesDesc: prometheus.NewDesc(
+			"tlswrapper_tx_bytes_total",
+			"Total bytes transmitted.",
+			nil, nil),
+		acceptedDesc: prometheus.NewDesc(
+			"tlswrapper_accepted_total",
+			"Total accepted connections.",
+			nil, nil),
+		servedDesc: prometheus.NewDesc(
+			"tlswrapper_served_total",
+			"Total served connections.",
+			nil, nil),
+		authorizedDesc: prometheus.NewDesc(
+			"tlswrapper_authorized_total",
+			"Total authorized connections.",
+			nil, nil),
+		requestsDesc: prometheus.NewDesc(
+			"tlswrapper_requests_total",
+			"Total requests.",
+			nil, nil),
+		requestsSuccessDesc: prometheus.NewDesc(
+			"tlswrapper_requests_success_total",
+			"Total successful requests.",
+			nil, nil),
+		sessionUpDesc: prometheus.NewDesc(
+			"tlswrapper_session_up",
+			"Whether the session is active (1=active, 0=offline).",
+			[]string{"session"}, nil),
+		sessionStreamsDesc: prometheus.NewDesc(
+			"tlswrapper_session_streams",
+			"Number of streams in the session.",
+			[]string{"session"}, nil),
 	}
+}
 
+func (c *serverMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.uptimeDesc
+	ch <- c.sessionsDesc
+	ch <- c.streamsDesc
+	ch <- c.rxBytesDesc
+	ch <- c.txBytesDesc
+	ch <- c.acceptedDesc
+	ch <- c.servedDesc
+	ch <- c.authorizedDesc
+	ch <- c.requestsDesc
+	ch <- c.requestsSuccessDesc
+	ch <- c.sessionUpDesc
+	ch <- c.sessionStreamsDesc
+}
+
+func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	now := time.Now()
-	stats := h.s.Stats()
+	stats := c.s.Stats()
 
-	setRespHeader(w.Header(), "text/plain", true)
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-
-	// Application metrics
-	writePromGauge(w, "tlswrapper_uptime_seconds", "Server uptime in seconds.",
-		now.Sub(h.s.started).Seconds())
-	writePromGauge(w, "tlswrapper_sessions", "Number of active sessions.",
+	ch <- prometheus.MustNewConstMetric(c.uptimeDesc, prometheus.GaugeValue,
+		now.Sub(c.s.started).Seconds())
+	ch <- prometheus.MustNewConstMetric(c.sessionsDesc, prometheus.GaugeValue,
 		float64(stats.NumSessions))
-	writePromGauge(w, "tlswrapper_streams", "Number of active streams.",
+	ch <- prometheus.MustNewConstMetric(c.streamsDesc, prometheus.GaugeValue,
 		float64(stats.NumStreams))
-	writePromCounter(w, "tlswrapper_rx_bytes_total", "Total bytes received.",
+	ch <- prometheus.MustNewConstMetric(c.rxBytesDesc, prometheus.CounterValue,
 		float64(stats.Rx))
-	writePromCounter(w, "tlswrapper_tx_bytes_total", "Total bytes transmitted.",
+	ch <- prometheus.MustNewConstMetric(c.txBytesDesc, prometheus.CounterValue,
 		float64(stats.Tx))
-	writePromCounter(w, "tlswrapper_accepted_total", "Total accepted connections.",
+	ch <- prometheus.MustNewConstMetric(c.acceptedDesc, prometheus.CounterValue,
 		float64(stats.Accepted))
-	writePromCounter(w, "tlswrapper_served_total", "Total served connections.",
+	ch <- prometheus.MustNewConstMetric(c.servedDesc, prometheus.CounterValue,
 		float64(stats.Served))
-	writePromCounter(w, "tlswrapper_authorized_total", "Total authorized connections.",
+	ch <- prometheus.MustNewConstMetric(c.authorizedDesc, prometheus.CounterValue,
 		float64(stats.Authorized))
-	writePromCounter(w, "tlswrapper_requests_total", "Total requests.",
+	ch <- prometheus.MustNewConstMetric(c.requestsDesc, prometheus.CounterValue,
 		float64(stats.ReqTotal))
-	writePromCounter(w, "tlswrapper_requests_success_total", "Total successful requests.",
+	ch <- prometheus.MustNewConstMetric(c.requestsSuccessDesc, prometheus.CounterValue,
 		float64(stats.ReqSuccess))
 
-	// Per-session metrics
 	for _, ss := range stats.sessions {
-		sessionLabel := label("session", ss.Name)
 		up := 0.0
 		if ss.Active {
 			up = 1.0
 		}
-		writePromGauge(w, "tlswrapper_session_up", "Whether the session is active (1=active, 0=offline).",
-			up, sessionLabel)
-		writePromGauge(w, "tlswrapper_session_streams", "Number of streams in the session.",
-			float64(ss.NumStreams), sessionLabel)
+		ch <- prometheus.MustNewConstMetric(c.sessionUpDesc, prometheus.GaugeValue,
+			up, ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionStreamsDesc, prometheus.GaugeValue,
+			float64(ss.NumStreams), ss.Name)
 	}
+}
 
-	// Go runtime metrics
-	writePromGauge(w, "go_goroutines", "Number of goroutines.",
-		float64(runtime.NumGoroutine()))
-	writePromGauge(w, "go_info", "Go version information.",
-		1.0, label("version", runtime.Version()))
-
-	var memstats runtime.MemStats
-	runtime.ReadMemStats(&memstats)
-
-	writePromGauge(w, "go_memstats_alloc_bytes", "Bytes allocated and still in use.",
-		float64(memstats.Alloc))
-	writePromCounter(w, "go_memstats_alloc_bytes_total", "Total bytes ever allocated (even if freed).",
-		float64(memstats.TotalAlloc))
-	writePromGauge(w, "go_memstats_sys_bytes", "Total bytes obtained from the OS.",
-		float64(memstats.Sys))
-	writePromGauge(w, "go_memstats_heap_alloc_bytes", "Heap bytes allocated and still in use.",
-		float64(memstats.HeapAlloc))
-	writePromGauge(w, "go_memstats_heap_sys_bytes", "Heap bytes obtained from the OS.",
-		float64(memstats.HeapSys))
-	writePromGauge(w, "go_memstats_heap_inuse_bytes", "Heap bytes in use.",
-		float64(memstats.HeapInuse))
-	writePromGauge(w, "go_memstats_heap_released_bytes", "Heap bytes released to the OS.",
-		float64(memstats.HeapReleased))
-	writePromGauge(w, "go_memstats_stack_inuse_bytes", "Stack bytes in use.",
-		float64(memstats.StackInuse))
-	writePromGauge(w, "go_memstats_stack_sys_bytes", "Stack bytes obtained from the OS.",
-		float64(memstats.StackSys))
-	writePromGauge(w, "go_memstats_next_gc_bytes", "Target heap size for next GC cycle.",
-		float64(memstats.NextGC))
-	writePromGauge(w, "go_memstats_gc_cpu_fraction", "GC CPU fraction.",
-		memstats.GCCPUFraction)
-	writePromGauge(w, "go_memstats_gc_sys_bytes", "GC metadata bytes.",
-		float64(memstats.GCSys))
-	writePromGauge(w, "go_memstats_last_gc_time_seconds", "Last GC timestamp as Unix seconds.",
-		float64(memstats.LastGC)/1e9)
-
-	// GC duration summary
-	writePromHelp(w, "go_gc_duration_seconds", "GC pause durations.")
-	writePromType(w, "go_gc_duration_seconds", "summary")
-	numGC := memstats.NumGC
-	if numGC > 0 {
-		numStats := uint32(len(memstats.PauseNs))
-		if numGC > numStats {
-			numGC = numStats
+func newAPIMetricsHandler(s *Server) http.Handler {
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		newServerMetricsCollector(s),
+	)
+	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
 		}
-		pause := make([]time.Duration, 0, numGC)
-		for i := uint32(0); i < numGC; i++ {
-			idx := (memstats.NumGC + (numStats - 1) - i) % numStats
-			pause = append(pause, time.Duration(memstats.PauseNs[idx]))
-		}
-		slices.SortFunc(pause, cmp.Compare)
-		i50 := int(math.Floor(float64(numGC) * 0.50))
-		i90 := int(math.Floor(float64(numGC) * 0.90))
-		fprintf(w, "go_gc_duration_seconds{quantile=\"0.5\"} %s\n", formatFloat(pause[i50].Seconds()))
-		fprintf(w, "go_gc_duration_seconds{quantile=\"0.9\"} %s\n", formatFloat(pause[i90].Seconds()))
-		fprintf(w, "go_gc_duration_seconds{quantile=\"1\"} %s\n", formatFloat(pause[numGC-1].Seconds()))
-		fprintf(w, "go_gc_duration_seconds_sum %s\n", formatFloat(time.Duration(memstats.PauseTotalNs).Seconds()))
-		fprintf(w, "go_gc_duration_seconds_count %d\n", numGC)
-	} else {
-		fprintf(w, "go_gc_duration_seconds{quantile=\"0.5\"} 0\n")
-		fprintf(w, "go_gc_duration_seconds{quantile=\"0.9\"} 0\n")
-		fprintf(w, "go_gc_duration_seconds{quantile=\"1\"} 0\n")
-		fprintf(w, "go_gc_duration_seconds_sum 0\n")
-		fprintf(w, "go_gc_duration_seconds_count 0\n")
-	}
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		handler.ServeHTTP(w, r)
+	})
 }
 
 // RunHTTPServer runs an HTTP server for metrics and configuration
@@ -436,7 +418,7 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 	})
 	mux.Handle("/config", &apiConfigHandler{s: s})
 	mux.Handle("/stats", &apiStatsHandler{s: s})
-	mux.Handle("/metrics", &apiMetricsHandler{s: s})
+	mux.Handle("/metrics", newAPIMetricsHandler(s))
 	mux.HandleFunc("/gc", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
