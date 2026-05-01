@@ -8,8 +8,6 @@
 
 Wrap any TCP-based service with multiplexed mutual TLS tunnels.
 
-Status: **Stable**
-
 - [Features](#features)
 - [Protocol Stack](#protocol-stack)
 - [Authentication Model](#authentication-model)
@@ -22,10 +20,15 @@ Status: **Stable**
 
 ## Features
 
-- Multiplexed: All traffic goes over one TCP connection.
-- Mutual Forwarded: Each peer can listen from and connect to the other peer simultaneously over the same underlying connection.
-- Secured: All traffic is optionally protected by [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS).
-- Long-Term Supported: Follow the latest releases of the dependent projects. Even if we don't make any changes, the binary release will be rebuilt at least once a year.
+- Multiplexed: Multiple TCP streams share one long-lived transport connection.
+- Bidirectional Forwarding: Each peer can expose local services and reach remote services over the same underlying connection.
+- Named Peer Routing: Map peer identities to outbound mux addresses and local listen addresses.
+- TLS 1.3 or Plaintext: Protect traffic with [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS), or run without TLS on trusted links.
+- Certificate Allowlist: Authorize exact peer certificates or certificates signed by an authorized certificate.
+- Built-in Certificate Tooling: Generate RSA, ECDSA, or Ed25519 key pairs, either self-signed or signed by an existing key pair.
+- Automatic Recovery: Outbound sessions redial with backoff, and configuration can be reloaded without restarting the process.
+- Observability: Expose health checks, human-readable stats, Prometheus metrics, and recent events over the optional HTTP management API.
+- Tunable Limits: Configure keepalive, timeouts, flow-control windows, session and stream limits, backlog, and connection throttling.
 
 ```
        Trusted      |     Untrusted    |     Trusted
@@ -42,7 +45,7 @@ Status: **Stable**
 
 ```
 +-------------------------------+
-|          TCP traffic          |
+|          TCP streams          |
 +-------------------------------+
 |   gRPC / HTTP/2 multiplexing  |
 +-------------------------------+
@@ -54,9 +57,16 @@ Status: **Stable**
 
 ## Authentication Model
 
-Like SSH, each peer should have a key pair (X.509 certificate + PKCS #8 private key) and an authorized list. Only certificates in the authorized list (or signed by any authorized certificate) can communicate with the peer.
+When TLS is enabled, tlswrapper uses mutual TLS: each peer presents an X.509 certificate and proves possession of the matching PKCS #8 private key during the handshake.
 
-TLS behavior is based on "crypto/tls" library in [Go](https://github.com/golang/go).
+Trust is configured through `authcerts`. Each entry can be either:
+
+- A specific peer certificate, for direct certificate pinning.
+- A signing certificate, to trust any peer certificate issued by that signer.
+
+Handshake and certificate verification are delegated to Go's [crypto/tls](https://pkg.go.dev/crypto/tls) implementation. A connection is accepted only if the remote certificate chain validates against the local `authcerts` pool.
+
+If the `tls` section is omitted, tlswrapper runs in plaintext mode and does not provide certificate-based peer authentication. Use that mode only on links you already trust.
 
 ## Quick Start
 
@@ -67,20 +77,20 @@ TLS behavior is based on "crypto/tls" library in [Go](https://github.com/golang/
 ./tlswrapper -gencerts client,server
 # client-cert.pem, client-key.pem, server-cert.pem, server-key.pem
 
-# choose a different key type or size
-./tlswrapper -gencerts client,server -keytype ecdsa -keysize 256
-./tlswrapper -gencerts client,server -keytype ed25519
-
 # set the SNI (Subject / SAN) embedded in the certificate
 ./tlswrapper -gencerts server -sni example.com
 
-# sign a peer certificate with an existing CA key pair
+# generate a self-signed CA key pair
+./tlswrapper -gencerts ca -sni ca.example.com
+# ca-cert.pem, ca-key.pem
+
+# sign a peer certificate with that CA key pair
 ./tlswrapper -gencerts peer -sign ca
 ```
 
 `-keytype` accepts `rsa` (default), `ecdsa`, or `ed25519`. `-keysize` sets the key size (RSA: bits, ECDSA: 224/256/384/521); `0` uses a safe default for the chosen type.
 
-Adding a certificate to `"authcerts"` will allow all certificates signed by it.
+Adding `ca-cert.pem` to `"authcerts"` will allow peer certificates signed by that CA.
 
 ### Creating Config Files
 
