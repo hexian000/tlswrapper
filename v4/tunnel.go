@@ -280,7 +280,7 @@ func (ss *session) h2Dial(ctx context.Context) (*mux.Session, error) {
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
-	cfg.SetMuxConnParams(rawConn)
+	setMuxConnParams(cfg.Mux, rawConn)
 	conn := snet.FlowMeter(rawConn, ss.s.flowStats)
 	h2cfg := &mux.Config{
 		TLSConfig:     tlscfg,

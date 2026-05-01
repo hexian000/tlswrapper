@@ -65,6 +65,29 @@ func (f *AppFlags) Validate() error {
 
 var appFlags AppFlags
 
+// dumpConfig dumps the configuration file to stdout
+func dumpConfig(f *AppFlags) int {
+	var cfg *config.File
+	if f.Config == "" {
+		def := config.Default
+		cfg = &def
+	} else {
+		var err error
+		cfg, err = config.LoadFile(f.Config)
+		if err != nil {
+			slog.Fatal("dumpconfig: ", formats.Error(err))
+			return 1
+		}
+	}
+	b, err := cfg.Dump()
+	if err != nil {
+		slog.Fatal("dumpconfig: ", formats.Error(err))
+		return 1
+	}
+	println(string(b))
+	return 0
+}
+
 // AppMain is the main entry point of the application
 func AppMain(f *AppFlags) int {
 	if f.LogLevel >= 0 {

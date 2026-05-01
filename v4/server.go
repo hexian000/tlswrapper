@@ -179,7 +179,7 @@ func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) 
 		return nil, err
 	}
 	cfg, _ := s.getConfig()
-	cfg.SetTCPConnParams(dialed)
+	setTCPConnParams(cfg.TCP, dialed)
 	return dialed, nil
 }
 

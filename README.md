@@ -16,7 +16,6 @@ Status: **Stable**
 - [Quick Start](#quick-start)
   - [Generating Key Pair](#generating-key-pair)
   - [Creating Config Files](#creating-config-files)
-    - [Notes](#notes)
   - [Start](#start)
 - [Building/Installing from Source](#buildinginstalling-from-source)
 - [Credits](#credits)
@@ -27,8 +26,6 @@ Status: **Stable**
 - Mutual Forwarded: Each peer can listen from and connect to the other peer simultaneously over the same underlying connection.
 - Secured: All traffic is optionally protected by [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS).
 - Long-Term Supported: Follow the latest releases of the dependent projects. Even if we don't make any changes, the binary release will be rebuilt at least once a year.
-
-*Note: tlswrapper is designed as an inconspicuous secure communication tunnel. This may increase latency in some scenarios, see [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking).*
 
 ```
        Trusted      |     Untrusted    |     Trusted
@@ -66,10 +63,22 @@ TLS behavior is based on "crypto/tls" library in [Go](https://github.com/golang/
 ### Generating Key Pair
 
 ```sh
-# generate self-signed certificates
+# generate self-signed certificates (default: RSA-4096)
 ./tlswrapper -gencerts client,server
 # client-cert.pem, client-key.pem, server-cert.pem, server-key.pem
+
+# choose a different key type or size
+./tlswrapper -gencerts client,server -keytype ecdsa -keysize 256
+./tlswrapper -gencerts client,server -keytype ed25519
+
+# set the SNI (Subject / SAN) embedded in the certificate
+./tlswrapper -gencerts server -sni example.com
+
+# sign a peer certificate with an existing CA key pair
+./tlswrapper -gencerts peer -sign ca
 ```
+
+`-keytype` accepts `rsa` (default), `ecdsa`, or `ed25519`. `-keysize` sets the key size (RSA: bits, ECDSA: 224/256/384/521); `0` uses a safe default for the chosen type.
 
 Adding a certificate to `"authcerts"` will allow all certificates signed by it.
 
@@ -125,24 +134,7 @@ Adding a certificate to `"authcerts"` will allow all certificates signed by it.
 
 For complex cases, see the [full example](https://github.com/hexian000/tlswrapper/wiki/Configuration-Example).
 
-#### Notes
-
-Feel free to add more services, or bring up forwards/reverses between the same instances.
-
-- `"type"`: config format identifier, must be `"application/x-tlswrapper-config; version=4"`
-- `"service.id"`: self identity announced in the handshake
-- `"mux_listen"`: address to accept inbound mux connections (server mode)
-- `"connect"`: forwarding target for inbound application streams
-- `"tls.cert"`: PEM certificate (use `"@filename"` to read from file at startup, same below)
-- `"tls.key"`: PEM private key
-- `"tls.authcerts"`: authorized peer certificates list; bundles are supported
-- `"service.peers"`: peer identity to mux endpoint mapping (client mode)
-- `"service.listen"`: peer identity to local listen address mapping
-- `"mux.session_window"` / `"mux.stream_window"`: optional fixed HTTP/2 connection/stream flow-control windows in bytes; leave both at `0` to keep gRPC dynamic flow control, or set either one to pin that window size explicitly
-
-See [source code](v4/config/config.go) for a complete list of all available options.
-
-See [schema.json](v4/config/schema.json) for the full JSON Schema with field descriptions and defaults.
+For field descriptions, defaults, and the full configuration format, see [schema.json](v4/config/schema.json).
 
 ### Start
 
@@ -169,4 +161,6 @@ go install github.com/hexian000/tlswrapper/v4/cmd/tlswrapper@master
 
 - [go](https://github.com/golang/go)
 - [gosnippets](https://github.com/hexian000/gosnippets)
+- [Prometheus client_golang](https://github.com/prometheus/client_golang)
 - [grpc-go](https://github.com/grpc/grpc-go)
+- [protobuf-go](https://github.com/protocolbuffers/protobuf-go)

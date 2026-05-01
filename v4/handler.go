@@ -43,7 +43,7 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	start := time.Now()
 	tag := fmt.Sprintf("? <= %v", conn.RemoteAddr())
 	cfg, tlscfg := h.s.getConfig()
-	cfg.SetMuxConnParams(conn)
+	setMuxConnParams(cfg.Mux, conn)
 	conn = snet.FlowMeter(conn, h.s.flowStats)
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
@@ -75,7 +75,7 @@ type MuxHandler struct {
 // Serve handles an incoming connection
 func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
 	cfg, _ := h.s.getConfig()
-	cfg.SetTCPConnParams(accepted)
+	setTCPConnParams(cfg.TCP, accepted)
 	ss := h.s.findSession(h.id)
 	if ss == nil {
 		slog.Warningf("%v -> %q: no active session", accepted.RemoteAddr(), h.id)
