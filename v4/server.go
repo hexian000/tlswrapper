@@ -102,7 +102,7 @@ func (s *Server) findSession(peerServiceId string) *tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, ss := range s.sessions {
-		if ss.id == peerServiceId && ss.getH2sess() != nil {
+		if ss.id == peerServiceId && ss.getSession() != nil {
 			return ss
 		}
 	}
@@ -240,7 +240,7 @@ func (s *Server) serveH2Conn(h2sess *mux.Session) {
 	slog.Notice(msg)
 	s.recentEvents.Add(now, msg)
 	s.stats.authorized.Add(1)
-	inbound := newSession(h2sess.PeerID(), "", s)
+	inbound := newTunnel(h2sess.PeerID(), "", s)
 	inbound.ss = h2sess
 	inbound.lastChanged = now
 	s.addSession(inbound)
@@ -369,7 +369,7 @@ func (s *Server) loadSessions(cfg *config.File) error {
 			continue
 		}
 		dialAddr := cfg.ServiceEntry(name).MuxConnect
-		ss := newSession(name, dialAddr, s)
+		ss := newTunnel(name, dialAddr, s)
 		s.services[name] = ss
 		s.sessions = append(s.sessions, ss)
 		if err := ss.Start(); err != nil {
@@ -445,7 +445,7 @@ func (s *Server) Shutdown() error {
 	s.g.Close()
 	// close all active HTTP/2 sessions to unblock Serve loops
 	for _, ss := range s.getAllSessions() {
-		if h2sess := ss.getH2sess(); h2sess != nil {
+		if h2sess := ss.getSession(); h2sess != nil {
 			_ = h2sess.Close()
 		}
 	}

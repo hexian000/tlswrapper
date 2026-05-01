@@ -39,9 +39,9 @@ type tunnel struct {
 	lastChanged time.Time
 }
 
-func newSession(peerServiceId, dialAddr string, s *Server) *tunnel {
+func newTunnel(id, dialAddr string, s *Server) *tunnel {
 	return &tunnel{
-		id:        peerServiceId,
+		id:        id,
 		dialAddr:  dialAddr,
 		s:         s,
 		closeSig:  make(chan struct{}),
@@ -86,7 +86,7 @@ func (t *tunnel) Stop() error {
 	return nil
 }
 
-func (t *tunnel) cleanSession() {
+func (t *tunnel) checkIdle() {
 	cfg, _ := t.getConfig()
 	idleTimeout := time.Duration(cfg.IdleTimeout) * time.Second
 	now := time.Now()
@@ -124,7 +124,7 @@ func (t *tunnel) redial() {
 		return
 	}
 	defer t.s.ctx.cancel(ctx)
-	_, err := t.h2Dial(ctx)
+	_, err := t.dial(ctx)
 	if err != nil && !errors.Is(err, ErrNoDialAddress) && !errors.Is(err, ErrDialInProgress) {
 		redialCount := t.redialCount + 1
 		if redialCount > t.redialCount {
@@ -138,8 +138,8 @@ func (t *tunnel) redial() {
 }
 
 func (t *tunnel) maintenance() {
-	t.cleanSession()
-	if t.getH2sess() == nil {
+	t.checkIdle()
+	if t.getSession() == nil {
 		cfg, _ := t.getConfig()
 		if !cfg.NoRedial && t.dialAddr != "" {
 			t.redial()
@@ -205,30 +205,30 @@ func (t *tunnel) run() {
 	}
 }
 
-func (t *tunnel) addH2sess(h2sess *mux.Session) {
+func (t *tunnel) addSession(ss *mux.Session) {
 	now := time.Now()
-	msg := fmt.Sprintf("%s: session established", h2sess.Tag())
+	msg := fmt.Sprintf("%s: session established", ss.Tag())
 	slog.Notice(msg)
 	t.s.recentEvents.Add(now, msg)
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	hadConn := t.ss != nil && !t.ss.IsClosed()
-	t.ss = h2sess
+	t.ss = ss
 	if !hadConn {
 		t.s.numSessions.Add(1)
 	}
 	t.lastChanged = now
 }
 
-func (t *tunnel) delH2sess(h2sess *mux.Session) {
+func (t *tunnel) delSession(ss *mux.Session) {
 	now := time.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.ss != h2sess {
+	if t.ss != ss {
 		return
 	}
-	msg := fmt.Sprintf("%s: session closed", h2sess.Tag())
+	msg := fmt.Sprintf("%s: session closed", ss.Tag())
 	slog.Notice(msg)
 	t.s.recentEvents.Add(now, msg)
 	t.ss = nil
@@ -243,7 +243,7 @@ func (t *tunnel) delH2sess(h2sess *mux.Session) {
 	}
 }
 
-func (t *tunnel) getH2sess() *mux.Session {
+func (t *tunnel) getSession() *mux.Session {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.ss == nil || t.ss.IsClosed() {
@@ -252,17 +252,17 @@ func (t *tunnel) getH2sess() *mux.Session {
 	return t.ss
 }
 
-// Dial opens a new stream over the session's active mux connection.
-func (t *tunnel) Dial(ctx context.Context) (net.Conn, error) {
-	h2sess := t.getH2sess()
+// OpenStream opens a new stream over the session's active mux connection.
+func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
+	h2sess := t.getSession()
 	if h2sess == nil {
 		return nil, ErrNoSession
 	}
 	return h2sess.Open(ctx)
 }
 
-// h2Dial dials to the remote, performs TLS (if configured), and establishes an mux session.
-func (t *tunnel) h2Dial(ctx context.Context) (*mux.Session, error) {
+// dial dials to the remote, performs TLS (if configured), and establishes an mux session.
+func (t *tunnel) dial(ctx context.Context) (*mux.Session, error) {
 	cfg, tlscfg := t.getConfig()
 	if t.dialAddr == "" {
 		return nil, ErrNoDialAddress
@@ -297,13 +297,13 @@ func (t *tunnel) h2Dial(ctx context.Context) (*mux.Session, error) {
 		return nil, err
 	}
 
-	t.addH2sess(h2sess)
+	t.addSession(h2sess)
 	// When the session closes, trigger a redial.
 	if err := t.s.g.Go(func() {
-		defer t.delH2sess(h2sess)
+		defer t.delSession(h2sess)
 		<-h2sess.CloseChan()
 	}); err != nil {
-		t.delH2sess(h2sess)
+		t.delSession(h2sess)
 		return nil, err
 	}
 
