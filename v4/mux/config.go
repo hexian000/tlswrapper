@@ -110,4 +110,3 @@ func (c *Config) grpcServerOptions() []grpc.ServerOption {
 	}
 	return opts
 }
-

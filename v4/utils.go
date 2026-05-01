@@ -40,4 +40,3 @@ func setTCPConnParams(tcp config.TCP, conn net.Conn) {
 	_ = tcpConn.SetNoDelay(tcp.NoDelay)
 	_ = tcpConn.SetKeepAlive(tcp.KeepAlive)
 }
-
