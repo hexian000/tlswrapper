@@ -35,11 +35,11 @@ type CloseWriter interface {
 
 // EventHandler receives notifications from a forwarded connection pair.
 type EventHandler interface {
-	// OnHalfClosed is called when one copy direction finishes.
+	// OnWriteClosed is called when one copy direction finishes.
 	// conn is the source connection of that direction (the side that sent EOF or the error).
 	// err is the raw error returned by io.Copy; nil means clean EOF.
 	// Called exactly twice, once per direction; may be called concurrently.
-	OnHalfClosed(conn net.Conn, err error)
+	OnWriteClosed(conn net.Conn, err error)
 	// OnClosed is called once both copy directions have finished and all resources are released.
 	// Called exactly once, from a single goroutine.
 	OnClosed()
@@ -48,13 +48,13 @@ type EventHandler interface {
 // HandlerFuncs is a convenience adapter that implements EventHandler.
 // Nil function fields are safely ignored.
 type HandlerFuncs struct {
-	HalfClosed func(net.Conn, error)
-	Closed     func()
+	WriteClosed func(net.Conn, error)
+	Closed      func()
 }
 
-func (h HandlerFuncs) OnHalfClosed(conn net.Conn, err error) {
-	if h.HalfClosed != nil {
-		h.HalfClosed(conn, err)
+func (h HandlerFuncs) OnWriteClosed(conn net.Conn, err error) {
+	if h.WriteClosed != nil {
+		h.WriteClosed(conn, err)
 	}
 }
 
@@ -165,7 +165,7 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 			})
 		}
 		if handler != nil {
-			handler.OnHalfClosed(src, err)
+			handler.OnWriteClosed(src, err)
 		}
 		if remaining.Add(-1) == 0 {
 			cleanup()
@@ -187,7 +187,7 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 		// The second direction never ran; synthesise its OnHalfClose (src=accepted)
 		// so the handler always receives exactly two calls.
 		if handler != nil {
-			handler.OnHalfClosed(accepted, err)
+			handler.OnWriteClosed(accepted, err)
 		}
 		if remaining.Add(-1) == 0 {
 			// First goroutine already finished; we are responsible for cleanup.

@@ -34,14 +34,14 @@ func TestForwarderBidirectional(t *testing.T) {
 	accepted, acceptedPeer := net.Pipe()
 	dialed, dialedPeer := net.Pipe()
 
-	var halfClosedCount atomic.Int32
+	var writeClosedCount atomic.Int32
 	var closedCount atomic.Int32
 	var wg sync.WaitGroup
 	wg.Add(1)
 
 	handler := HandlerFuncs{
-		HalfClosed: func(_ net.Conn, _ error) {
-			halfClosedCount.Add(1)
+		WriteClosed: func(_ net.Conn, _ error) {
+			writeClosedCount.Add(1)
 		},
 		Closed: func() {
 			closedCount.Add(1)
@@ -87,8 +87,8 @@ func TestForwarderBidirectional(t *testing.T) {
 		t.Fatal("timeout waiting for forwarder shutdown")
 	}
 
-	if hc := halfClosedCount.Load(); hc != 2 {
-		t.Fatalf("OnHalfClosed called %d times, want 2", hc)
+	if hc := writeClosedCount.Load(); hc != 2 {
+		t.Fatalf("OnWriteClosed called %d times, want 2", hc)
 	}
 	if cc := closedCount.Load(); cc != 1 {
 		t.Fatalf("OnClosed called %d times, want 1", cc)
