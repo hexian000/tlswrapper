@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "tlswrapper configuration",
-    "description": "Configuration file for tlswrapper. At least one of 'mux_listen', 'mux_connect', or entries in 'service.peers' should be present.",
+    "description": "Configuration file for tlswrapper. At least one of 'mux_listen', 'mux_connect', or entries in 'service.peers' should be present to create a config-driven tunnel or accept inbound mux connections.",
     "type": "object",
     "properties": {
         "type": {
@@ -17,7 +17,7 @@
             "default": "stdout"
         },
         "no_redial": {
-            "description": "Disable automatic tunnel redial in client mode. Default: false.",
+            "description": "Disable automatic redial for config-driven tunnels with mux_connect. Default: false.",
             "type": "boolean",
             "default": false
         },
@@ -26,11 +26,11 @@
             "type": "string"
         },
         "mux_listen": {
-            "description": "Address to accept inbound mux connections on (server mode).",
+            "description": "Address to accept inbound mux connections that create ephemeral tunnels.",
             "type": "string"
         },
         "mux_connect": {
-            "description": "Address to dial for the outbound mux connection (client mode).",
+            "description": "Address for the default config-driven tunnel to dial.",
             "type": "string"
         },
         "listen": {
@@ -38,7 +38,7 @@
             "type": "string"
         },
         "connect": {
-            "description": "Forwarding target address for inbound application streams.",
+            "description": "Forwarding target address for streams arriving from inbound ephemeral tunnels.",
             "type": "string"
         },
         "timeout": {
@@ -225,7 +225,7 @@
             "additionalProperties": false
         },
         "service": {
-            "description": "Service identity and per-peer tunnel routing settings.",
+            "description": "Service identity and per-peer config-driven tunnel routing settings.",
             "type": "object",
             "properties": {
                 "id": {
@@ -233,14 +233,14 @@
                     "type": "string"
                 },
                 "peers": {
-                    "description": "Peer identity to mux dial address mapping.",
+                    "description": "Peer identity to config-driven tunnel dial address mapping.",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
                 },
                 "listen": {
-                    "description": "Peer identity to local listen address mapping.",
+                    "description": "Peer identity to config-driven tunnel listen address mapping.",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"

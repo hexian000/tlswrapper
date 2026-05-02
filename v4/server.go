@@ -47,8 +47,8 @@ type Server struct {
 	recentEvents eventlog.Recent
 
 	mu       sync.RWMutex
-	services map[string]*tunnel // map[peerServiceId]session — config-driven sessions
-	sessions []*tunnel          // all sessions (inbound + outbound)
+	services map[string]*tunnel // config-driven tunnels keyed by peer service ID
+	sessions []*tunnel          // all tunnels, including config-driven and inbound ephemeral
 	ctx      contextMgr
 
 	dialer net.Dialer
@@ -97,7 +97,7 @@ func maxStreams(cfg *config.File) int {
 	return cfg.MaxStreams
 }
 
-// findSession returns the first session with the given peerServiceId that has an active connection.
+// findSession returns the first active tunnel for the given peer service ID.
 func (s *Server) findSession(peerServiceId string) *tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -222,8 +222,9 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 	}
 }
 
-// serveSession handles one inbound mux session.
-// It blocks until the session is closed.
+// serveSession handles one accepted mux session.
+// It creates an inbound ephemeral tunnel, keeps it registered for lookup, and
+// removes it when the underlying mux session closes.
 func (s *Server) serveSession(ss *mux.Session) {
 	// When the group closes, close ss to unblock Accept().
 	if err := s.g.Go(func() {
@@ -331,7 +332,7 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 	return listener, err
 }
 
-// loadSessions creates and stops config-driven sessions to match cfg.
+// loadSessions creates and stops config-driven tunnels to match cfg.
 func (s *Server) loadSessions(cfg *config.File) error {
 	// collect all peer names that should be active
 	activePeers := make(map[string]struct{})
@@ -348,7 +349,7 @@ func (s *Server) loadSessions(cfg *config.File) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// 1. stop sessions that are no longer in the config
+	// 1. stop config-driven tunnels that are no longer in the config
 	for name, ss := range s.services {
 		if _, ok := activePeers[name]; !ok {
 			if err := ss.Stop(); err != nil {
@@ -363,7 +364,7 @@ func (s *Server) loadSessions(cfg *config.File) error {
 			delete(s.services, name)
 		}
 	}
-	// 2. start sessions for newly active peers
+	// 2. start config-driven tunnels for newly active peers
 	for name := range activePeers {
 		if _, exists := s.services[name]; exists {
 			continue

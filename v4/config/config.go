@@ -63,12 +63,12 @@ type Service struct {
 	Listen map[string]string `json:"listen,omitempty"`
 }
 
-// ServiceEntry is the effective routing entry for one peer/session.
+// ServiceEntry is the effective config-driven tunnel entry for one peer name.
 type ServiceEntry struct {
 	Listen string
-	// Address to dial for outbound mux session.
+	// Address to dial for a config-driven tunnel.
 	MuxConnect string
-	// Forwarding target for inbound application streams.
+	// Forwarding target for streams arriving from an inbound ephemeral tunnel.
 	Connect string
 }
 
@@ -78,13 +78,13 @@ type File struct {
 	Type string `json:"type"`
 	// HTTP management API listen address (empty = disabled)
 	APIListen string `json:"api_listen,omitempty"`
-	// Address to accept inbound mux connections (server mode)
+	// Address to accept inbound mux connections that create ephemeral tunnels
 	MuxListen string `json:"mux_listen,omitempty"`
-	// Address to dial for the outbound mux connection (client mode)
+	// Address for the default config-driven tunnel to dial
 	MuxConnect string `json:"mux_connect,omitempty"`
 	// Local TCP address to accept application traffic on
 	Listen string `json:"listen,omitempty"`
-	// Forwarding target for inbound application streams
+	// Forwarding target for streams arriving from inbound ephemeral tunnels
 	Connect string `json:"connect,omitempty"`
 	// Service identity and per-peer routing settings
 	Service Service `json:"service,omitempty"`
@@ -106,7 +106,7 @@ type File struct {
 	MaxStreams int `json:"max_streams"`
 	// Unauthenticated connection throttle in "start:rate:full" format
 	MaxStartups string `json:"max_startups,omitempty"`
-	// Disable automatic session redial (client mode)
+	// Disable automatic redial for config-driven tunnels with MuxConnect
 	NoRedial bool `json:"no_redial,omitempty"`
 	// TLS configuration (nil = plaintext mode)
 	TLS *TLS `json:"tls,omitempty"`
@@ -148,8 +148,8 @@ var Default = File{
 }
 
 // ServiceEntry returns the effective ServiceEntry for the given peer name.
-// For the empty name "", the top-level Listen/MuxConnect/Connect fields are used
-// as the default unnamed service.
+// For the empty name "", the top-level Listen/MuxConnect/Connect fields define
+// the default unnamed config-driven tunnel.
 func (c *File) ServiceEntry(name string) ServiceEntry {
 	entry := ServiceEntry{Connect: c.Connect}
 	if name == "" {

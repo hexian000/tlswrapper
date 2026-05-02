@@ -20,14 +20,16 @@ import (
 	"github.com/hexian000/tlswrapper/v4/mux"
 )
 
-// tunnel manages exactly one outbound or inbound mux connection for a named peer.
-// Outbound sessions (dialAddr != "") own a redial loop in run().
-// Inbound sessions (dialAddr == "") are created by serveH2Conn and held for lookup.
+// tunnel manages exactly one mux connection slot for a named peer.
+// Config-driven tunnels (tracked in Server.services) are created from config and
+// can own listeners plus a redial loop.
+// Inbound tunnels (dialAddr == "") are created by serveSession for accepted mux
+// connections and are removed when that connection closes.
 type tunnel struct {
 	id       string // peer service ID; used for logging and lookup
-	dialAddr string // MuxConnect address; empty for inbound sessions
+	dialAddr string // MuxConnect address; empty for inbound ephemeral tunnels
 	s        *Server
-	l        net.Listener // local TCP listener (only on config-driven sessions with Listen)
+	l        net.Listener // local TCP listener (only on config-driven tunnels with Listen)
 
 	mu          sync.RWMutex
 	ss          *mux.Session
@@ -53,8 +55,8 @@ func (t *tunnel) getConfig() (*config.File, *tls.Config) {
 	return t.s.getConfig()
 }
 
-// Start starts the session, including listening if configured.
-// For outbound sessions (dialAddr != ""), a redial goroutine is also started.
+// Start starts a config-driven tunnel, including listening if configured.
+// When dialAddr != "", it also starts the redial loop for that tunnel.
 func (t *tunnel) Start() error {
 	cfg, _ := t.getConfig()
 	if listenAddr := cfg.ServiceEntry(t.id).Listen; listenAddr != "" {
@@ -79,7 +81,7 @@ func (t *tunnel) Start() error {
 	return nil
 }
 
-// Stop stops the session's redial loop (and closes any local listener).
+// Stop stops the tunnel lifecycle and closes its listener during shutdown.
 func (t *tunnel) Stop() error {
 	close(t.closeSig)
 	slog.Debugf("session %q: stop", t.id)
@@ -261,7 +263,7 @@ func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
 	return ss.Open(ctx)
 }
 
-// dial dials to the remote, performs TLS (if configured), and establishes an mux session.
+// dial dials the configured peer and establishes the mux session for this tunnel.
 func (t *tunnel) dial(ctx context.Context) (*mux.Session, error) {
 	cfg, tlscfg := t.getConfig()
 	if t.dialAddr == "" {

@@ -22,13 +22,15 @@ Wrap any TCP-based service with multiplexed mutual TLS tunnels.
 
 - Multiplexed: Multiple TCP streams share one long-lived transport connection.
 - Bidirectional Forwarding: Each peer can expose local services and reach remote services over the same underlying connection.
-- Named Peer Routing: Map peer identities to outbound mux addresses and local listen addresses.
+- Named Peer Routing: Map peer identities to config-driven mux dial addresses and local listen addresses.
 - TLS 1.3 or Plaintext: Protect traffic with [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS), or run without TLS on trusted links.
 - Certificate Allowlist: Authorize exact peer certificates or certificates signed by an authorized certificate.
 - Built-in Certificate Tooling: Generate RSA, ECDSA, or Ed25519 key pairs, either self-signed or signed by an existing key pair.
-- Automatic Recovery: Outbound sessions redial with backoff, and configuration can be reloaded without restarting the process.
+- Automatic Recovery: Config-driven tunnels with mux_connect redial with backoff, and configuration can be reloaded without restarting the process.
 - Observability: Expose health checks, human-readable stats, Prometheus metrics, and recent events over the optional HTTP management API.
 - Tunable Limits: Configure keepalive, timeouts, flow-control windows, session and stream limits, backlog, and connection throttling.
+
+At runtime, tlswrapper keeps two tunnel lifecycles: config-driven tunnels loaded from configuration, and inbound ephemeral tunnels created for accepted mux connections. The latter are removed as soon as their underlying mux connection closes.
 
 ```
        Trusted      |     Untrusted    |     Trusted
