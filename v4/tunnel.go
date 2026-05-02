@@ -56,10 +56,9 @@ func (t *tunnel) getConfig() (*config.File, *tls.Config) {
 	return t.s.getConfig()
 }
 
-// Start starts a config-driven tunnel, including listening if configured.
+// Start starts a config-driven tunnel from the provided config snapshot.
 // When dialAddr != "", it also starts the redial loop for that tunnel.
-func (t *tunnel) Start() error {
-	cfg, _ := t.getConfig()
+func (t *tunnel) Start(cfg *config.File) error {
 	if listenAddr := cfg.ServiceEntry(t.id).Listen; listenAddr != "" {
 		l, err := t.s.Listen(listenAddr)
 		if err != nil {

@@ -373,7 +373,7 @@ func (s *Server) loadSessions(cfg *config.File) error {
 		ss := newTunnel(name, dialAddr, s)
 		s.services[name] = ss
 		s.sessions = append(s.sessions, ss)
-		if err := ss.Start(); err != nil {
+		if err := ss.Start(cfg); err != nil {
 			return err
 		}
 	}
