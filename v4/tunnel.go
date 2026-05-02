@@ -126,7 +126,7 @@ func (t *tunnel) checkIdle() {
 	}
 	// evict if idle too long
 	if idleTimeout > 0 && !t.idleSince.IsZero() && now.Sub(t.idleSince) >= idleTimeout {
-		slog.Debugf("session %q: idle session evicted after %v", t.id, now.Sub(t.idleSince))
+		slog.Infof("session %q: idle session evicted after %v", t.id, now.Sub(t.idleSince))
 		_ = t.ss.Close()
 		t.ss = nil
 		t.idleSince = time.Time{}
@@ -146,7 +146,7 @@ func (t *tunnel) redial() {
 			t.redialCount = redialCount
 		}
 		cfg, _ := t.getConfig()
-		slog.Warningf("session %q: redial #%d to %s: %s", t.id, t.redialCount, cfg.ServiceEntry(t.id).MuxConnect, formats.Error(err))
+		slog.Infof("session %q: redial #%d to %s: %s", t.id, t.redialCount, cfg.ServiceEntry(t.id).MuxConnect, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
