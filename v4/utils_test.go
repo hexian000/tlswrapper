@@ -86,10 +86,10 @@ func TestSetTCPConnParamsLogsWarnings(t *testing.T) {
 
 	got := buf.String()
 	for _, want := range []string{
-		"set tcp nodelay: nodelay failed",
-		"set tcp keepalive: keepalive failed",
-		"set tcp read buffer 4096: read buffer failed",
-		"set tcp write buffer 8192: write buffer failed",
+		"SetNoDelay: nodelay failed",
+		"SetKeepAlive: keepalive failed",
+		"SetReadBuffer 4096: read buffer failed",
+		"SetWriteBuffer 8192: write buffer failed",
 	} {
 		if !bytes.Contains([]byte(got), []byte(want)) {
 			t.Fatalf("log output %q does not contain %q", got, want)

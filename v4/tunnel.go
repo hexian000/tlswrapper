@@ -35,6 +35,7 @@ type tunnel struct {
 	ss          *mux.Session
 	idleSince   time.Time // when ss became stream-less (zero = not idle)
 	closeSig    chan struct{}
+	stopOnce    sync.Once
 	redialSig   chan struct{}
 	redialCount int
 	dialMu      sync.Mutex
@@ -83,8 +84,20 @@ func (t *tunnel) Start() error {
 
 // Stop stops the tunnel lifecycle and closes its listener during shutdown.
 func (t *tunnel) Stop() error {
-	close(t.closeSig)
-	slog.Debugf("session %q: stop", t.id)
+	t.stopOnce.Do(func() {
+		close(t.closeSig)
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if t.l != nil {
+			ioClose(t.l)
+			t.l = nil
+		}
+		if t.ss != nil {
+			ioClose(t.ss)
+			t.ss = nil
+		}
+		slog.Debugf("session %q: stop", t.id)
+	})
 	return nil
 }
 

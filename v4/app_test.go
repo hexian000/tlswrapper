@@ -152,3 +152,36 @@ func TestForwardBidirectional(t *testing.T) {
 		t.Fatalf("echo mismatch: got %q, want %q", got, want)
 	}
 }
+
+func TestShutdownClosesServiceListeners(t *testing.T) {
+	listenAddr := freePort(t)
+
+	cfg := newPlaintextConfig(t, map[string]any{
+		"service": map[string]any{
+			"listen": map[string]any{
+				"peer-a": listenAddr,
+			},
+		},
+	})
+	srv, err := tlswrapper.NewServer(cfg)
+	if err != nil {
+		t.Fatal("server create:", err)
+	}
+	if err := srv.Start(); err != nil {
+		t.Fatal("server start:", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.Shutdown()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal("server shutdown:", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server shutdown blocked with service listener active")
+	}
+}

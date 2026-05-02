@@ -440,6 +440,18 @@ func (s *Server) Shutdown() error {
 		ioClose(s.apiListener)
 		s.apiListener = nil
 	}
+	// stop all config-driven tunnels so their per-service listeners exit Accept()
+	s.mu.RLock()
+	services := make([]*tunnel, 0, len(s.services))
+	for _, ss := range s.services {
+		services = append(services, ss)
+	}
+	s.mu.RUnlock()
+	for _, ss := range services {
+		if err := ss.Stop(); err != nil {
+			slog.Errorf("session %q: %s", ss.id, formats.Error(err))
+		}
+	}
 	// cancel all contexts
 	s.ctx.close()
 	// signal all goroutines to stop
