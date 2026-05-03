@@ -268,6 +268,25 @@ func (s *Server) serveSession(ss *mux.Session) {
 	}
 }
 
+// acceptInboundStreams drains the Accept queue of a client-side session and
+// dispatches each server-initiated stream to handleInboundStream.
+// It must be run in a goroutine; it returns when ss is closed.
+func (s *Server) acceptInboundStreams(ss *mux.Session) {
+	for {
+		stream, err := ss.Accept()
+		if err != nil {
+			return
+		}
+		peerID := ss.PeerID()
+		if err := s.g.Go(func() {
+			s.handleInboundStream(peerID, stream)
+		}); err != nil {
+			ioClose(stream)
+			return
+		}
+	}
+}
+
 // handleInboundStream forwards one accepted server-side stream to the configured connect address.
 func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
 	started := false

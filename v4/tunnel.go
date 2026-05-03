@@ -320,6 +320,27 @@ func (t *tunnel) dial(ctx context.Context) (*mux.Session, error) {
 		t.delSession(ss)
 		return nil, err
 	}
+	// Close ss when the group shuts down, to unblock the accept loop.
+	// This is needed in particular after a redial, where t.ss has moved on
+	// and t.run's defer will no longer close this specific ss.
+	if err := t.s.g.Go(func() {
+		select {
+		case <-t.s.g.CloseC():
+			_ = ss.Close()
+		case <-ss.CloseChan():
+		}
+	}); err != nil {
+		_ = ss.Close()
+		return nil, err
+	}
+	// Accept server-initiated streams so that dialStreamForServer conns do not
+	// pile up in acceptCh and numStreams never decrements (the stream leak).
+	if err := t.s.g.Go(func() {
+		t.s.acceptInboundStreams(ss)
+	}); err != nil {
+		_ = ss.Close()
+		return nil, err
+	}
 
 	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
 	return ss, nil
