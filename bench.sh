@@ -68,16 +68,16 @@ sleep 1
 
 # Run iperf3 uplink benchmark
 printf 'Running iperf3 uplink benchmark...\n'
-iperf3 -c 127.0.0.1 -p 5202 -t 30 | tee "${LOGDIR}/iperf3-uplink.log"
+iperf3 -c 127.0.0.1 -p 5202 -t 30 >"${LOGDIR}/iperf3-uplink.log"
 
 # Run iperf3 downlink benchmark
 printf 'Running iperf3 downlink benchmark...\n'
-iperf3 -c 127.0.0.1 -p 5202 -R -t 30 | tee "${LOGDIR}/iperf3-downlink.log"
+iperf3 -c 127.0.0.1 -p 5202 -R -t 30 >"${LOGDIR}/iperf3-downlink.log"
 
 # Run iperf3 bidirectional benchmark
 printf 'Running iperf3 bidirectional benchmark...\n'
-iperf3 -c 127.0.0.1 -p 5202 --bidir -t 30 | tee "${LOGDIR}/iperf3-bidir.log"
+iperf3 -c 127.0.0.1 -p 5202 --bidir -t 30 >"${LOGDIR}/iperf3-bidir.log"
 
 # Run iperf3 parallel benchmark
 printf 'Running iperf3 parallel benchmark...\n'
-iperf3 -c 127.0.0.1 -p 5202 --bidir -P 10 -t 30 | tee "${LOGDIR}/iperf3-parallel.log"
+iperf3 -c 127.0.0.1 -p 5202 --bidir -P 10 -t 30 >"${LOGDIR}/iperf3-parallel.log"
