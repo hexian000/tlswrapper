@@ -280,15 +280,15 @@ func TestParsedMaxStartups(t *testing.T) {
 func TestClone(t *testing.T) {
 	cfg := Default
 	cfg.APIListen = "127.0.0.1:8080"
-	cfg.Service.ID = "original"
+	cfg.Identity.Claim = "original"
 	clone, err := cfg.Clone()
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Modify original; clone should be unaffected.
-	cfg.Service.ID = "modified"
-	if clone.Service.ID != "original" {
-		t.Fatalf("clone.Service.ID = %q, want %q", clone.Service.ID, "original")
+	cfg.Identity.Claim = "modified"
+	if clone.Identity.Claim != "original" {
+		t.Fatalf("clone.Identity.Claim = %q, want %q", clone.Identity.Claim, "original")
 	}
 	if clone.APIListen != "127.0.0.1:8080" {
 		t.Fatalf("clone.APIListen = %q, want %q", clone.APIListen, "127.0.0.1:8080")
@@ -317,11 +317,9 @@ func TestServiceEntry(t *testing.T) {
 		Listen:     "127.0.0.1:8000",
 		MuxConnect: "remote:7000",
 		Connect:    "backend:9000",
-		Service: Service{
-			ID: "self",
-			Peers: map[string]string{
-				"peer-a": "peer-a:7001",
-			},
+		Identity: Identity{
+			Claim:      "self",
+			MuxConnect: []string{"peer-a:7001"},
 			Listen: map[string]string{
 				"peer-a": "127.0.0.1:8001",
 			},
@@ -333,19 +331,13 @@ func TestServiceEntry(t *testing.T) {
 		if e.Listen != "127.0.0.1:8000" {
 			t.Fatalf("Listen = %q, want %q", e.Listen, "127.0.0.1:8000")
 		}
-		if e.MuxConnect != "remote:7000" {
-			t.Fatalf("MuxConnect = %q, want %q", e.MuxConnect, "remote:7000")
-		}
 		if e.Connect != "backend:9000" {
 			t.Fatalf("Connect = %q, want %q", e.Connect, "backend:9000")
 		}
 	})
 
-	t.Run("named-peer", func(t *testing.T) {
+	t.Run("named-peer-listen", func(t *testing.T) {
 		e := cfg.ServiceEntry("peer-a")
-		if e.MuxConnect != "peer-a:7001" {
-			t.Fatalf("MuxConnect = %q, want %q", e.MuxConnect, "peer-a:7001")
-		}
 		if e.Listen != "127.0.0.1:8001" {
 			t.Fatalf("Listen = %q, want %q", e.Listen, "127.0.0.1:8001")
 		}
@@ -353,8 +345,8 @@ func TestServiceEntry(t *testing.T) {
 
 	t.Run("unknown-peer", func(t *testing.T) {
 		e := cfg.ServiceEntry("unknown")
-		if e.MuxConnect != "" {
-			t.Fatalf("MuxConnect = %q, want empty", e.MuxConnect)
+		if e.Listen != "" {
+			t.Fatalf("Listen = %q, want empty", e.Listen)
 		}
 	})
 }

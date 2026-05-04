@@ -54,7 +54,7 @@ func TestTunnelSchedule(t *testing.T) {
 
 func TestTunnelRedialFailureIncrementsCount(t *testing.T) {
 	addr := freePort(t)
-	tn := newTunnel("peer-a", addr, newTestServer(t, map[string]any{"service": map[string]any{"id": "local"}}))
+	tn := newTunnel("peer-a", addr, newTestServer(t, map[string]any{"identity": map[string]any{"claim": "local"}}))
 	tn.redial()
 	if tn.redialCount != 1 {
 		t.Fatalf("redialCount = %d, want 1", tn.redialCount)
@@ -85,7 +85,7 @@ func TestTunnelRedialSuccessAndDelSession(t *testing.T) {
 		<-sess.CloseChan()
 	}()
 
-	s := newTestServer(t, map[string]any{"service": map[string]any{"id": "local"}})
+	s := newTestServer(t, map[string]any{"identity": map[string]any{"claim": "local"}})
 	t.Cleanup(func() { _ = s.Shutdown() })
 	tn := newTunnel("peer-a", l.Addr().String(), s)
 	tn.redialCount = 2

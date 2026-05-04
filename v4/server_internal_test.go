@@ -64,7 +64,7 @@ func TestServerLoadConfigAddsAndRemovesTunnels(t *testing.T) {
 	t.Cleanup(func() { _ = s.Shutdown() })
 
 	if err := s.LoadConfig(newTestConfig(t, map[string]any{
-		"service": map[string]any{"listen": map[string]any{"peer-a": listenAddr}},
+		"identity": map[string]any{"listen": map[string]any{"peer-a": listenAddr}},
 	})); err != nil {
 		t.Fatal(err)
 	}

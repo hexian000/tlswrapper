@@ -144,8 +144,7 @@ func (t *tunnel) redial() {
 		if redialCount > t.redialCount {
 			t.redialCount = redialCount
 		}
-		cfg, _ := t.getConfig()
-		slog.Infof("session %q: redial #%d to %s: %s", t.id, t.redialCount, cfg.ServiceEntry(t.id).MuxConnect, formats.Error(err))
+		slog.Infof("session %q: redial #%d to %s: %s", t.id, t.redialCount, t.dialAddr, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
@@ -298,7 +297,7 @@ func (t *tunnel) dial(ctx context.Context) (*mux.Session, error) {
 	conn := snet.FlowMeter(rawConn, t.s.flowStats)
 	h2cfg := &mux.Config{
 		TLSConfig:     tlscfg,
-		LocalID:       cfg.Service.ID,
+		LocalID:       cfg.Identity.Claim,
 		KeepAlive:     time.Duration(cfg.KeepAlive) * time.Second,
 		PingTimeout:   time.Duration(cfg.PingTimeout) * time.Second,
 		WriteTimeout:  time.Duration(cfg.SendTimeout) * time.Second,

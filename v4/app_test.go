@@ -102,11 +102,11 @@ func TestForwardBidirectional(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Shutdown() })
 
 	// 4. Session client: dials the mux server, exposes a local TCP listener.
-	// service.id is required: the server rejects sessions from an anonymous peer.
+	// identity.claim is required: the server rejects sessions from an anonymous peer.
 	cliCfg := newPlaintextConfig(t, map[string]any{
 		"mux_connect": muxAddr,
 		"listen":      clientListenAddr,
-		"service":     map[string]any{"id": "test-client"},
+		"identity":    map[string]any{"claim": "test-client"},
 	})
 	cli, err := tlswrapper.NewServer(cliCfg)
 	if err != nil {
@@ -157,7 +157,7 @@ func TestShutdownClosesServiceListeners(t *testing.T) {
 	listenAddr := freePort(t)
 
 	cfg := newPlaintextConfig(t, map[string]any{
-		"service": map[string]any{
+		"identity": map[string]any{
 			"listen": map[string]any{
 				"peer-a": listenAddr,
 			},

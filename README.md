@@ -114,8 +114,8 @@ Adding `ca-cert.pem` to `"authcerts"` will allow peer certificates signed by tha
             "@client-cert.pem"
         ]
     },
-    "service": {
-        "id": "server"
+    "identity": {
+        "claim": "server"
     }
 }
 ```
@@ -132,11 +132,11 @@ Adding `ca-cert.pem` to `"authcerts"` will allow peer certificates signed by tha
             "@server-cert.pem"
         ]
     },
-    "service": {
-        "id": "client",
-        "peers": {
-            "server": "example.com:38000"
-        },
+    "identity": {
+        "claim": "client",
+        "mux_connect": [
+            "example.com:38000"
+        ],
         "listen": {
             "server": "127.0.0.1:8080"
         }

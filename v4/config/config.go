@@ -54,11 +54,11 @@ type TCP struct {
 	Backlog int `json:"backlog"`
 }
 
-type Service struct {
-	// Self identity announced in the handshake
-	ID string `json:"id,omitempty"`
-	// Peer identity to mux dial address mapping
-	Peers map[string]string `json:"peers,omitempty"`
+type Identity struct {
+	// Self identity claimed in the handshake
+	Claim string `json:"claim,omitempty"`
+	// Dial addresses for outbound mux connections
+	MuxConnect []string `json:"mux_connect,omitempty"`
 	// Peer identity to local listen address mapping
 	Listen map[string]string `json:"listen,omitempty"`
 }
@@ -66,8 +66,6 @@ type Service struct {
 // ServiceEntry is the effective config-driven tunnel entry for one peer name.
 type ServiceEntry struct {
 	Listen string
-	// Address to dial for a config-driven tunnel.
-	MuxConnect string
 	// Forwarding target for streams arriving from an inbound ephemeral tunnel.
 	Connect string
 }
@@ -87,7 +85,7 @@ type File struct {
 	// Forwarding target for streams arriving from inbound ephemeral tunnels
 	Connect string `json:"connect,omitempty"`
 	// Service identity and per-peer routing settings
-	Service Service `json:"service,omitempty"`
+	Identity Identity `json:"identity,omitempty"`
 	// Application-level keepalive probe interval in seconds
 	KeepAlive int `json:"keepalive"`
 	// Session ping timeout in seconds
@@ -148,16 +146,14 @@ var Default = File{
 }
 
 // ServiceEntry returns the effective ServiceEntry for the given peer name.
-// For the empty name "", the top-level Listen/MuxConnect/Connect fields define
+// For the empty name "", the top-level Listen/Connect fields define
 // the default unnamed config-driven tunnel.
 func (c *File) ServiceEntry(name string) ServiceEntry {
 	entry := ServiceEntry{Connect: c.Connect}
 	if name == "" {
 		entry.Listen = c.Listen
-		entry.MuxConnect = c.MuxConnect
 		return entry
 	}
-	entry.Listen = c.Service.Listen[name]
-	entry.MuxConnect = c.Service.Peers[name]
+	entry.Listen = c.Identity.Listen[name]
 	return entry
 }

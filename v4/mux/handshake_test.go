@@ -43,22 +43,22 @@ func (m *mockControlStream) Recv() (*muxpb.ControlMessage, error) {
 	return nil, io.EOF
 }
 
-func clientHelloMsg(serviceID string, rejectInbound bool) *muxpb.ControlMessage {
+func clientHelloMsg(identity string, rejectInbound bool) *muxpb.ControlMessage {
 	return &muxpb.ControlMessage{
 		Body: &muxpb.ControlMessage_ClientHello{
 			ClientHello: &muxpb.ClientHello{
-				ServiceId:     serviceID,
+				Identity:      identity,
 				RejectInbound: rejectInbound,
 			},
 		},
 	}
 }
 
-func serverHelloMsg(serviceID string, rejectInbound bool) *muxpb.ControlMessage {
+func serverHelloMsg(identity string, rejectInbound bool) *muxpb.ControlMessage {
 	return &muxpb.ControlMessage{
 		Body: &muxpb.ControlMessage_ServerHello{
 			ServerHello: &muxpb.ServerHello{
-				ServiceId:     serviceID,
+				Identity:      identity,
 				RejectInbound: rejectInbound,
 			},
 		},
@@ -88,8 +88,8 @@ func TestDoClientHandshake(t *testing.T) {
 		if !ok {
 			t.Fatal("sent message is not ClientHello")
 		}
-		if hello.ClientHello.GetServiceId() != "cli" {
-			t.Fatalf("sent serviceId = %q, want %q", hello.ClientHello.GetServiceId(), "cli")
+		if hello.ClientHello.GetIdentity() != "cli" {
+			t.Fatalf("sent identity = %q, want %q", hello.ClientHello.GetIdentity(), "cli")
 		}
 	})
 
@@ -174,8 +174,8 @@ func TestDoServerHandshake(t *testing.T) {
 		if !ok {
 			t.Fatal("sent message is not ServerHello")
 		}
-		if hello.ServerHello.GetServiceId() != "srv" {
-			t.Fatalf("sent serviceId = %q, want %q", hello.ServerHello.GetServiceId(), "srv")
+		if hello.ServerHello.GetIdentity() != "srv" {
+			t.Fatalf("sent identity = %q, want %q", hello.ServerHello.GetIdentity(), "srv")
 		}
 	})
 

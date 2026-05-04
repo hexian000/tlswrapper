@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "tlswrapper configuration",
-    "description": "Configuration file for tlswrapper. At least one of 'mux_listen', 'mux_connect', or entries in 'service.peers' should be present to create a config-driven tunnel or accept inbound mux connections.",
+    "description": "Configuration file for tlswrapper. At least one of 'mux_listen', 'mux_connect', or entries in 'identity.mux_connect' or 'identity.listen' should be present to create a config-driven tunnel or accept inbound mux connections.",
     "type": "object",
     "properties": {
         "type": {
@@ -224,18 +224,18 @@
             },
             "additionalProperties": false
         },
-        "service": {
+        "identity": {
             "description": "Service identity and per-peer config-driven tunnel routing settings.",
             "type": "object",
             "properties": {
-                "id": {
-                    "description": "Self identity announced in the handshake.",
+                "claim": {
+                    "description": "Self identity claimed in the handshake.",
                     "type": "string"
                 },
-                "peers": {
-                    "description": "Peer identity to config-driven tunnel dial address mapping.",
-                    "type": "object",
-                    "additionalProperties": {
+                "mux_connect": {
+                    "description": "Dial addresses for outbound mux connections.",
+                    "type": "array",
+                    "items": {
                         "type": "string"
                     }
                 },

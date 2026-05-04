@@ -14,13 +14,13 @@ message Chunk {
 
 // ClientHello is sent by the client as the first message on the Control stream.
 message ClientHello {
-  string service_id     = 1;
+  string identity       = 1;
   bool   reject_inbound = 2;
 }
 
 // ServerHello is sent by the server in response to ClientHello on the Control stream.
 message ServerHello {
-  string service_id     = 1;
+  string identity       = 1;
   bool   reject_inbound = 2;
 }
 

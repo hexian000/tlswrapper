@@ -97,12 +97,20 @@ func maxStreams(cfg *config.File) int {
 	return cfg.MaxStreams
 }
 
-// findSession returns the first active tunnel for the given peer service ID.
-func (s *Server) findSession(peerServiceId string) *tunnel {
+// findSession returns the first active tunnel whose peer identity matches.
+// For outbound tunnels (keyed by dial address), the peer identity is discovered
+// after handshake and checked via ss.PeerID().
+func (s *Server) findSession(peerID string) *tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, ss := range s.sessions {
-		if ss.id == peerServiceId && ss.getSession() != nil {
+		if ss.id == peerID {
+			if ss.getSession() != nil {
+				return ss
+			}
+			continue
+		}
+		if sess := ss.getSession(); sess != nil && sess.PeerID() == peerID {
 			return ss
 		}
 	}
@@ -353,15 +361,17 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 
 // loadSessions creates and stops config-driven tunnels to match cfg.
 func (s *Server) loadSessions(cfg *config.File) error {
-	// collect all peer names that should be active
+	// collect all keys that should be active:
+	//   - listen-only peers: keyed by peer ID
+	//   - outbound connections: keyed by dial address
+	//   - default ("") tunnel: driven by top-level MuxConnect/Listen
 	activePeers := make(map[string]struct{})
-	for name := range cfg.Service.Peers {
+	for name := range cfg.Identity.Listen {
 		activePeers[name] = struct{}{}
 	}
-	for name := range cfg.Service.Listen {
-		activePeers[name] = struct{}{}
+	for _, addr := range cfg.Identity.MuxConnect {
+		activePeers[addr] = struct{}{}
 	}
-	// the empty-string key represents the default unnamed service driven by top-level Listen/MuxConnect
 	if cfg.Listen != "" || cfg.MuxConnect != "" {
 		activePeers[""] = struct{}{}
 	}
@@ -388,7 +398,17 @@ func (s *Server) loadSessions(cfg *config.File) error {
 		if _, exists := s.services[name]; exists {
 			continue
 		}
-		dialAddr := cfg.ServiceEntry(name).MuxConnect
+		// determine dial address:
+		//   - "" (default tunnel): use top-level MuxConnect
+		//   - outbound tunnels from Identity.MuxConnect: name == dialAddr
+		//   - listen-only peers: no dial address
+		var dialAddr string
+		if name == "" {
+			dialAddr = cfg.MuxConnect
+		} else if _, isListen := cfg.Identity.Listen[name]; !isListen {
+			// not a listen-only peer — must be an outbound addr from MuxConnect
+			dialAddr = name
+		}
 		ss := newTunnel(name, dialAddr, s)
 		s.services[name] = ss
 		s.sessions = append(s.sessions, ss)

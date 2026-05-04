@@ -26,7 +26,7 @@ func doClientHandshake(ctrl controlStream, localID string, rejectInbound bool) (
 	if err = ctrl.Send(&muxpb.ControlMessage{
 		Body: &muxpb.ControlMessage_ClientHello{
 			ClientHello: &muxpb.ClientHello{
-				ServiceId:     localID,
+				Identity:      localID,
 				RejectInbound: rejectInbound,
 			},
 		},
@@ -43,7 +43,7 @@ func doClientHandshake(ctrl controlStream, localID string, rejectInbound bool) (
 		err = fmt.Errorf("%w: expected ServerHello, got %T", errUnexpectedMessage, msg.Body)
 		return
 	}
-	peerID = ack.ServerHello.GetServiceId()
+	peerID = ack.ServerHello.GetIdentity()
 	peerRejectsInbound = ack.ServerHello.GetRejectInbound()
 	return
 }
@@ -60,13 +60,13 @@ func doServerHandshake(ctrl controlStream, localID string, rejectInbound bool) (
 		err = fmt.Errorf("%w: expected ClientHello, got %T", errUnexpectedMessage, msg.Body)
 		return
 	}
-	peerID = hello.ClientHello.GetServiceId()
+	peerID = hello.ClientHello.GetIdentity()
 	peerRejectsInbound = hello.ClientHello.GetRejectInbound()
 
 	err = ctrl.Send(&muxpb.ControlMessage{
 		Body: &muxpb.ControlMessage_ServerHello{
 			ServerHello: &muxpb.ServerHello{
-				ServiceId:     localID,
+				Identity:      localID,
 				RejectInbound: rejectInbound,
 			},
 		},
