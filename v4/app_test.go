@@ -153,6 +153,84 @@ func TestForwardBidirectional(t *testing.T) {
 	}
 }
 
+// TestForwardIdentityListenMuxConnect exercises the identity.mux_connect +
+// identity.listen config pattern, where the outbound dial address and the
+// per-peer application listener are declared inside the identity block:
+//
+//	[test conn] → [client identity.listen["server"]] ──mux──> [server mux_listen] → [echo server]
+func TestForwardIdentityListenMuxConnect(t *testing.T) {
+	echoAddr := startEchoServer(t)
+	muxAddr := freePort(t)
+	clientListenAddr := freePort(t)
+
+	// Server: accepts mux connections, forwards streams to the echo server.
+	srvCfg := newPlaintextConfig(t, map[string]any{
+		"mux_listen": muxAddr,
+		"connect":    echoAddr,
+		"identity":   map[string]any{"claim": "server"},
+	})
+	srv, err := tlswrapper.NewServer(srvCfg)
+	if err != nil {
+		t.Fatal("server create:", err)
+	}
+	if err := srv.Start(); err != nil {
+		t.Fatal("server start:", err)
+	}
+	t.Cleanup(func() { _ = srv.Shutdown() })
+
+	// Client: identity.mux_connect dials the server; identity.listen["server"]
+	// binds a local port that forwards through the session to that peer.
+	cliCfg := newPlaintextConfig(t, map[string]any{
+		"identity": map[string]any{
+			"claim":       "client",
+			"mux_connect": []string{muxAddr},
+			"listen":      map[string]any{"server": clientListenAddr},
+		},
+	})
+	cli, err := tlswrapper.NewServer(cliCfg)
+	if err != nil {
+		t.Fatal("client create:", err)
+	}
+	if err := cli.Start(); err != nil {
+		t.Fatal("client start:", err)
+	}
+	t.Cleanup(func() { _ = cli.Shutdown() })
+
+	// Wait for the outbound mux session to be established.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cli.Stats().NumSessions > 0 {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if cli.Stats().NumSessions == 0 {
+		t.Fatal("mux session not established within 5 s")
+	}
+
+	// Connect through the identity.listen["server"] port and verify echo.
+	conn, err := net.DialTimeout("tcp", clientListenAddr, 3*time.Second)
+	if err != nil {
+		t.Fatal("dial:", err)
+	}
+	defer conn.Close()
+
+	want := []byte("hello identity listen mux connect")
+	if _, err := conn.Write(want); err != nil {
+		t.Fatal("write:", err)
+	}
+	got := make([]byte, len(want))
+	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatal("read:", err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("echo mismatch: got %q, want %q", got, want)
+	}
+}
+
 func TestShutdownClosesServiceListeners(t *testing.T) {
 	listenAddr := freePort(t)
 

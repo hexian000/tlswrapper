@@ -359,11 +359,15 @@ func (t *tunnel) Stats() SessionStats {
 	defer t.mu.RUnlock()
 	active := t.ss != nil && !t.ss.IsClosed()
 	numStreams := 0
+	name := t.id
 	if active {
 		numStreams = t.ss.NumStreams()
+		if peerID := t.ss.PeerID(); peerID != "" {
+			name = peerID
+		}
 	}
 	return SessionStats{
-		Name:        t.id,
+		Name:        name,
 		LastChanged: t.lastChanged,
 		NumStreams:  numStreams,
 		Active:      active,

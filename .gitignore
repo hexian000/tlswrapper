@@ -1,3 +1,6 @@
 /.vscode
 /build
+
 *.pem
+
+__pycache__/
