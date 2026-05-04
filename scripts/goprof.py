@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import shlex
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -20,6 +21,163 @@ ROOT = Path.cwd().resolve()
 DEFAULT_BUILD_DIR = SCRIPT_DIR.parent / "build"
 DEFAULT_PROFILE_DIR = DEFAULT_BUILD_DIR / "goprof"
 DEFAULT_OUTPUT = DEFAULT_BUILD_DIR / "goprof.md"
+PROFILE_TEST_NAME = "TestProfileIperf3Workload"
+PROFILE_TEST_FILE = "zz_goprof_workload_test.go"
+
+PROFILE_TEST_SOURCE = r'''package tlswrapper
+
+import (
+    "context"
+    "io"
+    "net"
+    "os"
+    "os/exec"
+    "strconv"
+    "testing"
+    "time"
+)
+
+func goprofEnvInt(t *testing.T, key string, fallback int) int {
+    t.Helper()
+    value := os.Getenv(key)
+    if value == "" {
+        return fallback
+    }
+    parsed, err := strconv.Atoi(value)
+    if err != nil {
+        t.Fatalf("%s: %v", key, err)
+    }
+    return parsed
+}
+
+func goprofOpenLog(t *testing.T, key string) *os.File {
+    t.Helper()
+    path := os.Getenv(key)
+    if path == "" {
+        return nil
+    }
+    handle, err := os.Create(path)
+    if err != nil {
+        t.Fatalf("%s: %v", key, err)
+    }
+    t.Cleanup(func() {
+        _ = handle.Close()
+    })
+    return handle
+}
+
+func TestProfileIperf3Workload(t *testing.T) {
+    iperf3 := os.Getenv("GOPROF_IPERF3")
+    if iperf3 == "" {
+        iperf3 = "iperf3"
+    }
+    duration := goprofEnvInt(t, "GOPROF_DURATION", 30)
+    parallel := goprofEnvInt(t, "GOPROF_PARALLEL", 10)
+    muxAddr := os.Getenv("GOPROF_MUX_ADDR")
+    clientListenAddr := os.Getenv("GOPROF_CLIENT_LISTEN_ADDR")
+    iperfServerAddr := os.Getenv("GOPROF_IPERF_SERVER_ADDR")
+    if muxAddr == "" || clientListenAddr == "" || iperfServerAddr == "" {
+        t.Fatal("missing workload addresses")
+    }
+
+    srv, err := NewServer(newTestConfig(t, map[string]any{
+        "mux_listen": muxAddr,
+        "connect":    iperfServerAddr,
+        "max_streams": 1000,
+        "mux": map[string]any{
+            "tcp":            map[string]any{"nodelay": true, "backlog": 16},
+            "max_halfopen":   256,
+            "session_window": 16777216,
+            "stream_window":  16777216,
+        },
+    }))
+    if err != nil {
+        t.Fatal("server create:", err)
+    }
+    if err := srv.Start(); err != nil {
+        t.Fatal("server start:", err)
+    }
+    t.Cleanup(func() { _ = srv.Shutdown() })
+
+    cli, err := NewServer(newTestConfig(t, map[string]any{
+        "mux_connect": muxAddr,
+        "listen":      clientListenAddr,
+        "identity":    map[string]any{"claim": "profile-client"},
+        "max_streams": 1000,
+        "mux": map[string]any{
+            "tcp":            map[string]any{"nodelay": true, "backlog": 16},
+            "max_halfopen":   256,
+            "session_window": 16777216,
+            "stream_window":  16777216,
+        },
+    }))
+    if err != nil {
+        t.Fatal("client create:", err)
+    }
+    if err := cli.Start(); err != nil {
+        t.Fatal("client start:", err)
+    }
+    t.Cleanup(func() { _ = cli.Shutdown() })
+
+    waitFor(t, 5*time.Second, func() bool { return cli.Stats().NumSessions > 0 })
+
+    ctx, cancel := context.WithCancel(context.Background())
+    t.Cleanup(cancel)
+
+    serverStdout := io.Writer(io.Discard)
+    serverStderr := io.Writer(io.Discard)
+    if handle := goprofOpenLog(t, "GOPROF_IPERF_SERVER_LOG"); handle != nil {
+        serverStdout = handle
+        serverStderr = handle
+    }
+    _, serverPort, err := net.SplitHostPort(iperfServerAddr)
+    if err != nil {
+        t.Fatal(err)
+    }
+    serverCmd := exec.CommandContext(ctx, iperf3, "-s", "-p", serverPort)
+    serverCmd.Stdout = serverStdout
+    serverCmd.Stderr = serverStderr
+    if err := serverCmd.Start(); err != nil {
+        t.Fatal("iperf3 server start:", err)
+    }
+    t.Cleanup(func() {
+        if serverCmd.Process != nil {
+            _ = serverCmd.Process.Signal(os.Interrupt)
+        }
+        _ = serverCmd.Wait()
+    })
+
+    time.Sleep(200 * time.Millisecond)
+
+    clientStdout := io.Writer(io.Discard)
+    clientStderr := io.Writer(io.Discard)
+    if handle := goprofOpenLog(t, "GOPROF_IPERF_STDOUT_LOG"); handle != nil {
+        clientStdout = handle
+    }
+    if handle := goprofOpenLog(t, "GOPROF_IPERF_STDERR_LOG"); handle != nil {
+        clientStderr = handle
+    }
+    host, port, err := net.SplitHostPort(clientListenAddr)
+    if err != nil {
+        t.Fatal(err)
+    }
+    clientCmd := exec.CommandContext(
+        ctx,
+        iperf3,
+        "-c", host,
+        "-p", port,
+        "--bidir",
+        "-P", strconv.Itoa(parallel),
+        "-t", strconv.Itoa(duration),
+    )
+    clientCmd.Stdout = clientStdout
+    clientCmd.Stderr = clientStderr
+    t.Logf("iperf3 workload: %s", clientCmd.String())
+    if err := clientCmd.Run(); err != nil {
+        t.Fatal("iperf3 client run:", err)
+    }
+}
+'''
 
 
 @dataclass
@@ -51,6 +209,13 @@ def ensure_tool(name: str) -> str:
     return path
 
 
+def pick_free_tcp_address() -> str:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+    return "%s:%d" % (host, port)
+
+
 def resolve_path(base: Path, value: str) -> Path:
     path = Path(value)
     if not path.is_absolute():
@@ -66,17 +231,23 @@ def run_command(
         command: Sequence[str],
         *,
         cwd: Optional[Path] = None,
+    env: Optional[Dict[str, str]] = None,
         capture_output: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     log("+ %s" % quote_command(command))
     return subprocess.run(
         list(command),
         cwd=str(cwd) if cwd is not None else None,
+        env=env,
         text=True,
         check=True,
         stdout=subprocess.PIPE if capture_output else None,
         stderr=subprocess.STDOUT if capture_output else None,
     )
+
+
+def write_profile_test(path: Path) -> None:
+    path.write_text(PROFILE_TEST_SOURCE, encoding="utf-8")
 
 
 def parse_top(text: str) -> List[TopRow]:
@@ -120,8 +291,10 @@ def render_markdown_report(
         mem_top_path: Path,
         cpu_rows: Sequence[TopRow],
         mem_rows: Sequence[TopRow],
-        test_name: str,
-        test_count: int,
+        workload_command: str,
+        iperf_server_log_path: Path,
+        iperf_stdout_log_path: Path,
+        iperf_stderr_log_path: Path,
 ) -> str:
     output_dir = output_path.parent
     lines = [
@@ -131,8 +304,7 @@ def render_markdown_report(
         "| --- | --- |",
         "| Module root | %s |" % relative_path(ROOT),
         "| Profile directory | %s |" % relative_path(profile_dir),
-        "| Test workload | %s |" % test_name,
-        "| Repetitions | %d |" % test_count,
+        "| Workload | `%s` |" % workload_command,
         "| Test binary | [%s](%s) |"
         % (
             relative_path(test_binary_path),
@@ -152,6 +324,21 @@ def render_markdown_report(
         % (
             relative_path(test_output_path),
             os.path.relpath(test_output_path, start=output_dir).replace(os.sep, "/"),
+        ),
+        "| iperf3 server log | [%s](%s) |"
+        % (
+            relative_path(iperf_server_log_path),
+            os.path.relpath(iperf_server_log_path, start=output_dir).replace(os.sep, "/"),
+        ),
+        "| iperf3 stdout | [%s](%s) |"
+        % (
+            relative_path(iperf_stdout_log_path),
+            os.path.relpath(iperf_stdout_log_path, start=output_dir).replace(os.sep, "/"),
+        ),
+        "| iperf3 stderr | [%s](%s) |"
+        % (
+            relative_path(iperf_stderr_log_path),
+            os.path.relpath(iperf_stderr_log_path, start=output_dir).replace(os.sep, "/"),
         ),
         "",
         "## CPU Hotspots",
@@ -201,15 +388,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--profile-dir", default=str(DEFAULT_PROFILE_DIR), help="profile output directory (default: ../build/goprof from the script location)")
     parser.add_argument("--output", help="Markdown output path (default: build/goprof.md)")
     parser.add_argument(
-        "--test",
-        default="TestForwardBidirectional",
-        help="root-package test used as the profiling workload (default: TestForwardBidirectional)",
+        "--iperf3",
+        default="iperf3",
+        help="iperf3 executable name",
     )
     parser.add_argument(
-        "--count",
+        "--parallel",
         type=int,
-        default=50,
-        help="number of times to repeat the profiling workload (default: 50)",
+        default=10,
+        help="iperf3 parallel stream count (default: 10)",
+    )
+    parser.add_argument(
+        "--duration",
+        type=int,
+        default=30,
+        help="iperf3 test duration in seconds (default: 30)",
     )
     return parser.parse_args(argv)
 
@@ -220,6 +413,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ROOT = resolve_path(Path.cwd().resolve(), args.module_dir)
     ensure_project_root(ROOT)
     ensure_tool("go")
+    iperf3 = ensure_tool(args.iperf3)
 
     profile_dir = resolve_path(ROOT, args.profile_dir)
     output_path = resolve_path(ROOT, args.output) if args.output else DEFAULT_OUTPUT
@@ -231,17 +425,44 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     cpu_top_path = profile_dir / "cpu.top.txt"
     mem_top_path = profile_dir / "mem.top.txt"
     test_output_path = profile_dir / "go-test.log"
+    iperf_server_log_path = profile_dir / "iperf3-server.log"
+    iperf_stdout_log_path = profile_dir / "iperf3.stdout"
+    iperf_stderr_log_path = profile_dir / "iperf3.stderr"
+    temp_test_path = ROOT / PROFILE_TEST_FILE
+    mux_addr = pick_free_tcp_address()
+    client_listen_addr = pick_free_tcp_address()
+    iperf_server_addr = pick_free_tcp_address()
 
-    run_command(
-        ["go", "test", "-mod=vendor", "-c", "-o", str(test_binary_path), "."],
-        cwd=ROOT,
+    write_profile_test(temp_test_path)
+    try:
+        run_command(
+            ["go", "test", "-mod=vendor", "-c", "-o", str(test_binary_path), "."],
+            cwd=ROOT,
+        )
+    finally:
+        if temp_test_path.exists():
+            temp_test_path.unlink()
+
+    test_env = os.environ.copy()
+    test_env.update(
+        {
+            "GOPROF_IPERF3": iperf3,
+            "GOPROF_DURATION": str(args.duration),
+            "GOPROF_PARALLEL": str(args.parallel),
+            "GOPROF_MUX_ADDR": mux_addr,
+            "GOPROF_CLIENT_LISTEN_ADDR": client_listen_addr,
+            "GOPROF_IPERF_SERVER_ADDR": iperf_server_addr,
+            "GOPROF_IPERF_SERVER_LOG": str(iperf_server_log_path),
+            "GOPROF_IPERF_STDOUT_LOG": str(iperf_stdout_log_path),
+            "GOPROF_IPERF_STDERR_LOG": str(iperf_stderr_log_path),
+        }
     )
     test_proc = run_command(
         [
             str(test_binary_path),
             "-test.run",
-            "^%s$" % args.test,
-            "-test.count=%d" % args.count,
+            "^%s$" % PROFILE_TEST_NAME,
+            "-test.count=1",
             "-test.v",
             "-test.cpuprofile",
             str(cpu_profile_path),
@@ -249,6 +470,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             str(mem_profile_path),
         ],
         cwd=ROOT,
+        env=test_env,
         capture_output=True,
     )
     test_output_path.write_text(test_proc.stdout or "", encoding="utf-8")
@@ -286,8 +508,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         mem_top_path=mem_top_path,
         cpu_rows=parse_top(cpu_top_text),
         mem_rows=parse_top(mem_top_text),
-        test_name=args.test,
-        test_count=args.count,
+        workload_command="%s -c 127.0.0.1 -p %s --bidir -P %d -t %d"
+        % (iperf3, client_listen_addr.rsplit(":", 1)[1], args.parallel, args.duration),
+        iperf_server_log_path=iperf_server_log_path,
+        iperf_stdout_log_path=iperf_stdout_log_path,
+        iperf_stderr_log_path=iperf_stderr_log_path,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")
