@@ -23,8 +23,10 @@ ROOT = Path.cwd().resolve()
 DEFAULT_BUILD_DIR = SCRIPT_DIR.parent / "build"
 DEFAULT_OUTPUT = DEFAULT_BUILD_DIR / "bench.md"
 BENCH_NETNS_ENV = "BENCH_NETNS"
-MUX_TLS_PORT = 8443
+MUX_TRANSPORT_PORT = 8443
 CONFIG_TYPE = "application/x-tlswrapper-config; version=4"
+COMMAND_TIMEOUT_GRACE_SECONDS = 30.0
+BUILD_TIMEOUT_GRACE_SECONDS = 300.0
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,10 @@ def relative_path(path: Path) -> str:
     return os.path.relpath(path, start=ROOT).replace(os.sep, "/")
 
 
+def command_timeout_seconds(duration: int, *, grace_seconds: float) -> float:
+    return max(1.0, float(duration)) + grace_seconds
+
+
 def run_command(
         command: Sequence[str],
         *,
@@ -107,37 +113,34 @@ def run_command(
         raise SystemExit("command timed out: %s" % quote_command(command))
 
 
-def build_server_config() -> Dict[str, object]:
-    return {
+def build_server_config(use_tls: bool) -> Dict[str, object]:
+    config: Dict[str, object] = {
         "type": CONFIG_TYPE,
         "api_listen": "127.0.0.1:9081",
         "mux_listen": "127.0.0.1:8443",
         "listen": "127.0.0.1:5203",
         "connect": "127.0.0.1:5201",
-        "tls": {
-            "cert": "@server-cert.pem",
-            "key": "@server-key.pem",
-            "authcerts": ["@client-cert.pem"],
-        },
         "mux": {
             "stream_window": 16777216,
             "session_window": 16777216,
         },
         "loglevel": 5,
     }
+    if use_tls:
+        config["tls"] = {
+            "cert": "@server-cert.pem",
+            "key": "@server-key.pem",
+            "authcerts": ["@client-cert.pem"],
+        }
+    return config
 
 
-def build_client_config() -> Dict[str, object]:
-    return {
+def build_client_config(use_tls: bool) -> Dict[str, object]:
+    config: Dict[str, object] = {
         "type": CONFIG_TYPE,
         "mux_connect": "127.0.0.1:8443",
         "listen": "127.0.0.1:5202",
         "connect": "127.0.0.1:5201",
-        "tls": {
-            "cert": "@client-cert.pem",
-            "key": "@client-key.pem",
-            "authcerts": ["@server-cert.pem"],
-        },
         "mux": {
             "stream_window": 16777216,
             "session_window": 16777216,
@@ -147,13 +150,20 @@ def build_client_config() -> Dict[str, object]:
         },
         "loglevel": 5,
     }
+    if use_tls:
+        config["tls"] = {
+            "cert": "@client-cert.pem",
+            "key": "@client-key.pem",
+            "authcerts": ["@server-cert.pem"],
+        }
+    return config
 
 
 def write_config(path: Path, payload: Dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=4) + "\n", encoding="utf-8")
 
 
-def ensure_certificates(binary_path: Path, runtime_dir: Path) -> None:
+def ensure_certificates(binary_path: Path, runtime_dir: Path, duration: int) -> None:
     server_cert = runtime_dir / "server-cert.pem"
     client_cert = runtime_dir / "client-cert.pem"
     if server_cert.exists() and client_cert.exists():
@@ -161,21 +171,28 @@ def ensure_certificates(binary_path: Path, runtime_dir: Path) -> None:
     run_command(
         [str(binary_path), "--gencerts", "client,server"],
         cwd=runtime_dir,
-        timeout=30.0,
+        timeout=command_timeout_seconds(duration, grace_seconds=COMMAND_TIMEOUT_GRACE_SECONDS),
     )
 
 
-def prepare_runtime_assets(binary_path: Path, runtime_dir: Path) -> tuple[Path, Path]:
+def prepare_runtime_assets(
+        binary_path: Path,
+        runtime_dir: Path,
+        *,
+        use_tls: bool,
+        duration: int,
+) -> tuple[Path, Path]:
     runtime_dir.mkdir(parents=True, exist_ok=True)
-    ensure_certificates(binary_path, runtime_dir)
+    if use_tls:
+        ensure_certificates(binary_path, runtime_dir, duration)
     server_config_path = runtime_dir / "server.json"
     client_config_path = runtime_dir / "client.json"
-    write_config(server_config_path, build_server_config())
-    write_config(client_config_path, build_client_config())
+    write_config(server_config_path, build_server_config(use_tls))
+    write_config(client_config_path, build_client_config(use_tls))
     return server_config_path, client_config_path
 
 
-def build_binary(binary_path: Path) -> None:
+def build_binary(binary_path: Path, duration: int) -> None:
     binary_path.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env.setdefault("CGO_ENABLED", "0")
@@ -191,7 +208,7 @@ def build_binary(binary_path: Path) -> None:
         ],
         cwd=ROOT,
         env=env,
-        timeout=300.0,
+        timeout=command_timeout_seconds(duration, grace_seconds=BUILD_TIMEOUT_GRACE_SECONDS),
     )
 
 
@@ -442,7 +459,7 @@ def configure_netem(netem_delay: Optional[str]) -> None:
         ],
         cwd=ROOT,
     )
-    for field, port in (("dport", str(MUX_TLS_PORT)), ("sport", str(MUX_TLS_PORT))):
+    for field, port in (("dport", str(MUX_TRANSPORT_PORT)), ("sport", str(MUX_TRANSPORT_PORT))):
         run_command(
             [
                 "tc",
@@ -482,6 +499,7 @@ def render_markdown_report(
         duration: int,
         parallel: int,
         netem_delay: Optional[str],
+    use_tls: bool,
 ) -> str:
     output_dir = output_path.parent
     lines = [
@@ -493,6 +511,7 @@ def render_markdown_report(
         "| Binary | %s |" % relative_path(binary_path),
         "| Duration per run | %d s |" % duration,
         "| Parallel streams | %d |" % parallel,
+        "| Transport security | %s |" % ("mutual TLS" if use_tls else "plaintext"),
         "| Netem delay | %s |" % (netem_delay or "off"),
         "| Bidirectional method | iperf3 --bidir single run |",
         "",
@@ -566,6 +585,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="iperf3 test duration in seconds (default: 30)",
     )
     parser.add_argument(
+        "--tls",
+        action="store_true",
+        help="enable mutual TLS on the mux transport (default: off)",
+    )
+    parser.add_argument(
         "--parallel",
         type=int,
         default=10,
@@ -579,7 +603,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--netem-delay",
-        help="optional tc netem delay applied to the TLS transport, for example 100ms",
+        help="optional tc netem delay applied to the mux transport, for example 100ms",
     )
     parser.add_argument("--iperf3", default="iperf3",
                         help="iperf3 executable name")
@@ -597,9 +621,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     build_dir = resolve_path(ROOT, args.build_dir)
     build_dir.mkdir(parents=True, exist_ok=True)
     binary_path = build_dir / "tlswrapper"
-    build_binary(binary_path)
+    build_binary(binary_path, args.duration)
     server_config_path, client_config_path = prepare_runtime_assets(
-        binary_path, build_dir)
+        binary_path,
+        build_dir,
+        use_tls=args.tls,
+        duration=args.duration,
+    )
     configure_netem(args.netem_delay)
 
     output_path = resolve_path(
@@ -652,6 +680,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for scenario in SCENARIOS:
             commands = build_scenario_commands(
                 iperf3, scenario, args.duration, args.parallel)
+            timeout_seconds = command_timeout_seconds(
+                args.duration,
+                grace_seconds=COMMAND_TIMEOUT_GRACE_SECONDS,
+            )
             log_paths = [
                 build_dir / ("iperf3-%s-%02d.json" % (scenario.name, index))
                 for index in range(1, len(commands) + 1)
@@ -667,7 +699,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         cwd=ROOT,
                         log_path=log_paths[0],
                         stderr_path=stderr_paths[0],
-                        timeout_seconds=float(args.duration + 30),
+                        timeout_seconds=timeout_seconds,
                     )
                 ]
             else:
@@ -677,7 +709,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         cwd=ROOT,
                         log_path=log_path,
                         stderr_path=stderr_path,
-                        timeout_seconds=float(args.duration + 30),
+                        timeout_seconds=timeout_seconds,
                     )
                     for command, log_path, stderr_path in zip(
                         commands, log_paths, stderr_paths
@@ -716,6 +748,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         duration=args.duration,
         parallel=args.parallel,
         netem_delay=args.netem_delay,
+        use_tls=args.tls,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")

@@ -23,11 +23,17 @@ DEFAULT_PROFILE_DIR = DEFAULT_BUILD_DIR / "goprof"
 DEFAULT_OUTPUT = DEFAULT_BUILD_DIR / "goprof.md"
 PROFILE_TEST_NAME = "TestProfileIperf3Workload"
 PROFILE_TEST_FILE = "zz_goprof_workload_test.go"
+COMMAND_TIMEOUT_GRACE_SECONDS = 30.0
+BUILD_TIMEOUT_GRACE_SECONDS = 300.0
+PROFILE_TIMEOUT_GRACE_SECONDS = 120.0
+PPROF_TIMEOUT_GRACE_SECONDS = 120.0
 
 PROFILE_TEST_SOURCE = r'''package tlswrapper
 
 import (
     "context"
+    "crypto/ed25519"
+    "crypto/rand"
     "io"
     "net"
     "os"
@@ -66,6 +72,37 @@ func goprofOpenLog(t *testing.T, key string) *os.File {
     return handle
 }
 
+func goprofEnvBool(key string) bool {
+    value := os.Getenv(key)
+    switch value {
+    case "1", "true", "TRUE", "yes", "YES", "on", "ON":
+        return true
+    default:
+        return false
+    }
+}
+
+func goprofTLSMaterial(t *testing.T, sni string) ([]byte, []byte) {
+    t.Helper()
+    pubKey, key, err := ed25519.GenerateKey(rand.Reader)
+    if err != nil {
+        t.Fatal(err)
+    }
+    certPEM, keyPEM, err := newCertificate(nil, nil, sni, pubKey, key)
+    if err != nil {
+        t.Fatal(err)
+    }
+    return certPEM, keyPEM
+}
+
+func goprofTLSConfig(certPEM, keyPEM, authCertPEM []byte) map[string]any {
+    return map[string]any{
+        "cert":      string(certPEM),
+        "key":       string(keyPEM),
+        "authcerts": []string{string(authCertPEM)},
+    }
+}
+
 func TestProfileIperf3Workload(t *testing.T) {
     iperf3 := os.Getenv("GOPROF_IPERF3")
     if iperf3 == "" {
@@ -73,6 +110,7 @@ func TestProfileIperf3Workload(t *testing.T) {
     }
     duration := goprofEnvInt(t, "GOPROF_DURATION", 30)
     parallel := goprofEnvInt(t, "GOPROF_PARALLEL", 10)
+    useTLS := goprofEnvBool("GOPROF_TLS")
     muxAddr := os.Getenv("GOPROF_MUX_ADDR")
     clientListenAddr := os.Getenv("GOPROF_CLIENT_LISTEN_ADDR")
     iperfServerAddr := os.Getenv("GOPROF_IPERF_SERVER_ADDR")
@@ -80,7 +118,7 @@ func TestProfileIperf3Workload(t *testing.T) {
         t.Fatal("missing workload addresses")
     }
 
-    srv, err := NewServer(newTestConfig(t, map[string]any{
+    serverConfig := map[string]any{
         "mux_listen": muxAddr,
         "connect":    iperfServerAddr,
         "max_streams": 1000,
@@ -90,16 +128,8 @@ func TestProfileIperf3Workload(t *testing.T) {
             "session_window": 16777216,
             "stream_window":  16777216,
         },
-    }))
-    if err != nil {
-        t.Fatal("server create:", err)
     }
-    if err := srv.Start(); err != nil {
-        t.Fatal("server start:", err)
-    }
-    t.Cleanup(func() { _ = srv.Shutdown() })
-
-    cli, err := NewServer(newTestConfig(t, map[string]any{
+    clientConfig := map[string]any{
         "mux_connect": muxAddr,
         "listen":      clientListenAddr,
         "identity":    map[string]any{"claim": "profile-client"},
@@ -110,7 +140,30 @@ func TestProfileIperf3Workload(t *testing.T) {
             "session_window": 16777216,
             "stream_window":  16777216,
         },
-    }))
+    }
+    if useTLS {
+        oldServerName := appFlags.ServerName
+        appFlags.ServerName = "example.com"
+        t.Cleanup(func() {
+            appFlags.ServerName = oldServerName
+        })
+
+        serverCertPEM, serverKeyPEM := goprofTLSMaterial(t, appFlags.ServerName)
+        clientCertPEM, clientKeyPEM := goprofTLSMaterial(t, appFlags.ServerName)
+        serverConfig["tls"] = goprofTLSConfig(serverCertPEM, serverKeyPEM, clientCertPEM)
+        clientConfig["tls"] = goprofTLSConfig(clientCertPEM, clientKeyPEM, serverCertPEM)
+    }
+
+    srv, err := NewServer(newTestConfig(t, serverConfig))
+    if err != nil {
+        t.Fatal("server create:", err)
+    }
+    if err := srv.Start(); err != nil {
+        t.Fatal("server start:", err)
+    }
+    t.Cleanup(func() { _ = srv.Shutdown() })
+
+    cli, err := NewServer(newTestConfig(t, clientConfig))
     if err != nil {
         t.Fatal("client create:", err)
     }
@@ -227,23 +280,32 @@ def relative_path(path: Path) -> str:
     return os.path.relpath(path, start=ROOT).replace(os.sep, "/")
 
 
+def command_timeout_seconds(duration: int, *, grace_seconds: float) -> float:
+    return max(1.0, float(duration)) + grace_seconds
+
+
 def run_command(
         command: Sequence[str],
         *,
         cwd: Optional[Path] = None,
     env: Optional[Dict[str, str]] = None,
         capture_output: bool = False,
+        timeout: Optional[float] = None,
 ) -> subprocess.CompletedProcess[str]:
     log("+ %s" % quote_command(command))
-    return subprocess.run(
-        list(command),
-        cwd=str(cwd) if cwd is not None else None,
-        env=env,
-        text=True,
-        check=True,
-        stdout=subprocess.PIPE if capture_output else None,
-        stderr=subprocess.STDOUT if capture_output else None,
-    )
+    try:
+        return subprocess.run(
+            list(command),
+            cwd=str(cwd) if cwd is not None else None,
+            env=env,
+            text=True,
+            check=True,
+            stdout=subprocess.PIPE if capture_output else None,
+            stderr=subprocess.STDOUT if capture_output else None,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise SystemExit("command timed out: %s" % quote_command(command))
 
 
 def write_profile_test(path: Path) -> None:
@@ -295,6 +357,7 @@ def render_markdown_report(
         iperf_server_log_path: Path,
         iperf_stdout_log_path: Path,
         iperf_stderr_log_path: Path,
+        use_tls: bool,
 ) -> str:
     output_dir = output_path.parent
     lines = [
@@ -304,6 +367,7 @@ def render_markdown_report(
         "| --- | --- |",
         "| Module root | %s |" % relative_path(ROOT),
         "| Profile directory | %s |" % relative_path(profile_dir),
+        "| Transport security | %s |" % ("mutual TLS" if use_tls else "plaintext"),
         "| Workload | `%s` |" % workload_command,
         "| Test binary | [%s](%s) |"
         % (
@@ -404,6 +468,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=30,
         help="iperf3 test duration in seconds (default: 30)",
     )
+    parser.add_argument(
+        "--tls",
+        action="store_true",
+        help="enable mutual TLS on the mux transport (default: off)",
+    )
     return parser.parse_args(argv)
 
 
@@ -438,6 +507,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         run_command(
             ["go", "test", "-mod=vendor", "-c", "-o", str(test_binary_path), "."],
             cwd=ROOT,
+            timeout=command_timeout_seconds(args.duration, grace_seconds=BUILD_TIMEOUT_GRACE_SECONDS),
         )
     finally:
         if temp_test_path.exists():
@@ -449,6 +519,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "GOPROF_IPERF3": iperf3,
             "GOPROF_DURATION": str(args.duration),
             "GOPROF_PARALLEL": str(args.parallel),
+            "GOPROF_TLS": "1" if args.tls else "0",
             "GOPROF_MUX_ADDR": mux_addr,
             "GOPROF_CLIENT_LISTEN_ADDR": client_listen_addr,
             "GOPROF_IPERF_SERVER_ADDR": iperf_server_addr,
@@ -472,6 +543,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         cwd=ROOT,
         env=test_env,
         capture_output=True,
+        timeout=command_timeout_seconds(args.duration, grace_seconds=PROFILE_TIMEOUT_GRACE_SECONDS),
     )
     test_output_path.write_text(test_proc.stdout or "", encoding="utf-8")
 
@@ -479,6 +551,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ["go", "tool", "pprof", "-top", "-nodecount=25", str(test_binary_path), str(cpu_profile_path)],
         cwd=ROOT,
         capture_output=True,
+        timeout=command_timeout_seconds(args.duration, grace_seconds=PPROF_TIMEOUT_GRACE_SECONDS),
     ).stdout or ""
     mem_top_text = run_command(
         [
@@ -493,6 +566,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ],
         cwd=ROOT,
         capture_output=True,
+        timeout=command_timeout_seconds(args.duration, grace_seconds=PPROF_TIMEOUT_GRACE_SECONDS),
     ).stdout or ""
     cpu_top_path.write_text(cpu_top_text, encoding="utf-8")
     mem_top_path.write_text(mem_top_text, encoding="utf-8")
@@ -513,6 +587,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         iperf_server_log_path=iperf_server_log_path,
         iperf_stdout_log_path=iperf_stdout_log_path,
         iperf_stderr_log_path=iperf_stderr_log_path,
+        use_tls=args.tls,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")
