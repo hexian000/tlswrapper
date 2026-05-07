@@ -172,20 +172,26 @@ func newMuxSessionPair(t *testing.T, clientCfg, serverCfg *mux.Config) (mux.Sess
 
 func transferAndVerify(t *testing.T, src, dst net.Conn, want []byte) {
 	t.Helper()
-	errCh := make(chan error, 1)
+	writeDone := make(chan error, 1)
 	go func() {
 		_, err := src.Write(want)
-		errCh <- err
+		writeDone <- err
 	}()
 	got := make([]byte, len(want))
-	if err := dst.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatal(err)
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := io.ReadFull(dst, got)
+		readDone <- err
+	}()
+	select {
+	case err := <-readDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("transferAndVerify: read timed out")
 	}
-	if _, err := io.ReadFull(dst, got); err != nil {
-		t.Fatal(err)
-	}
-	_ = dst.SetReadDeadline(time.Time{})
-	if err := <-errCh; err != nil {
+	if err := <-writeDone; err != nil {
 		t.Fatal(err)
 	}
 	if string(got) != string(want) {

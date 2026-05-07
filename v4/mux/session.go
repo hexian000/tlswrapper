@@ -30,11 +30,9 @@ type Session interface {
 	IsClosed() bool
 	// CloseChan returns a channel that is closed when the session closes.
 	CloseChan() <-chan struct{}
-	// NumStreams returns the current number of active streams.
-	NumStreams() int
-	// Metrics returns the gRPC transport statistics for this session.
+	// Stats returns the gRPC transport statistics for this session.
 	// Returns nil when stats collection is not available.
-	Metrics() *SessionMetrics
+	Stats() *SessionMetrics
 	// PeerID returns the remote service identity.
 	PeerID() string
 	// Tag returns the human-readable session tag for logging.
@@ -66,8 +64,7 @@ type session struct {
 	localAddr  net.Addr
 	remoteAddr net.Addr
 
-	numStreams atomic.Int32
-	openSeq    atomic.Int64
+	openSeq   atomic.Int64
 	closedCh   chan struct{}
 	closeOnce  sync.Once
 	cleanup    func()
@@ -102,7 +99,6 @@ func (ss *session) DeliverStream(requestID string, conn net.Conn) {
 		ch := ss.pending[requestID]
 		ss.pendingMu.Unlock()
 		if ch != nil {
-			ss.numStreams.Add(1)
 			select {
 			case ch <- conn:
 				return
@@ -112,7 +108,6 @@ func (ss *session) DeliverStream(requestID string, conn net.Conn) {
 			}
 		}
 	}
-	ss.numStreams.Add(1)
 	select {
 	case ss.acceptCh <- conn:
 	case <-ss.closedCh:
@@ -148,11 +143,8 @@ func (ss *session) IsClosed() bool {
 // CloseChan returns a channel that is closed when the session closes.
 func (ss *session) CloseChan() <-chan struct{} { return ss.closedCh }
 
-// NumStreams returns the current number of active streams.
-func (ss *session) NumStreams() int { return int(ss.numStreams.Load()) }
-
-// Metrics returns the gRPC transport statistics for this session.
-func (ss *session) Metrics() *SessionMetrics { return ss.metrics }
+// Stats returns the gRPC transport statistics for this session.
+func (ss *session) Stats() *SessionMetrics { return ss.metrics }
 
 // PeerID returns the remote service identity.
 func (ss *session) PeerID() string {
@@ -231,8 +223,7 @@ func (ss *clientSession) dialStreamForServer(requestID string) {
 	if err != nil {
 		return
 	}
-	conn := newClientSideStream(cs, ss.localAddr, ss.remoteAddr, func() { ss.numStreams.Add(-1) })
-	ss.numStreams.Add(1)
+	conn := newClientSideStream(cs, ss.localAddr, ss.remoteAddr, nil)
 	select {
 	case ss.acceptCh <- conn:
 	case <-ss.closedCh:
@@ -252,8 +243,7 @@ func (ss *clientSession) Open(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	ss.numStreams.Add(1)
-	return newClientSideStream(cs, ss.localAddr, ss.remoteAddr, func() { ss.numStreams.Add(-1) }), nil
+	return newClientSideStream(cs, ss.localAddr, ss.remoteAddr, nil), nil
 }
 
 // Close shuts down the client session. Safe to call multiple times.

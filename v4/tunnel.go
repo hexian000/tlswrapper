@@ -117,7 +117,12 @@ func (t *tunnel) checkIdle() {
 		return
 	}
 	// evict stale sessions immediately when idle (no active streams)
-	if t.stale && t.ss.NumStreams() == 0 {
+	m := t.ss.Stats()
+	var numStreams int64
+	if m != nil {
+		numStreams = int64(m.StreamsStarted.Load()) - int64(m.StreamsSucceeded.Load()) - int64(m.StreamsFailed.Load())
+	}
+	if t.stale && numStreams == 0 {
 		slog.Infof("session %q: stale session evicted after reload", t.id)
 		_ = t.ss.Close()
 		t.ss = nil
@@ -125,7 +130,7 @@ func (t *tunnel) checkIdle() {
 		return
 	}
 	// update idle tracking
-	if t.ss.NumStreams() == 0 {
+	if numStreams == 0 {
 		if t.idleSince.IsZero() {
 			t.idleSince = now
 		}
@@ -378,16 +383,16 @@ func (t *tunnel) Stats() SessionStats {
 	name := t.id
 	var streamsStarted, streamsSucceeded, streamsFailed, messagesSent, messagesReceived int64
 	if active {
-		numStreams = t.ss.NumStreams()
 		if peerID := t.ss.PeerID(); peerID != "" {
 			name = peerID
 		}
-		if m := t.ss.Metrics(); m != nil {
-			streamsStarted = m.StreamsStarted.Load()
-			streamsSucceeded = m.StreamsSucceeded.Load()
-			streamsFailed = m.StreamsFailed.Load()
-			messagesSent = m.MessagesSent.Load()
-			messagesReceived = m.MessagesReceived.Load()
+		if m := t.ss.Stats(); m != nil {
+			streamsStarted = int64(m.StreamsStarted.Load())
+			streamsSucceeded = int64(m.StreamsSucceeded.Load())
+			streamsFailed = int64(m.StreamsFailed.Load())
+			messagesSent = int64(m.MessagesSent.Load())
+			messagesReceived = int64(m.MessagesReceived.Load())
+			numStreams = int(streamsStarted - streamsSucceeded - streamsFailed)
 		}
 	}
 	return SessionStats{

@@ -111,7 +111,7 @@ func (s *grpcStream) Close() error {
 func (s *grpcStream) LocalAddr() net.Addr  { return s.localAddr }
 func (s *grpcStream) RemoteAddr() net.Addr { return s.remoteAddr }
 
-// Deadline methods are no-ops; flow control is handled at the gRPC/transport level.
+// Deadline methods are not supported.
 func (s *grpcStream) SetDeadline(t time.Time) error      { return ErrNoDeadline }
 func (s *grpcStream) SetReadDeadline(t time.Time) error  { return ErrNoDeadline }
 func (s *grpcStream) SetWriteDeadline(t time.Time) error { return ErrNoDeadline }
