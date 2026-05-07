@@ -112,9 +112,9 @@ func (s *grpcStream) LocalAddr() net.Addr  { return s.localAddr }
 func (s *grpcStream) RemoteAddr() net.Addr { return s.remoteAddr }
 
 // Deadline methods are no-ops; flow control is handled at the gRPC/transport level.
-func (s *grpcStream) SetDeadline(t time.Time) error      { return nil }
-func (s *grpcStream) SetReadDeadline(t time.Time) error  { return nil }
-func (s *grpcStream) SetWriteDeadline(t time.Time) error { return nil }
+func (s *grpcStream) SetDeadline(t time.Time) error      { return ErrNoDeadline }
+func (s *grpcStream) SetReadDeadline(t time.Time) error  { return ErrNoDeadline }
+func (s *grpcStream) SetWriteDeadline(t time.Time) error { return ErrNoDeadline }
 
 // newClientSideStream wraps a client-side gRPC Stream RPC as a net.Conn.
 // Half-close uses CloseSend().

@@ -4,14 +4,9 @@
 package mux
 
 import (
-	"errors"
 	"fmt"
 
 	muxpb "github.com/hexian000/tlswrapper/v4/mux/proto"
-)
-
-var (
-	errUnexpectedMessage = errors.New("mux: unexpected control message")
 )
 
 // controlStream abstracts both client-side and server-side Control bidi streams.

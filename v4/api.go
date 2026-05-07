@@ -255,6 +255,11 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				status = fmt.Sprintf("%d streams", ss.NumStreams)
 			}
 			fprintf(w, "%-20q: %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
+			if ss.StreamsStarted > 0 {
+				fprintf(w, "%-20s  gRPC streams: %d started, %d ok, %d fail | msgs: %d rcvd, %d sent\n", "",
+					ss.StreamsStarted, ss.StreamsSucceeded, ss.StreamsFailed,
+					ss.MessagesReceived, ss.MessagesSent)
+			}
 		} else {
 			fprintf(w, "%-20q: never seen\n", ss.Name)
 		}
@@ -282,7 +287,13 @@ type serverMetricsCollector struct {
 	requestsDesc        *prometheus.Desc
 	requestsSuccessDesc *prometheus.Desc
 	sessionUpDesc       *prometheus.Desc
-	sessionStreamsDesc  *prometheus.Desc
+	sessionStreamsDesc   *prometheus.Desc
+
+	sessionStreamsStartedDesc   *prometheus.Desc
+	sessionStreamsSucceededDesc *prometheus.Desc
+	sessionStreamsFailedDesc    *prometheus.Desc
+	sessionMsgsSentDesc        *prometheus.Desc
+	sessionMsgsReceivedDesc    *prometheus.Desc
 }
 
 func newServerMetricsCollector(s *Server) prometheus.Collector {
@@ -336,6 +347,26 @@ func newServerMetricsCollector(s *Server) prometheus.Collector {
 			"tlswrapper_session_streams",
 			"Number of streams in the session.",
 			[]string{"session"}, nil),
+		sessionStreamsStartedDesc: prometheus.NewDesc(
+			"tlswrapper_session_grpc_streams_started_total",
+			"Total gRPC streams started in the session.",
+			[]string{"session"}, nil),
+		sessionStreamsSucceededDesc: prometheus.NewDesc(
+			"tlswrapper_session_grpc_streams_succeeded_total",
+			"Total gRPC streams that ended successfully in the session.",
+			[]string{"session"}, nil),
+		sessionStreamsFailedDesc: prometheus.NewDesc(
+			"tlswrapper_session_grpc_streams_failed_total",
+			"Total gRPC streams that ended with an error in the session.",
+			[]string{"session"}, nil),
+		sessionMsgsSentDesc: prometheus.NewDesc(
+			"tlswrapper_session_grpc_messages_sent_total",
+			"Total gRPC messages sent in the session.",
+			[]string{"session"}, nil),
+		sessionMsgsReceivedDesc: prometheus.NewDesc(
+			"tlswrapper_session_grpc_messages_received_total",
+			"Total gRPC messages received in the session.",
+			[]string{"session"}, nil),
 	}
 }
 
@@ -352,6 +383,11 @@ func (c *serverMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.requestsSuccessDesc
 	ch <- c.sessionUpDesc
 	ch <- c.sessionStreamsDesc
+	ch <- c.sessionStreamsStartedDesc
+	ch <- c.sessionStreamsSucceededDesc
+	ch <- c.sessionStreamsFailedDesc
+	ch <- c.sessionMsgsSentDesc
+	ch <- c.sessionMsgsReceivedDesc
 }
 
 func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -388,6 +424,16 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			up, ss.Name)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsDesc, prometheus.GaugeValue,
 			float64(ss.NumStreams), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionStreamsStartedDesc, prometheus.CounterValue,
+			float64(ss.StreamsStarted), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionStreamsSucceededDesc, prometheus.CounterValue,
+			float64(ss.StreamsSucceeded), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionStreamsFailedDesc, prometheus.CounterValue,
+			float64(ss.StreamsFailed), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionMsgsSentDesc, prometheus.CounterValue,
+			float64(ss.MessagesSent), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionMsgsReceivedDesc, prometheus.CounterValue,
+			float64(ss.MessagesReceived), ss.Name)
 	}
 }
 

@@ -6,7 +6,6 @@ package mux
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -46,9 +45,6 @@ func (l *oneConnListener) Close() error {
 
 func (l *oneConnListener) Addr() net.Addr { return l.addr }
 
-// ErrHandshakeFailed is returned by Server when the mux protocol handshake fails.
-var ErrHandshakeFailed = errors.New("mux: handshake failed")
-
 // Client performs the TLS handshake (if cfg.TLSConfig is non-nil) and the mux
 // protocol handshake over conn, returning a client-mode Session on success.
 func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
@@ -73,7 +69,9 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		tag = fmt.Sprintf("%q => %v", cfg.LocalID, dialAddr)
 	}
 
+	sh := &muxStatsHandler{}
 	opts := cfg.grpcDialOptions()
+	opts = append(opts, grpc.WithStatsHandler(sh))
 	connCh := make(chan net.Conn, 1)
 	connCh <- conn
 	opts = append(opts, grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
@@ -150,6 +148,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		conn.LocalAddr(), conn.RemoteAddr(),
 		peerID, tag,
 		peerRejectsInbound,
+		&sh.metrics,
 	), nil
 }
 
@@ -159,6 +158,7 @@ type muxServer struct {
 	cfg        *Config
 	localAddr  net.Addr
 	remoteAddr net.Addr
+	sh         *muxStatsHandler
 
 	// ready delivers the serverSession to Server() after the handshake succeeds.
 	ready chan *serverSession
@@ -169,11 +169,12 @@ type muxServer struct {
 	sessReady chan struct{} // closed once sess is set
 }
 
-func newMuxServer(cfg *Config, localAddr, remoteAddr net.Addr) *muxServer {
+func newMuxServer(cfg *Config, localAddr, remoteAddr net.Addr, sh *muxStatsHandler) *muxServer {
 	return &muxServer{
 		cfg:        cfg,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
+		sh:         sh,
 		ready:      make(chan *serverSession, 1),
 		sessReady:  make(chan struct{}),
 	}
@@ -198,6 +199,7 @@ func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
 		svc.localAddr, svc.remoteAddr,
 		peerID, tag,
 		peerRejectsInbound,
+		&svc.sh.metrics,
 	)
 
 	svc.mu.Lock()
@@ -267,8 +269,9 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 
-	svc := newMuxServer(cfg, conn.LocalAddr(), conn.RemoteAddr())
-	grpcSrv := grpc.NewServer(cfg.grpcServerOptions()...)
+	sh := &muxStatsHandler{}
+	svc := newMuxServer(cfg, conn.LocalAddr(), conn.RemoteAddr(), sh)
+	grpcSrv := grpc.NewServer(append(cfg.grpcServerOptions(), grpc.StatsHandler(sh))...)
 	muxpb.RegisterMuxServer(grpcSrv, svc)
 
 	listener := newOneConnListener(conn)

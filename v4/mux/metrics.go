@@ -1,0 +1,72 @@
+// tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
+// This code is licensed under MIT license (see LICENSE for details)
+
+package mux
+
+import (
+	"context"
+	"sync/atomic"
+
+	"google.golang.org/grpc/stats"
+
+	muxpb "github.com/hexian000/tlswrapper/v4/mux/proto"
+)
+
+// SessionMetrics holds per-session gRPC transport statistics accumulated via
+// the grpc/stats.Handler API.  All fields are updated atomically.
+type SessionMetrics struct {
+	StreamsStarted   atomic.Int64
+	StreamsSucceeded atomic.Int64
+	StreamsFailed    atomic.Int64
+	MessagesSent     atomic.Int64
+	MessagesReceived atomic.Int64
+}
+
+// ctxKeyTrackRPC is used as a context key to mark RPCs that should be tracked.
+type ctxKeyTrackRPC struct{}
+
+// muxStatsHandler implements grpc/stats.Handler.  It filters events to the
+// Stream RPC only (ignoring Control) and accumulates them into metrics.
+type muxStatsHandler struct {
+	metrics SessionMetrics
+}
+
+// TagRPC marks the context for Stream RPCs so HandleRPC can filter quickly.
+func (h *muxStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+	if info.FullMethodName == muxpb.Mux_Stream_FullMethodName {
+		return context.WithValue(ctx, ctxKeyTrackRPC{}, struct{}{})
+	}
+	return ctx
+}
+
+// HandleRPC updates metrics for tracked (Stream) RPCs.
+func (h *muxStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
+	if ctx.Value(ctxKeyTrackRPC{}) == nil {
+		return
+	}
+	switch v := s.(type) {
+	case *stats.Begin:
+		_ = v
+		h.metrics.StreamsStarted.Add(1)
+	case *stats.End:
+		if v.Error == nil {
+			h.metrics.StreamsSucceeded.Add(1)
+		} else {
+			h.metrics.StreamsFailed.Add(1)
+		}
+	case *stats.InPayload:
+		_ = v
+		h.metrics.MessagesReceived.Add(1)
+	case *stats.OutPayload:
+		_ = v
+		h.metrics.MessagesSent.Add(1)
+	}
+}
+
+// TagConn is a no-op; connection-level tagging is not needed.
+func (h *muxStatsHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+
+// HandleConn is a no-op; connection events are tracked elsewhere.
+func (h *muxStatsHandler) HandleConn(context.Context, stats.ConnStats) {}

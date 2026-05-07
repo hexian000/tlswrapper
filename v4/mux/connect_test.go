@@ -58,13 +58,15 @@ func transferAndVerify(t *testing.T, src, dst net.Conn, want []byte) {
 		errCh <- err
 	}()
 	got := make([]byte, len(want))
-	if err := dst.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	if err := dst.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil && !errors.Is(err, ErrNoDeadline) {
 		t.Fatal(err)
 	}
 	if _, err := io.ReadFull(dst, got); err != nil {
 		t.Fatal("read:", err)
 	}
-	_ = dst.SetReadDeadline(time.Time{})
+	if err := dst.SetReadDeadline(time.Time{}); err != nil && !errors.Is(err, ErrNoDeadline) {
+		t.Fatal(err)
+	}
 	if err := <-errCh; err != nil {
 		t.Fatal("write:", err)
 	}

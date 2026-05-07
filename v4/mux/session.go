@@ -5,7 +5,6 @@ package mux
 
 import (
 	"context"
-	"errors"
 	"net"
 	"strconv"
 	"sync"
@@ -14,12 +13,6 @@ import (
 	muxpb "github.com/hexian000/tlswrapper/v4/mux/proto"
 	"google.golang.org/grpc/metadata"
 )
-
-// ErrSessionClosed is returned by Accept and Open when the session has been closed.
-var ErrSessionClosed = errors.New("session closed")
-
-// ErrInboundRejected is returned by Open when the peer advertised reject_inbound.
-var ErrInboundRejected = errors.New("mux: peer rejects inbound streams")
 
 // metaRequestIDKey is the gRPC metadata key used by the client when opening a
 // server-initiated stream. The value is the request_id from OpenRequest.
@@ -39,6 +32,9 @@ type Session interface {
 	CloseChan() <-chan struct{}
 	// NumStreams returns the current number of active streams.
 	NumStreams() int
+	// Metrics returns the gRPC transport statistics for this session.
+	// Returns nil when stats collection is not available.
+	Metrics() *SessionMetrics
 	// PeerID returns the remote service identity.
 	PeerID() string
 	// Tag returns the human-readable session tag for logging.
@@ -75,21 +71,23 @@ type session struct {
 	closedCh   chan struct{}
 	closeOnce  sync.Once
 	cleanup    func()
+
+	metrics *SessionMetrics
 }
 
-func (s *session) recvControlLoop() {
+func (ss *session) recvControlLoop() {
 	for {
-		msg, err := s.ctrl.Recv()
+		msg, err := ss.ctrl.Recv()
 		if err != nil {
 			return
 		}
 		switch body := msg.Body.(type) {
 		case *muxpb.ControlMessage_OpenRequest:
 			rid := body.OpenRequest.GetRequestId()
-			if rid == "" || s.onOpenRequest == nil {
+			if rid == "" || ss.onOpenRequest == nil {
 				continue
 			}
-			go s.onOpenRequest(rid)
+			go ss.onOpenRequest(rid)
 		default:
 			// ignore unexpected messages after handshake
 		}
@@ -98,38 +96,38 @@ func (s *session) recvControlLoop() {
 
 // DeliverStream is called by the gRPC Stream handler (server side).
 // requestID non-empty: route to pending Open() call; empty: push to acceptCh.
-func (s *session) DeliverStream(requestID string, conn net.Conn) {
+func (ss *session) DeliverStream(requestID string, conn net.Conn) {
 	if requestID != "" {
-		s.pendingMu.Lock()
-		ch := s.pending[requestID]
-		s.pendingMu.Unlock()
+		ss.pendingMu.Lock()
+		ch := ss.pending[requestID]
+		ss.pendingMu.Unlock()
 		if ch != nil {
-			s.numStreams.Add(1)
+			ss.numStreams.Add(1)
 			select {
 			case ch <- conn:
 				return
-			case <-s.closedCh:
+			case <-ss.closedCh:
 				_ = conn.Close()
 				return
 			}
 		}
 	}
-	s.numStreams.Add(1)
+	ss.numStreams.Add(1)
 	select {
-	case s.acceptCh <- conn:
-	case <-s.closedCh:
+	case ss.acceptCh <- conn:
+	case <-ss.closedCh:
 		_ = conn.Close()
 	}
 }
 
 // Accept waits for the next incoming stream.
-func (s *session) Accept() (net.Conn, error) {
+func (ss *session) Accept() (net.Conn, error) {
 	select {
-	case conn := <-s.acceptCh:
+	case conn := <-ss.acceptCh:
 		return conn, nil
-	case <-s.closedCh:
+	case <-ss.closedCh:
 		select {
-		case conn := <-s.acceptCh:
+		case conn := <-ss.acceptCh:
 			return conn, nil
 		default:
 			return nil, ErrSessionClosed
@@ -138,9 +136,9 @@ func (s *session) Accept() (net.Conn, error) {
 }
 
 // IsClosed reports whether the session has been closed.
-func (s *session) IsClosed() bool {
+func (ss *session) IsClosed() bool {
 	select {
-	case <-s.closedCh:
+	case <-ss.closedCh:
 		return true
 	default:
 		return false
@@ -148,30 +146,33 @@ func (s *session) IsClosed() bool {
 }
 
 // CloseChan returns a channel that is closed when the session closes.
-func (s *session) CloseChan() <-chan struct{} { return s.closedCh }
+func (ss *session) CloseChan() <-chan struct{} { return ss.closedCh }
 
 // NumStreams returns the current number of active streams.
-func (s *session) NumStreams() int { return int(s.numStreams.Load()) }
+func (ss *session) NumStreams() int { return int(ss.numStreams.Load()) }
+
+// Metrics returns the gRPC transport statistics for this session.
+func (ss *session) Metrics() *SessionMetrics { return ss.metrics }
 
 // PeerID returns the remote service identity.
-func (s *session) PeerID() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.peerID
+func (ss *session) PeerID() string {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.peerID
 }
 
 // Tag returns the human-readable session tag for logging.
-func (s *session) Tag() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.tag
+func (ss *session) Tag() string {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.tag
 }
 
 // LocalAddr returns the local network address.
-func (s *session) LocalAddr() net.Addr { return s.localAddr }
+func (ss *session) LocalAddr() net.Addr { return ss.localAddr }
 
 // RemoteAddr returns the remote network address.
-func (s *session) RemoteAddr() net.Addr { return s.remoteAddr }
+func (ss *session) RemoteAddr() net.Addr { return ss.remoteAddr }
 
 // ---- clientSession ----
 
@@ -191,15 +192,14 @@ func newClientSession(
 	cleanup func(),
 	localAddr, remoteAddr net.Addr,
 	peerID, tag string,
-	peerRejectsInbound bool,
-) *clientSession {
+	peerRejectsInbound bool, metrics *SessionMetrics) *clientSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
 	}
 	if remoteAddr == nil {
 		remoteAddr = h2Addr{"remote"}
 	}
-	s := &clientSession{
+	ss := &clientSession{
 		session: session{
 			ctrl:               ctrl,
 			pending:            make(map[string]chan net.Conn),
@@ -211,57 +211,58 @@ func newClientSession(
 			remoteAddr:         remoteAddr,
 			closedCh:           make(chan struct{}),
 			cleanup:            cleanup,
+			metrics:            metrics,
 		},
 		grpcClient:      grpcClient,
 		streamCtx:       streamCtx,
 		streamCtxCancel: streamCtxCancel,
 	}
-	s.session.onOpenRequest = s.dialStreamForServer
+	ss.session.onOpenRequest = ss.dialStreamForServer
 	go func() {
-		defer s.Close()
-		s.session.recvControlLoop()
+		defer ss.Close()
+		ss.session.recvControlLoop()
 	}()
-	return s
+	return ss
 }
 
-func (s *clientSession) dialStreamForServer(requestID string) {
-	ctx := metadata.NewOutgoingContext(s.streamCtx, metadata.Pairs(metaRequestIDKey, requestID))
-	cs, err := s.grpcClient.Stream(ctx)
+func (ss *clientSession) dialStreamForServer(requestID string) {
+	ctx := metadata.NewOutgoingContext(ss.streamCtx, metadata.Pairs(metaRequestIDKey, requestID))
+	cs, err := ss.grpcClient.Stream(ctx)
 	if err != nil {
 		return
 	}
-	conn := newClientSideStream(cs, s.localAddr, s.remoteAddr, func() { s.numStreams.Add(-1) })
-	s.numStreams.Add(1)
+	conn := newClientSideStream(cs, ss.localAddr, ss.remoteAddr, func() { ss.numStreams.Add(-1) })
+	ss.numStreams.Add(1)
 	select {
-	case s.acceptCh <- conn:
-	case <-s.closedCh:
+	case ss.acceptCh <- conn:
+	case <-ss.closedCh:
 		_ = conn.Close()
 	}
 }
 
 // Open opens a new logical stream to the peer.
-func (s *clientSession) Open(ctx context.Context) (net.Conn, error) {
-	if s.IsClosed() {
+func (ss *clientSession) Open(ctx context.Context) (net.Conn, error) {
+	if ss.IsClosed() {
 		return nil, ErrSessionClosed
 	}
-	if s.peerRejectsInbound {
+	if ss.peerRejectsInbound {
 		return nil, ErrInboundRejected
 	}
-	cs, err := s.grpcClient.Stream(s.streamCtx)
+	cs, err := ss.grpcClient.Stream(ss.streamCtx)
 	if err != nil {
 		return nil, err
 	}
-	s.numStreams.Add(1)
-	return newClientSideStream(cs, s.localAddr, s.remoteAddr, func() { s.numStreams.Add(-1) }), nil
+	ss.numStreams.Add(1)
+	return newClientSideStream(cs, ss.localAddr, ss.remoteAddr, func() { ss.numStreams.Add(-1) }), nil
 }
 
 // Close shuts down the client session. Safe to call multiple times.
-func (s *clientSession) Close() error {
-	s.closeOnce.Do(func() {
-		close(s.closedCh)
-		s.streamCtxCancel()
-		if s.cleanup != nil {
-			s.cleanup()
+func (ss *clientSession) Close() error {
+	ss.closeOnce.Do(func() {
+		close(ss.closedCh)
+		ss.streamCtxCancel()
+		if ss.cleanup != nil {
+			ss.cleanup()
 		}
 	})
 	return nil
@@ -280,6 +281,7 @@ func newServerSession(
 	localAddr, remoteAddr net.Addr,
 	peerID, tag string,
 	peerRejectsInbound bool,
+	metrics *SessionMetrics,
 ) *serverSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
@@ -287,7 +289,7 @@ func newServerSession(
 	if remoteAddr == nil {
 		remoteAddr = h2Addr{"remote"}
 	}
-	s := &serverSession{
+	ss := &serverSession{
 		session: session{
 			ctrl:               ctrl,
 			pending:            make(map[string]chan net.Conn),
@@ -299,36 +301,37 @@ func newServerSession(
 			remoteAddr:         remoteAddr,
 			closedCh:           make(chan struct{}),
 			cleanup:            cleanup,
+			metrics:            metrics,
 		},
 	}
 	go func() {
-		defer s.Close()
-		s.session.recvControlLoop()
+		defer ss.Close()
+		ss.session.recvControlLoop()
 	}()
-	return s
+	return ss
 }
 
 // Open opens a new logical stream to the peer (server-side: sends OpenRequest and waits for client dial-back).
-func (s *serverSession) Open(ctx context.Context) (net.Conn, error) {
-	if s.IsClosed() {
+func (ss *serverSession) Open(ctx context.Context) (net.Conn, error) {
+	if ss.IsClosed() {
 		return nil, ErrSessionClosed
 	}
-	if s.peerRejectsInbound {
+	if ss.peerRejectsInbound {
 		return nil, ErrInboundRejected
 	}
 
-	rid := strconv.FormatInt(s.openSeq.Add(1), 10)
+	rid := strconv.FormatInt(ss.openSeq.Add(1), 10)
 	ch := make(chan net.Conn, 1)
-	s.pendingMu.Lock()
-	s.pending[rid] = ch
-	s.pendingMu.Unlock()
+	ss.pendingMu.Lock()
+	ss.pending[rid] = ch
+	ss.pendingMu.Unlock()
 	defer func() {
-		s.pendingMu.Lock()
-		delete(s.pending, rid)
-		s.pendingMu.Unlock()
+		ss.pendingMu.Lock()
+		delete(ss.pending, rid)
+		ss.pendingMu.Unlock()
 	}()
 
-	if err := s.ctrl.Send(&muxpb.ControlMessage{
+	if err := ss.ctrl.Send(&muxpb.ControlMessage{
 		Body: &muxpb.ControlMessage_OpenRequest{
 			OpenRequest: &muxpb.OpenRequest{RequestId: rid},
 		},
@@ -342,7 +345,7 @@ func (s *serverSession) Open(ctx context.Context) (net.Conn, error) {
 			return nil, ErrSessionClosed
 		}
 		return conn, nil
-	case <-s.closedCh:
+	case <-ss.closedCh:
 		return nil, ErrSessionClosed
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -350,11 +353,11 @@ func (s *serverSession) Open(ctx context.Context) (net.Conn, error) {
 }
 
 // Close shuts down the server session. Safe to call multiple times.
-func (s *serverSession) Close() error {
-	s.closeOnce.Do(func() {
-		close(s.closedCh)
-		if s.cleanup != nil {
-			s.cleanup()
+func (ss *serverSession) Close() error {
+	ss.closeOnce.Do(func() {
+		close(ss.closedCh)
+		if ss.cleanup != nil {
+			ss.cleanup()
 		}
 	})
 	return nil

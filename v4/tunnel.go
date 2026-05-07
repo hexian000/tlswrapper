@@ -351,6 +351,12 @@ type SessionStats struct {
 	LastChanged time.Time
 	NumStreams  int
 	Active      bool
+	// gRPC transport statistics (zero when unavailable)
+	StreamsStarted   int64
+	StreamsSucceeded int64
+	StreamsFailed    int64
+	MessagesSent     int64
+	MessagesReceived int64
 }
 
 // Stats returns the current statistics of the session.
@@ -360,16 +366,29 @@ func (t *tunnel) Stats() SessionStats {
 	active := t.ss != nil && !t.ss.IsClosed()
 	numStreams := 0
 	name := t.id
+	var streamsStarted, streamsSucceeded, streamsFailed, messagesSent, messagesReceived int64
 	if active {
 		numStreams = t.ss.NumStreams()
 		if peerID := t.ss.PeerID(); peerID != "" {
 			name = peerID
 		}
+		if m := t.ss.Metrics(); m != nil {
+			streamsStarted = m.StreamsStarted.Load()
+			streamsSucceeded = m.StreamsSucceeded.Load()
+			streamsFailed = m.StreamsFailed.Load()
+			messagesSent = m.MessagesSent.Load()
+			messagesReceived = m.MessagesReceived.Load()
+		}
 	}
 	return SessionStats{
-		Name:        name,
-		LastChanged: t.lastChanged,
-		NumStreams:  numStreams,
-		Active:      active,
+		Name:             name,
+		LastChanged:      t.lastChanged,
+		NumStreams:       numStreams,
+		Active:           active,
+		StreamsStarted:   streamsStarted,
+		StreamsSucceeded: streamsSucceeded,
+		StreamsFailed:   streamsFailed,
+		MessagesSent:     messagesSent,
+		MessagesReceived: messagesReceived,
 	}
 }
