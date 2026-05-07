@@ -51,7 +51,7 @@ var ErrHandshakeFailed = errors.New("mux: handshake failed")
 
 // Client performs the TLS handshake (if cfg.TLSConfig is non-nil) and the mux
 // protocol handshake over conn, returning a client-mode Session on success.
-func Client(ctx context.Context, conn net.Conn, cfg *Config) (*Session, error) {
+func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
 			return nil, err
@@ -160,12 +160,12 @@ type muxServer struct {
 	localAddr  net.Addr
 	remoteAddr net.Addr
 
-	// ready delivers the Session to Server() after the handshake succeeds.
-	ready chan *Session
+	// ready delivers the serverSession to Server() after the handshake succeeds.
+	ready chan *serverSession
 
 	// sess is set by Control() after handshake; Stream() handlers wait on sessReady.
 	mu        sync.RWMutex
-	sess      *Session
+	sess      *serverSession
 	sessReady chan struct{} // closed once sess is set
 }
 
@@ -174,7 +174,7 @@ func newMuxServer(cfg *Config, localAddr, remoteAddr net.Addr) *muxServer {
 		cfg:        cfg,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
-		ready:      make(chan *Session, 1),
+		ready:      make(chan *serverSession, 1),
 		sessReady:  make(chan struct{}),
 	}
 }
@@ -251,7 +251,7 @@ func (svc *muxServer) Stream(stream muxpb.Mux_StreamServer) error {
 // Server performs the TLS handshake (if cfg.TLSConfig is non-nil) and waits for
 // the mux protocol handshake from the client, returning a server-mode Session
 // on success.
-func Server(ctx context.Context, conn net.Conn, cfg *Config) (*Session, error) {
+func Server(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
 			return nil, err

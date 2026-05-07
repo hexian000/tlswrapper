@@ -32,7 +32,7 @@ type tunnel struct {
 	l        net.Listener // local TCP listener (only on config-driven tunnels with Listen)
 
 	mu          sync.RWMutex
-	ss          *mux.Session
+	ss          mux.Session
 	idleSince   time.Time // when ss became stream-less (zero = not idle)
 	closeSig    chan struct{}
 	stopOnce    sync.Once
@@ -218,7 +218,7 @@ func (t *tunnel) run() {
 	}
 }
 
-func (t *tunnel) addSession(ss *mux.Session) {
+func (t *tunnel) addSession(ss mux.Session) {
 	now := time.Now()
 	msg := fmt.Sprintf("%s: session established", ss.Tag())
 	slog.Notice(msg)
@@ -234,7 +234,7 @@ func (t *tunnel) addSession(ss *mux.Session) {
 	t.lastChanged = now
 }
 
-func (t *tunnel) delSession(ss *mux.Session) {
+func (t *tunnel) delSession(ss mux.Session) {
 	now := time.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -256,7 +256,7 @@ func (t *tunnel) delSession(ss *mux.Session) {
 	}
 }
 
-func (t *tunnel) getSession() *mux.Session {
+func (t *tunnel) getSession() mux.Session {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.ss == nil || t.ss.IsClosed() {
@@ -275,7 +275,7 @@ func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
 }
 
 // dial dials the configured peer and establishes the mux session for this tunnel.
-func (t *tunnel) dial(ctx context.Context) (*mux.Session, error) {
+func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	cfg, tlscfg := t.getConfig()
 	if t.dialAddr == "" {
 		return nil, ErrNoDialAddress

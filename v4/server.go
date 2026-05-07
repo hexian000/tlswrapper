@@ -233,7 +233,7 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 // serveSession handles one accepted mux session.
 // It creates an inbound ephemeral tunnel, keeps it registered for lookup, and
 // removes it when the underlying mux session closes.
-func (s *Server) serveSession(ss *mux.Session) {
+func (s *Server) serveSession(ss mux.Session) {
 	// When the group closes, close ss to unblock Accept().
 	if err := s.g.Go(func() {
 		select {
@@ -279,7 +279,7 @@ func (s *Server) serveSession(ss *mux.Session) {
 // acceptInboundStreams drains the Accept queue of a client-side session and
 // dispatches each server-initiated stream to handleInboundStream.
 // It must be run in a goroutine; it returns when ss is closed.
-func (s *Server) acceptInboundStreams(ss *mux.Session) {
+func (s *Server) acceptInboundStreams(ss mux.Session) {
 	for {
 		stream, err := ss.Accept()
 		if err != nil {

@@ -138,14 +138,14 @@ func startEchoServer(t *testing.T) string {
 	return l.Addr().String()
 }
 
-func newMuxSessionPair(t *testing.T, clientCfg, serverCfg *mux.Config) (*mux.Session, *mux.Session) {
+func newMuxSessionPair(t *testing.T, clientCfg, serverCfg *mux.Config) (mux.Session, mux.Session) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 
 	type result struct {
-		sess *mux.Session
+		sess mux.Session
 		err  error
 	}
 	serverCh := make(chan result, 1)

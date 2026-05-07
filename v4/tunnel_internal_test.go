@@ -69,7 +69,7 @@ func TestTunnelRedialSuccessAndDelSession(t *testing.T) {
 	defer l.Close()
 	serverCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	remoteCh := make(chan *mux.Session, 1)
+	remoteCh := make(chan mux.Session, 1)
 	go func() {
 		conn, err := l.Accept()
 		if err != nil {

@@ -14,7 +14,7 @@ import (
 
 // pipeSession creates a pair of connected mux Sessions over an in-memory net.Pipe().
 // Both sessions are closed via t.Cleanup when the test ends.
-func pipeSession(t *testing.T, clientCfg, serverCfg *Config) (cli, srv *Session) {
+func pipeSession(t *testing.T, clientCfg, serverCfg *Config) (cli, srv Session) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 
@@ -22,7 +22,7 @@ func pipeSession(t *testing.T, clientCfg, serverCfg *Config) (cli, srv *Session)
 	t.Cleanup(cancel)
 
 	type result struct {
-		sess *Session
+		sess Session
 		err  error
 	}
 	srvCh := make(chan result, 1)
