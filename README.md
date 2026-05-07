@@ -104,7 +104,6 @@ Adding `ca-cert.pem` to `"authcerts"` allows peer certificates signed by that CA
 
 ```json
 {
-    "type": "application/x-tlswrapper-config; version=4",
     "mux_listen": "0.0.0.0:38000",
     "connect": "127.0.0.1:80",
     "tls": {
@@ -124,7 +123,6 @@ Adding `ca-cert.pem` to `"authcerts"` allows peer certificates signed by that CA
 
 ```json
 {
-    "type": "application/x-tlswrapper-config; version=4",
     "tls": {
         "cert": "@client-cert.pem",
         "key": "@client-key.pem",
