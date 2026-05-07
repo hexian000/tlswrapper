@@ -181,3 +181,121 @@ func TestEmptyHandlerServeClosesConn(t *testing.T) {
 	_ = peer.Close()
 	<-done
 }
+
+// TestServerStaleSessionsAfterReload verifies that sessions present before a
+// config reload are marked stale and evicted by maintenanceLoop once they
+// become idle (no active streams) — behaving like idle_timeout=0.
+func TestServerStaleSessionsAfterReload(t *testing.T) {
+	s := newTestServer(t, nil)
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	// Inject a synthetic inbound session (no active streams).
+	cli, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "server"})
+	t.Cleanup(func() {
+		_ = cli.Close()
+		_ = srv.Close()
+	})
+	tn := newTunnel("peer-a", "", s)
+	tn.ss = srv
+	tn.lastChanged = time.Now()
+	s.addSession(tn)
+
+	// Trigger reload — this marks tn as stale.
+	if err := s.LoadConfig(newTestConfig(t, nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	// maintenanceLoop should evict the stale idle session within ~2 s.
+	waitFor(t, 3*time.Second, func() bool {
+		tn.mu.RLock()
+		defer tn.mu.RUnlock()
+		return tn.ss == nil || tn.ss.IsClosed()
+	})
+}
+
+// TestServerLoadConfigPartialFailure verifies that LoadConfig returns nil even
+// when starting a new config-driven tunnel fails (e.g. port already in use),
+// and that the reload otherwise completes normally.
+func TestServerLoadConfigPartialFailure(t *testing.T) {
+	s := newTestServer(t, nil)
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	// Hold a port so that LoadConfig cannot bind to it.
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer taken.Close()
+	busyAddr := taken.Addr().String()
+
+	// Load a config where one peer's listen address is unavailable.
+	cfg := newTestConfig(t, map[string]any{
+		"identity": map[string]any{
+			"listen": map[string]any{"peer-busy": busyAddr},
+		},
+	})
+	if err := s.LoadConfig(cfg); err != nil {
+		t.Fatalf("LoadConfig returned error on partial failure: %v", err)
+	}
+
+	// Despite the error the config was still swapped in.
+	got, _ := s.getConfig()
+	if got != cfg {
+		t.Fatalf("expected new config to be active after partial-failure reload")
+	}
+}
+
+// TestServerReloadMuxListen verifies that changing MuxListen in LoadConfig
+// causes the server to stop listening on the old address and start listening
+// on the new one.
+func TestServerReloadMuxListen(t *testing.T) {
+	addrA := freePort(t)
+	addrB := freePort(t)
+
+	s := newTestServer(t, map[string]any{"mux_listen": addrA})
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	// Confirm addrA is initially reachable.
+	waitFor(t, 2*time.Second, func() bool {
+		c, err := net.DialTimeout("tcp", addrA, 200*time.Millisecond)
+		if err != nil {
+			return false
+		}
+		_ = c.Close()
+		return true
+	})
+
+	// Reload with addrB.
+	if err := s.LoadConfig(newTestConfig(t, map[string]any{"mux_listen": addrB})); err != nil {
+		t.Fatal(err)
+	}
+
+	// addrA should no longer accept connections.
+	waitFor(t, 2*time.Second, func() bool {
+		c, err := net.DialTimeout("tcp", addrA, 100*time.Millisecond)
+		if err != nil {
+			return true // expected
+		}
+		_ = c.Close()
+		return false
+	})
+
+	// addrB should be reachable.
+	waitFor(t, 2*time.Second, func() bool {
+		c, err := net.DialTimeout("tcp", addrB, 200*time.Millisecond)
+		if err != nil {
+			return false
+		}
+		_ = c.Close()
+		return true
+	})
+}

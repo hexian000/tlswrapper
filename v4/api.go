@@ -73,6 +73,7 @@ func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.s.LoadConfig(cfg); err != nil {
+		// LoadConfig always returns nil; this branch exists for future use.
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(formats.Error(err)))
 		return
@@ -287,13 +288,13 @@ type serverMetricsCollector struct {
 	requestsDesc        *prometheus.Desc
 	requestsSuccessDesc *prometheus.Desc
 	sessionUpDesc       *prometheus.Desc
-	sessionStreamsDesc   *prometheus.Desc
+	sessionStreamsDesc  *prometheus.Desc
 
 	sessionStreamsStartedDesc   *prometheus.Desc
 	sessionStreamsSucceededDesc *prometheus.Desc
 	sessionStreamsFailedDesc    *prometheus.Desc
-	sessionMsgsSentDesc        *prometheus.Desc
-	sessionMsgsReceivedDesc    *prometheus.Desc
+	sessionMsgsSentDesc         *prometheus.Desc
+	sessionMsgsReceivedDesc     *prometheus.Desc
 }
 
 func newServerMetricsCollector(s *Server) prometheus.Collector {

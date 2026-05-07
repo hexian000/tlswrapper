@@ -125,6 +125,34 @@ func (s *Server) getAllSessions() []*tunnel {
 	return result
 }
 
+// maintenanceLoop runs periodic idle-check and stale-session eviction for all tunnels.
+// It also covers inbound ephemeral tunnels, which have no dedicated run() goroutine.
+func (s *Server) maintenanceLoop() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			for _, t := range s.getAllSessions() {
+				t.checkIdle()
+			}
+		case <-s.g.CloseC():
+			return
+		}
+	}
+}
+
+// markSessionsStale marks all currently tracked sessions as stale.
+// After a config reload, stale sessions are evicted by maintenanceLoop
+// as soon as they become idle (no active streams), behaving like idle_timeout=0.
+func (s *Server) markSessionsStale() {
+	for _, t := range s.getAllSessions() {
+		t.mu.Lock()
+		t.stale = true
+		t.mu.Unlock()
+	}
+}
+
 func (s *Server) addSession(ss *tunnel) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -413,10 +441,82 @@ func (s *Server) loadSessions(cfg *config.File) error {
 		s.services[name] = ss
 		s.sessions = append(s.sessions, ss)
 		if err := ss.Start(cfg); err != nil {
-			return err
+			slog.Errorf("session %q: start: %s", name, formats.Error(err))
 		}
 	}
 	return nil
+}
+
+// reloadMuxListen restarts the MuxListen listener when its configuration changes.
+// Errors are logged; the reload continues regardless.
+func (s *Server) reloadMuxListen(cfg *config.File) {
+	old, _ := s.getConfig()
+	if cfg.MuxListen == old.MuxListen &&
+		cfg.MaxSessions == old.MaxSessions &&
+		cfg.MaxStartups == old.MaxStartups {
+		return
+	}
+	if s.l != nil {
+		ioClose(s.l)
+		s.l = nil
+	}
+	if cfg.MuxListen == "" {
+		return
+	}
+	l, err := s.Listen(cfg.MuxListen)
+	if err != nil {
+		slog.Errorf("reload: mux listen %s: %s", cfg.MuxListen, formats.Error(err))
+		return
+	}
+	slog.Noticef("mux listen: %v", l.Addr())
+	h := &TLSHandler{s: s}
+	startupStart, startupRate, startupFull := cfg.ParsedMaxStartups()
+	s.l = hlistener.Wrap(l, &hlistener.Config{
+		Start:       uint32(startupStart),
+		Full:        uint32(startupFull),
+		Rate:        float64(startupRate) / 100.0,
+		MaxSessions: uint32(cfg.MaxSessions),
+		Stats:       h.Stats4Listener,
+	})
+	if err := s.g.Go(func() {
+		s.Serve(s.l, h)
+	}); err != nil {
+		slog.Errorf("reload: mux listen goroutine: %s", formats.Error(err))
+		ioClose(s.l)
+		s.l = nil
+	}
+}
+
+// reloadAPIListen restarts the APIListen HTTP server when its address changes.
+// Errors are logged; the reload continues regardless.
+func (s *Server) reloadAPIListen(cfg *config.File) {
+	old, _ := s.getConfig()
+	if cfg.APIListen == old.APIListen {
+		return
+	}
+	if s.apiListener != nil {
+		ioClose(s.apiListener)
+		s.apiListener = nil
+	}
+	if cfg.APIListen == "" {
+		return
+	}
+	l, err := s.Listen(cfg.APIListen)
+	if err != nil {
+		slog.Errorf("reload: api listen %s: %s", cfg.APIListen, formats.Error(err))
+		return
+	}
+	slog.Noticef("http listen: %v", l.Addr())
+	if err := s.g.Go(func() {
+		if err := RunHTTPServer(l, s); err != nil && !errors.Is(err, net.ErrClosed) {
+			slog.Error(formats.Error(err))
+		}
+	}); err != nil {
+		slog.Errorf("reload: api listen goroutine: %s", formats.Error(err))
+		ioClose(l)
+		return
+	}
+	s.apiListener = l
 }
 
 // Start the service
@@ -460,6 +560,9 @@ func (s *Server) Start() error {
 			return err
 		}
 		s.apiListener = l
+	}
+	if err := s.g.Go(s.maintenanceLoop); err != nil {
+		return err
 	}
 	if err := s.loadSessions(s.cfg); err != nil {
 		return err
@@ -508,21 +611,30 @@ func (s *Server) Shutdown() error {
 	return nil
 }
 
-// LoadConfig reloads the configuration file
+// LoadConfig reloads the configuration file.
+// All sub-steps are attempted regardless of individual failures; errors are
+// logged but do not abort the reload. LoadConfig always returns nil.
 func (s *Server) LoadConfig(cfg *config.File) error {
-	tlscfg, err := cfg.NewTLSConfig(appFlags.ServerName)
+	// 1. Build new TLS config; retain old one on failure.
+	newTLSCfg, err := cfg.NewTLSConfig(appFlags.ServerName)
 	if err != nil {
-		return err
+		slog.Errorf("reload: TLS config: %s", formats.Error(err))
+		newTLSCfg = nil
 	}
-	if err := s.loadSessions(cfg); err != nil {
-		return err
+	// 2. Mark all existing sessions as stale so they age out when idle.
+	s.markSessionsStale()
+	// 3. Reload listeners when addresses/limits change.
+	s.reloadMuxListen(cfg)
+	s.reloadAPIListen(cfg)
+	// 4. Sync config-driven tunnels.
+	s.loadSessions(cfg)
+	// 5. Atomically swap config; retain old TLS config if reload failed.
+	s.cfgMu.Lock()
+	s.cfg = cfg
+	if newTLSCfg != nil {
+		s.tlscfg = newTLSCfg
 	}
-	func() {
-		s.cfgMu.Lock()
-		defer s.cfgMu.Unlock()
-		s.cfg = cfg
-		s.tlscfg = tlscfg
-	}()
+	s.cfgMu.Unlock()
 	s.recentEvents.Add(time.Now(), "config loaded")
 	slog.Notice("config loaded")
 	return nil

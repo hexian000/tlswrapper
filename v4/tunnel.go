@@ -34,6 +34,7 @@ type tunnel struct {
 	mu          sync.RWMutex
 	ss          mux.Session
 	idleSince   time.Time // when ss became stream-less (zero = not idle)
+	stale       bool      // marked after config reload; evicted when idle
 	closeSig    chan struct{}
 	stopOnce    sync.Once
 	redialSig   chan struct{}
@@ -111,6 +112,14 @@ func (t *tunnel) checkIdle() {
 		return
 	}
 	if t.ss.IsClosed() {
+		t.ss = nil
+		t.idleSince = time.Time{}
+		return
+	}
+	// evict stale sessions immediately when idle (no active streams)
+	if t.stale && t.ss.NumStreams() == 0 {
+		slog.Infof("session %q: stale session evicted after reload", t.id)
+		_ = t.ss.Close()
 		t.ss = nil
 		t.idleSince = time.Time{}
 		return
@@ -228,6 +237,7 @@ func (t *tunnel) addSession(ss mux.Session) {
 	defer t.mu.Unlock()
 	hadConn := t.ss != nil && !t.ss.IsClosed()
 	t.ss = ss
+	t.stale = false // new session is not stale
 	if !hadConn {
 		t.s.numSessions.Add(1)
 	}
@@ -387,7 +397,7 @@ func (t *tunnel) Stats() SessionStats {
 		Active:           active,
 		StreamsStarted:   streamsStarted,
 		StreamsSucceeded: streamsSucceeded,
-		StreamsFailed:   streamsFailed,
+		StreamsFailed:    streamsFailed,
 		MessagesSent:     messagesSent,
 		MessagesReceived: messagesReceived,
 	}
