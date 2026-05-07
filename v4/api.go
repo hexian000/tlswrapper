@@ -225,6 +225,22 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		stats.Authorized, stats.Served-stats.Authorized)
 	fprintf(w, "%-20s: %d (%+d)\n", "Requests",
 		stats.ReqSuccess, stats.ReqTotal-stats.ReqSuccess)
+	{
+		var streamsStarted, streamsSucceeded, streamsFailed int64
+		var msgsReceived, msgsSent int64
+		for _, ss := range stats.sessions {
+			streamsStarted += ss.StreamsStarted
+			streamsSucceeded += ss.StreamsSucceeded
+			streamsFailed += ss.StreamsFailed
+			msgsReceived += ss.MessagesReceived
+			msgsSent += ss.MessagesSent
+		}
+		if streamsStarted > 0 {
+			fprintf(w, "%-20s: %d started, %d ok, %d fail | msgs: %d rcvd, %d sent\n", "Streams",
+				streamsStarted, streamsSucceeded, streamsFailed,
+				msgsReceived, msgsSent)
+		}
+	}
 
 	if !stateless {
 		dt := now.Sub(h.last.Timestamp).Seconds()
@@ -256,11 +272,6 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				status = fmt.Sprintf("%d streams", ss.NumStreams)
 			}
 			fprintf(w, "%-20q: %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
-			if ss.StreamsStarted > 0 {
-				fprintf(w, "%-20s  gRPC streams: %d started, %d ok, %d fail | msgs: %d rcvd, %d sent\n", "",
-					ss.StreamsStarted, ss.StreamsSucceeded, ss.StreamsFailed,
-					ss.MessagesReceived, ss.MessagesSent)
-			}
 		} else {
 			fprintf(w, "%-20q: never seen\n", ss.Name)
 		}
