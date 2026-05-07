@@ -15,11 +15,11 @@ import (
 // SessionMetrics holds per-session gRPC transport statistics accumulated via
 // the grpc/stats.Handler API.  All fields are updated atomically.
 type SessionMetrics struct {
-	StreamsStarted   atomic.Uint32
-	StreamsSucceeded atomic.Uint32
-	StreamsFailed    atomic.Uint32
-	MessagesSent     atomic.Uint32
-	MessagesReceived atomic.Uint32
+	StreamsStarted   atomic.Uint64
+	StreamsSucceeded atomic.Uint64
+	StreamsFailed    atomic.Uint64
+	MessagesSent     atomic.Uint64
+	MessagesReceived atomic.Uint64
 }
 
 // ctxKeyTrackRPC is used as a context key to mark RPCs that should be tracked.

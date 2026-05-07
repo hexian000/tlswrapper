@@ -215,7 +215,16 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		printMemStats(w)
 	}
 	stats := h.s.Stats()
-	fprintf(w, "%-20s: %d (%d streams)\n", "Num Sessions", stats.NumSessions, stats.NumStreams)
+	var streamsStarted, streamsSucceeded, streamsFailed uint64
+	for _, ss := range stats.sessions {
+		streamsStarted += ss.StreamsStarted
+		streamsSucceeded += ss.StreamsSucceeded
+		streamsFailed += ss.StreamsFailed
+	}
+	numStreams := streamsStarted - (streamsSucceeded + streamsFailed)
+	fprintf(w, "%-20s: %d (%d streams)\n", "Num Sessions", stats.NumSessions, numStreams)
+	fprintf(w, "%-20s: %d started, %d ok, %d fail\n", "Streams",
+		streamsStarted, streamsSucceeded, streamsFailed)
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Traffic",
 		formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
 	rejected := stats.Accepted - stats.Served
@@ -225,22 +234,6 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		stats.Authorized, stats.Served-stats.Authorized)
 	fprintf(w, "%-20s: %d (%+d)\n", "Requests",
 		stats.ReqSuccess, stats.ReqTotal-stats.ReqSuccess)
-	{
-		var streamsStarted, streamsSucceeded, streamsFailed int64
-		var msgsReceived, msgsSent int64
-		for _, ss := range stats.sessions {
-			streamsStarted += ss.StreamsStarted
-			streamsSucceeded += ss.StreamsSucceeded
-			streamsFailed += ss.StreamsFailed
-			msgsReceived += ss.MessagesReceived
-			msgsSent += ss.MessagesSent
-		}
-		if streamsStarted > 0 {
-			fprintf(w, "%-20s: %d started, %d ok, %d fail | msgs: %d rcvd, %d sent\n", "Streams",
-				streamsStarted, streamsSucceeded, streamsFailed,
-				msgsReceived, msgsSent)
-		}
-	}
 
 	if !stateless {
 		dt := now.Sub(h.last.Timestamp).Seconds()
@@ -248,7 +241,7 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fprintf(w, "%-20s: %.1f/s (%+.1f/s rejected)\n", "Authorized",
 			float64(stats.Served-h.last.Served)/dt,
 			float64((stats.Accepted-stats.Served)-(h.last.Accepted-h.last.Served))/dt)
-		fprintf(w, "%-20s: %.1f/s (%+.1f/s)\n", "Requests",
+		fprintf(w, "%-20s: %.1f/s (%+.1f/s)\n", "Request Rate",
 			float64(stats.ReqSuccess-h.last.ReqSuccess)/dt,
 			float64((stats.ReqTotal-stats.ReqSuccess)-(h.last.ReqTotal-h.last.ReqSuccess))/dt)
 		fprintf(w, "%-20s: Rx %s/s, Tx %s/s\n", "Bandwidth",
@@ -269,7 +262,8 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if (ss.LastChanged != time.Time{}) {
 			status := "offline"
 			if ss.Active {
-				status = fmt.Sprintf("%d streams", ss.NumStreams)
+				numStreams := ss.StreamsStarted - (ss.StreamsSucceeded + ss.StreamsFailed)
+				status = fmt.Sprintf("%d streams", numStreams)
 			}
 			fprintf(w, "%-20q: %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
 		} else {
@@ -410,8 +404,6 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		now.Sub(c.s.started).Seconds())
 	ch <- prometheus.MustNewConstMetric(c.sessionsDesc, prometheus.GaugeValue,
 		float64(stats.NumSessions))
-	ch <- prometheus.MustNewConstMetric(c.streamsDesc, prometheus.GaugeValue,
-		float64(stats.NumStreams))
 	ch <- prometheus.MustNewConstMetric(c.rxBytesDesc, prometheus.CounterValue,
 		float64(stats.Rx))
 	ch <- prometheus.MustNewConstMetric(c.txBytesDesc, prometheus.CounterValue,
@@ -434,8 +426,6 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 		ch <- prometheus.MustNewConstMetric(c.sessionUpDesc, prometheus.GaugeValue,
 			up, ss.Name)
-		ch <- prometheus.MustNewConstMetric(c.sessionStreamsDesc, prometheus.GaugeValue,
-			float64(ss.NumStreams), ss.Name)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsStartedDesc, prometheus.CounterValue,
 			float64(ss.StreamsStarted), ss.Name)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsSucceededDesc, prometheus.CounterValue,

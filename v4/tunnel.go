@@ -364,14 +364,13 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 type SessionStats struct {
 	Name        string
 	LastChanged time.Time
-	NumStreams  int
 	Active      bool
 	// gRPC transport statistics (zero when unavailable)
-	StreamsStarted   int64
-	StreamsSucceeded int64
-	StreamsFailed    int64
-	MessagesSent     int64
-	MessagesReceived int64
+	StreamsStarted   uint64
+	StreamsSucceeded uint64
+	StreamsFailed    uint64
+	MessagesSent     uint64
+	MessagesReceived uint64
 }
 
 // Stats returns the current statistics of the session.
@@ -379,26 +378,23 @@ func (t *tunnel) Stats() SessionStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	active := t.ss != nil && !t.ss.IsClosed()
-	numStreams := 0
 	name := t.id
-	var streamsStarted, streamsSucceeded, streamsFailed, messagesSent, messagesReceived int64
+	var streamsStarted, streamsSucceeded, streamsFailed, messagesSent, messagesReceived uint64
 	if active {
 		if peerID := t.ss.PeerID(); peerID != "" {
 			name = peerID
 		}
 		if m := t.ss.Stats(); m != nil {
-			streamsStarted = int64(m.StreamsStarted.Load())
-			streamsSucceeded = int64(m.StreamsSucceeded.Load())
-			streamsFailed = int64(m.StreamsFailed.Load())
-			messagesSent = int64(m.MessagesSent.Load())
-			messagesReceived = int64(m.MessagesReceived.Load())
-			numStreams = int(streamsStarted - streamsSucceeded - streamsFailed)
+			streamsStarted = uint64(m.StreamsStarted.Load())
+			streamsSucceeded = uint64(m.StreamsSucceeded.Load())
+			streamsFailed = uint64(m.StreamsFailed.Load())
+			messagesSent = uint64(m.MessagesSent.Load())
+			messagesReceived = uint64(m.MessagesReceived.Load())
 		}
 	}
 	return SessionStats{
 		Name:             name,
 		LastChanged:      t.lastChanged,
-		NumStreams:       numStreams,
 		Active:           active,
 		StreamsStarted:   streamsStarted,
 		StreamsSucceeded: streamsSucceeded,

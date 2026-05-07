@@ -173,7 +173,6 @@ func (s *Server) removeSession(target *tunnel) {
 // ServerStats holds statistics of the server
 type ServerStats struct {
 	NumSessions int
-	NumStreams  int
 	Rx, Tx      uint64
 	Accepted    uint64
 	Served      uint64
@@ -190,13 +189,12 @@ func (s *Server) Stats() (stats ServerStats) {
 	}
 	sessionMap := make(map[string]SessionStats)
 	for _, ss := range s.getAllSessions() {
-		sstats := ss.Stats()
-		if sstats.Active {
+		v := ss.Stats()
+		if v.Active {
 			stats.NumSessions++
 		}
-		stats.NumStreams += sstats.NumStreams
-		if prev, ok := sessionMap[sstats.Name]; !ok || sstats.LastChanged.After(prev.LastChanged) {
-			sessionMap[sstats.Name] = sstats
+		if prev, ok := sessionMap[v.Name]; !ok || v.LastChanged.After(prev.LastChanged) {
+			sessionMap[v.Name] = v
 		}
 	}
 	for _, sstats := range sessionMap {
