@@ -53,6 +53,7 @@ case "$1" in
     GCFLAGS="${GCFLAGS} -N -l"
     set -x
     go fmt ./... && go mod tidy
+    go test ./...
     CGO_ENABLED=1 \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/" "${PACKAGE}"

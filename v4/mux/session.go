@@ -65,9 +65,9 @@ type session struct {
 	remoteAddr net.Addr
 
 	openSeq   atomic.Int64
-	closedCh   chan struct{}
-	closeOnce  sync.Once
-	cleanup    func()
+	closedCh  chan struct{}
+	closeOnce sync.Once
+	cleanup   func()
 
 	metrics *SessionMetrics
 }
