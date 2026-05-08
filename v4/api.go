@@ -216,15 +216,23 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	stats := h.s.Stats()
 	var streamsStarted, streamsSucceeded, streamsFailed uint64
+	var bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
 	for _, ss := range stats.sessions {
 		streamsStarted += ss.StreamsStarted
 		streamsSucceeded += ss.StreamsSucceeded
 		streamsFailed += ss.StreamsFailed
+		bytesSent += ss.BytesSent
+		bytesReceived += ss.BytesReceived
+		wireLengthSent += ss.WireLengthSent
+		wireLengthReceived += ss.WireLengthReceived
 	}
 	numStreams := streamsStarted - (streamsSucceeded + streamsFailed)
 	fprintf(w, "%-20s: %d (%d streams)\n", "Num Sessions", stats.NumSessions, numStreams)
 	fprintf(w, "%-20s: %d started, %d ok, %d fail\n", "Streams",
 		streamsStarted, streamsSucceeded, streamsFailed)
+	fprintf(w, "%-20s: Rx %s (%s wire), Tx %s (%s wire)\n", "gRPC Bytes",
+		formats.IECBytes(float64(bytesReceived)), formats.IECBytes(float64(wireLengthReceived)),
+		formats.IECBytes(float64(bytesSent)), formats.IECBytes(float64(wireLengthSent)))
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Traffic",
 		formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
 	rejected := stats.Accepted - stats.Served
@@ -263,11 +271,14 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status := "offline"
 			if ss.Active {
 				numStreams := ss.StreamsStarted - (ss.StreamsSucceeded + ss.StreamsFailed)
-				status = fmt.Sprintf("%d streams", numStreams)
+				status = fmt.Sprintf("%d streams, rx %s (%s wire), tx %s (%s wire)",
+					numStreams,
+					formats.IECBytes(float64(ss.BytesReceived)), formats.IECBytes(float64(ss.WireLengthReceived)),
+					formats.IECBytes(float64(ss.BytesSent)), formats.IECBytes(float64(ss.WireLengthSent)))
 			}
-			fprintf(w, "%-20q: %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
+			fprintf(w, "`%-18s': %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
 		} else {
-			fprintf(w, "%-20q: never seen\n", ss.Name)
+			fprintf(w, "`%-18s': never seen\n", ss.Name)
 		}
 	}
 

@@ -428,7 +428,7 @@ func (s *Server) loadSessions(cfg *config.File) error {
 		s.services[name] = ss
 		s.sessions = append(s.sessions, ss)
 		if err := ss.Start(cfg); err != nil {
-			slog.Errorf("session %q: start: %s", name, formats.Error(err))
+			slog.Errorf("session `%s': start: %s", name, formats.Error(err))
 		}
 	}
 	return nil
@@ -577,7 +577,7 @@ func (s *Server) Shutdown() error {
 	s.mu.RUnlock()
 	for _, ss := range services {
 		if err := ss.Stop(); err != nil {
-			slog.Errorf("session %q: %s", ss.id, formats.Error(err))
+			slog.Errorf("session `%s': %s", ss.id, formats.Error(err))
 		}
 	}
 	s.ctx.close()

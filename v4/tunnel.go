@@ -63,7 +63,7 @@ func (t *tunnel) Start(cfg *config.File) error {
 		if err != nil {
 			return err
 		}
-		slog.Noticef("session %q: listen %v", t.id, l.Addr())
+		slog.Noticef("session `%s': listen %v", t.id, l.Addr())
 		h := &MuxHandler{l: l, s: t.s, id: t.id}
 		if err := t.s.g.Go(func() {
 			t.s.Serve(l, h)
@@ -74,7 +74,7 @@ func (t *tunnel) Start(cfg *config.File) error {
 		t.l = l
 	}
 	if t.dialAddr != "" {
-		slog.Debugf("session %q: start outbound", t.id)
+		slog.Debugf("session `%s': start outbound", t.id)
 		return t.s.g.Go(t.run)
 	}
 	return nil
@@ -94,7 +94,7 @@ func (t *tunnel) Stop() error {
 			ioClose(t.ss)
 			t.ss = nil
 		}
-		slog.Debugf("session %q: stop", t.id)
+		slog.Debugf("session `%s': stop", t.id)
 	})
 	return nil
 }
@@ -121,7 +121,7 @@ func (t *tunnel) checkIdle() {
 		numStreams = int64(m.StreamsStarted.Load()) - int64(m.StreamsSucceeded.Load()) - int64(m.StreamsFailed.Load())
 	}
 	if t.stale && numStreams == 0 {
-		slog.Infof("session %q: stale session evicted after reload", t.id)
+		slog.Infof("session `%s': stale session evicted after reload", t.id)
 		_ = t.ss.Close()
 		t.ss = nil
 		t.idleSince = time.Time{}
@@ -137,7 +137,7 @@ func (t *tunnel) checkIdle() {
 	}
 	// evict if idle too long
 	if idleTimeout > 0 && !t.idleSince.IsZero() && now.Sub(t.idleSince) >= idleTimeout {
-		slog.Infof("session %q: idle session evicted after %v", t.id, now.Sub(t.idleSince))
+		slog.Infof("session `%s': idle session evicted after %v", t.id, now.Sub(t.idleSince))
 		_ = t.ss.Close()
 		t.ss = nil
 		t.idleSince = time.Time{}
@@ -156,7 +156,7 @@ func (t *tunnel) redial() {
 		if redialCount > t.redialCount {
 			t.redialCount = redialCount
 		}
-		slog.Infof("session %q: redial #%d to %s: %s", t.id, t.redialCount, t.dialAddr, formats.Error(err))
+		slog.Infof("session `%s': redial #%d to %s: %s", t.id, t.redialCount, t.dialAddr, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
@@ -199,7 +199,7 @@ func (t *tunnel) schedule() <-chan time.Time {
 	if n < len(waitTimeConst) {
 		waitTime = waitTimeConst[n]
 	}
-	slog.Debugf("session %q: redial scheduled after %v", t.id, waitTime)
+	slog.Debugf("session `%s': redial scheduled after %v", t.id, waitTime)
 	return time.After(waitTime)
 }
 
@@ -301,7 +301,7 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	tag := fmt.Sprintf("%q => %v", t.id, rawConn.RemoteAddr())
+	tag := fmt.Sprintf("`%s' => %v", t.id, rawConn.RemoteAddr())
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}

@@ -76,17 +76,17 @@ func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
 	setTCPConnParams(cfg.TCP, accepted)
 	ss := h.s.findSession(h.id)
 	if ss == nil {
-		slog.Warningf("%v -> %q: no active session", accepted.RemoteAddr(), h.id)
+		slog.Warningf("%v -> `%s': no active session", accepted.RemoteAddr(), h.id)
 		ioClose(accepted)
 		return
 	}
 	dialed, err := ss.OpenStream(ctx)
 	if err != nil {
-		slog.Errorf("%v -> %q: %s", accepted.RemoteAddr(), h.id, formats.Error(err))
+		slog.Errorf("%v -> `%s': %s", accepted.RemoteAddr(), h.id, formats.Error(err))
 		ioClose(accepted)
 		return
 	}
-	tag := fmt.Sprintf("%v -> %q", accepted.RemoteAddr(), h.id)
+	tag := fmt.Sprintf("%v -> `%s'", accepted.RemoteAddr(), h.id)
 	if err := h.s.f.Start(accepted, dialed, forwarder.HandlerFuncs{
 		WriteClosed: func(conn net.Conn, err error) {
 			if err != nil {

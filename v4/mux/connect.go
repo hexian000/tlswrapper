@@ -66,7 +66,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 	dialAddr := conn.RemoteAddr().String()
 	tag := fmt.Sprintf("? => %v", dialAddr)
 	if cfg.LocalID != "" {
-		tag = fmt.Sprintf("%q => %v", cfg.LocalID, dialAddr)
+		tag = fmt.Sprintf("`%s' => %v", cfg.LocalID, dialAddr)
 	}
 
 	sh := &muxStatsHandler{}
@@ -131,7 +131,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		return nil, ctx.Err()
 	}
 	if peerID != "" {
-		tag = fmt.Sprintf("%q => %q", cfg.LocalID, peerID)
+		tag = fmt.Sprintf("`%s' => `%s'", cfg.LocalID, peerID)
 	}
 
 	cleanup := func() {
@@ -190,7 +190,7 @@ func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
 
 	tag := fmt.Sprintf("? <= %v", svc.remoteAddr)
 	if peerID != "" {
-		tag = fmt.Sprintf("%q <= %v", peerID, svc.remoteAddr)
+		tag = fmt.Sprintf("`%s' <= %v", peerID, svc.remoteAddr)
 	}
 
 	sess := newServerSession(
