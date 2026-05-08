@@ -27,7 +27,7 @@ type Config struct {
 	// Client-side transport tuning.
 	KeepAlive     time.Duration // default 25s
 	PingTimeout   time.Duration // default 15s
-	WriteTimeout  time.Duration // not used by gRPC; retained for API compatibility
+	WriteTimeout  time.Duration // per-stream write timeout; 0 disables it
 	SessionWindow int32         // 0 = gRPC dynamic flow control
 	StreamWindow  int32         // 0 = gRPC dynamic flow control
 
@@ -97,7 +97,7 @@ func (c *Config) grpcServerOptions() []grpc.ServerOption {
 			MaxConnectionIdle: c.IdleTimeout,
 		}),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             10 * time.Second,
+			MinTime:             1 * time.Second,
 			PermitWithoutStream: true,
 		}),
 		grpc.MaxConcurrentStreams(c.maxConcurrentStreams()),

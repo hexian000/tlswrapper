@@ -157,7 +157,7 @@ func (c *File) Validate() error {
 	}
 	// clamp timing fields
 	clampInt(&c.PingTimeout, 5, 86400)
-	clampInt(&c.KeepAlive, 1, c.PingTimeout)
+	clampInt(&c.KeepAlive, 1, 86400)
 	clampInt(&c.SendTimeout, 5, c.PingTimeout)
 	if c.IdleTimeout != 0 {
 		clampInt(&c.IdleTimeout, 5, 31557600)

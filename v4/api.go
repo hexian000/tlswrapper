@@ -73,7 +73,6 @@ func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.s.ReloadConfig(cfg); err != nil {
-		// ReloadConfig currently logs partial failures and returns nil.
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(formats.Error(err)))
 		return

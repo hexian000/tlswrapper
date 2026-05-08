@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	muxpb "github.com/hexian000/tlswrapper/v4/mux/proto"
 	"google.golang.org/grpc/metadata"
@@ -148,6 +149,7 @@ type clientSession struct {
 	grpcClient      muxpb.MuxClient
 	streamCtx       context.Context
 	streamCtxCancel context.CancelFunc
+	writeTimeout    time.Duration
 }
 
 func newClientSession(
@@ -158,7 +160,8 @@ func newClientSession(
 	cleanup func(),
 	localAddr, remoteAddr net.Addr,
 	peerID string,
-	peerRejectsInbound bool, metrics *SessionMetrics) *clientSession {
+	peerRejectsInbound bool, metrics *SessionMetrics,
+	writeTimeout time.Duration) *clientSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
 	}
@@ -181,6 +184,7 @@ func newClientSession(
 		grpcClient:      grpcClient,
 		streamCtx:       streamCtx,
 		streamCtxCancel: streamCtxCancel,
+		writeTimeout:    writeTimeout,
 	}
 	ss.session.onOpenRequest = ss.dialStreamForServer
 	go func() {
@@ -191,12 +195,14 @@ func newClientSession(
 }
 
 func (ss *clientSession) dialStreamForServer(requestID string) {
-	ctx := metadata.NewOutgoingContext(ss.streamCtx, metadata.Pairs(metaRequestIDKey, requestID))
+	streamCtx, streamCancel := context.WithCancel(ss.streamCtx)
+	ctx := metadata.NewOutgoingContext(streamCtx, metadata.Pairs(metaRequestIDKey, requestID))
 	cs, err := ss.grpcClient.Stream(ctx)
 	if err != nil {
+		streamCancel()
 		return
 	}
-	conn := newClientSideStream(cs, ss.localAddr, ss.remoteAddr, nil)
+	conn := newClientSideStream(cs, ss.localAddr, ss.remoteAddr, streamCancel, streamCancel, ss.writeTimeout)
 	select {
 	case ss.acceptCh <- conn:
 	case <-ss.closedCh:
@@ -211,11 +217,13 @@ func (ss *clientSession) Open(ctx context.Context) (net.Conn, error) {
 	if ss.peerRejectsInbound {
 		return nil, ErrInboundRejected
 	}
-	cs, err := ss.grpcClient.Stream(ss.streamCtx)
+	streamCtx, streamCancel := context.WithCancel(ss.streamCtx)
+	cs, err := ss.grpcClient.Stream(streamCtx)
 	if err != nil {
+		streamCancel()
 		return nil, err
 	}
-	return newClientSideStream(cs, ss.localAddr, ss.remoteAddr, nil), nil
+	return newClientSideStream(cs, ss.localAddr, ss.remoteAddr, streamCancel, streamCancel, ss.writeTimeout), nil
 }
 
 func (ss *clientSession) Close() error {

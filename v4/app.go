@@ -20,7 +20,9 @@ import (
 )
 
 var (
-	Version  = "dev"
+	// Version identifies the build version shown by the CLI and HTTP stats output.
+	Version = "dev"
+	// Homepage is the upstream project URL shown by the CLI and HTTP stats output.
 	Homepage = "https://github.com/hexian000/tlswrapper"
 )
 
@@ -47,6 +49,7 @@ type AppFlags struct {
 	LogLevel   int
 }
 
+// Validate checks whether the supplied flag combination is actionable.
 func (f *AppFlags) Validate() error {
 	if f.Help {
 		return nil

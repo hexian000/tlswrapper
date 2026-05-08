@@ -49,14 +49,14 @@
             "default": 15
         },
         "keepalive": {
-            "description": "Keepalive probe interval in seconds. Clamped to [1, timeout]. Default: 25.",
+            "description": "Keepalive probe interval in seconds. Clamped to [1, 86400]. Default: 25.",
             "type": "integer",
             "minimum": 1,
             "maximum": 86400,
             "default": 25
         },
         "send_timeout": {
-            "description": "Send completion timeout in seconds. Clamped to [5, timeout]. Default: 15.",
+            "description": "Per-stream write timeout in seconds. Clamped to [5, timeout]. Default: 15.",
             "type": "integer",
             "minimum": 5,
             "maximum": 86400,

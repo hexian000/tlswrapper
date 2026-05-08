@@ -6,6 +6,7 @@ package mux
 import (
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -42,13 +43,17 @@ type grpcStream struct {
 	recver     chunkRecver
 	closeWrite func() error // half-close write side
 	onClose    func()       // called once on first Close()
+	abortWrite func()       // called when a blocked write times out
 
 	readBuf    []byte
 	localAddr  net.Addr
 	remoteAddr net.Addr
+	writeTimer time.Duration
 
-	doneCh    chan struct{}
-	closeOnce sync.Once
+	mu            sync.RWMutex
+	writeDeadline time.Time
+	doneCh        chan struct{}
+	closeOnce     sync.Once
 }
 
 func (s *grpcStream) Read(b []byte) (int, error) {
@@ -75,15 +80,47 @@ func (s *grpcStream) Write(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
-	c := chunkPool.Get().(*muxpb.Chunk)
-	c.Data = b
-	err := s.sender.Send(c)
-	c.Data = nil
-	chunkPool.Put(c)
+	if timeout, ok := s.writeTimeout(); ok {
+		if timeout <= 0 {
+			if s.abortWrite != nil {
+				s.abortWrite()
+			}
+			return 0, os.ErrDeadlineExceeded
+		}
+		data := append([]byte(nil), b...)
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- s.sendChunk(data)
+		}()
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		select {
+		case err := <-errCh:
+			if err != nil {
+				return 0, err
+			}
+			return len(b), nil
+		case <-timer.C:
+			if s.abortWrite != nil {
+				s.abortWrite()
+			}
+			return 0, os.ErrDeadlineExceeded
+		}
+	}
+	err := s.sendChunk(b)
 	if err != nil {
 		return 0, err
 	}
 	return len(b), nil
+}
+
+func (s *grpcStream) sendChunk(data []byte) error {
+	c := chunkPool.Get().(*muxpb.Chunk)
+	c.Data = data
+	err := s.sender.Send(c)
+	c.Data = nil
+	chunkPool.Put(c)
+	return err
 }
 
 func (s *grpcStream) CloseWrite() error {
@@ -106,9 +143,28 @@ func (s *grpcStream) LocalAddr() net.Addr  { return s.localAddr }
 func (s *grpcStream) RemoteAddr() net.Addr { return s.remoteAddr }
 
 // Deadline methods are not supported.
-func (s *grpcStream) SetDeadline(t time.Time) error      { return ErrNoDeadline }
-func (s *grpcStream) SetReadDeadline(t time.Time) error  { return ErrNoDeadline }
-func (s *grpcStream) SetWriteDeadline(t time.Time) error { return ErrNoDeadline }
+func (s *grpcStream) SetDeadline(t time.Time) error     { return ErrNoDeadline }
+func (s *grpcStream) SetReadDeadline(t time.Time) error { return ErrNoDeadline }
+func (s *grpcStream) SetWriteDeadline(t time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writeDeadline = t
+	return nil
+}
+
+func (s *grpcStream) writeTimeout() (time.Duration, bool) {
+	s.mu.RLock()
+	deadline := s.writeDeadline
+	timeout := s.writeTimer
+	s.mu.RUnlock()
+	if !deadline.IsZero() {
+		return time.Until(deadline), true
+	}
+	if timeout > 0 {
+		return timeout, true
+	}
+	return 0, false
+}
 
 // newClientSideStream wraps a client-side gRPC Stream RPC as a net.Conn.
 // Half-close uses CloseSend().
@@ -116,14 +172,18 @@ func newClientSideStream(
 	cs muxpb.Mux_StreamClient,
 	localAddr, remoteAddr net.Addr,
 	onClose func(),
+	abortWrite func(),
+	writeTimeout time.Duration,
 ) net.Conn {
 	return &grpcStream{
 		sender:     cs,
 		recver:     cs,
 		closeWrite: cs.CloseSend,
 		onClose:    onClose,
+		abortWrite: abortWrite,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
+		writeTimer: writeTimeout,
 		doneCh:     make(chan struct{}),
 	}
 }
@@ -136,14 +196,18 @@ func newServerSideStream(
 	ss muxpb.Mux_StreamServer,
 	localAddr, remoteAddr net.Addr,
 	onClose func(),
+	abortWrite func(),
+	writeTimeout time.Duration,
 ) *grpcStream {
 	return &grpcStream{
 		sender:     ss,
 		recver:     ss,
 		closeWrite: func() error { return nil },
 		onClose:    onClose,
+		abortWrite: abortWrite,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
+		writeTimer: writeTimeout,
 		doneCh:     make(chan struct{}),
 	}
 }

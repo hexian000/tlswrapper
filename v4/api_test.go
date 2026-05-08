@@ -44,15 +44,19 @@ func TestAPIConfigHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("load-config-tls-error-continues", func(t *testing.T) {
+	t.Run("load-config-tls-error-returns-500", func(t *testing.T) {
 		s := newTestServer(t, nil)
 		h := &apiConfigHandler{s: s}
-		// Bad TLS cert: reload logs the error but still applies the config.
+		// Bad TLS cert: reload applies best-effort changes but reports the partial failure.
 		body := []byte(`{"type":"` + config.Type + `","tls":{"cert":"bad cert","key":"bad key"}}`)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/config", bytes.NewReader(body)))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d (TLS error should be logged, not abort reload)", rec.Code, http.StatusOK)
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+		}
+		cfg, _ := s.getConfig()
+		if cfg.TLS == nil {
+			t.Fatal("expected config to be swapped in despite partial reload failure")
 		}
 	})
 

@@ -36,7 +36,8 @@ type Mux struct {
 	SessionWindow int `json:"session_window"`
 	// Fixed HTTP/2 stream-level flow-control window size in bytes (0 = gRPC dynamic flow control)
 	StreamWindow int `json:"stream_window"`
-	// Maximum concurrent streams per connection; maps to HTTP/2 MaxConcurrentStreams (0 = default 256)
+	// Historical name for the maximum concurrent streams per mux session.
+	// Maps to HTTP/2 MaxConcurrentStreams; 0 disables the explicit limit.
 	MaxHalfOpen int `json:"max_halfopen"`
 }
 
@@ -54,6 +55,7 @@ type TCP struct {
 	Backlog int `json:"backlog"`
 }
 
+// Identity holds the local handshake identity and per-peer tunnel routing.
 type Identity struct {
 	// Identity string sent to the peer during the mux handshake
 	Claim string `json:"claim,omitempty"`
@@ -90,7 +92,7 @@ type File struct {
 	KeepAlive int `json:"keepalive"`
 	// Session ping timeout in seconds
 	PingTimeout int `json:"timeout"`
-	// Send completion timeout in seconds
+	// Per-stream write timeout in seconds
 	SendTimeout int `json:"send_timeout"`
 	// Session idle eviction timeout in seconds (0 = disabled)
 	IdleTimeout int `json:"idle_timeout"`

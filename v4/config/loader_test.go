@@ -84,15 +84,15 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
-	t.Run("clamps-keepalive-above-ping-timeout", func(t *testing.T) {
+	t.Run("preserves-keepalive-above-ping-timeout", func(t *testing.T) {
 		c := Default
 		c.PingTimeout = 10
 		c.KeepAlive = 20
 		if err := c.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		if c.KeepAlive != c.PingTimeout {
-			t.Fatalf("KeepAlive = %d, want %d", c.KeepAlive, c.PingTimeout)
+		if c.KeepAlive != 20 {
+			t.Fatalf("KeepAlive = %d, want %d", c.KeepAlive, 20)
 		}
 	})
 
@@ -227,6 +227,20 @@ func TestLoad(t *testing.T) {
 		}
 		if cfg.APIListen != "127.0.0.1:9090" {
 			t.Fatalf("APIListen = %q, want %q", cfg.APIListen, "127.0.0.1:9090")
+		}
+	})
+
+	t.Run("preserves-default-keepalive-on-round-trip", func(t *testing.T) {
+		b, err := Default.Dump()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.KeepAlive != Default.KeepAlive {
+			t.Fatalf("KeepAlive = %d, want %d", cfg.KeepAlive, Default.KeepAlive)
 		}
 	})
 

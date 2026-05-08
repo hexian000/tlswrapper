@@ -171,6 +171,49 @@ func TestSessionClose(t *testing.T) {
 	}
 }
 
+func TestSessionWriteTimeoutPropagates(t *testing.T) {
+	cli, srv := pipeSession(t,
+		&Config{LocalID: "cli", WriteTimeout: time.Second},
+		&Config{LocalID: "srv", WriteTimeout: 2 * time.Second},
+	)
+
+	type acceptResult struct {
+		conn net.Conn
+		err  error
+	}
+	acceptCh := make(chan acceptResult, 1)
+	go func() {
+		conn, err := srv.Accept()
+		acceptCh <- acceptResult{conn: conn, err: err}
+	}()
+
+	cliConn, err := cli.Open(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cliConn.Close()
+	cliStream, ok := cliConn.(*grpcStream)
+	if !ok {
+		t.Fatalf("cli.Open() returned %T, want *grpcStream", cliConn)
+	}
+	if cliStream.writeTimer != time.Second {
+		t.Fatalf("client write timeout = %v, want %v", cliStream.writeTimer, time.Second)
+	}
+
+	accepted := <-acceptCh
+	if accepted.err != nil {
+		t.Fatal(accepted.err)
+	}
+	defer accepted.conn.Close()
+	srvStream, ok := accepted.conn.(*grpcStream)
+	if !ok {
+		t.Fatalf("srv.Accept() returned %T, want *grpcStream", accepted.conn)
+	}
+	if srvStream.writeTimer != 2*time.Second {
+		t.Fatalf("server write timeout = %v, want %v", srvStream.writeTimer, 2*time.Second)
+	}
+}
+
 func TestSessionRejectInbound(t *testing.T) {
 	// serverCfg.RejectInbound=true: server tells the client "don't open streams to me".
 	// This is stored in cliSess.peerRejectsInbound, so cli.Open() should fail.

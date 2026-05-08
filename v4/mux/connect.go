@@ -139,6 +139,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		peerID,
 		peerRejectsInbound,
 		&sh.metrics,
+		cfg.WriteTimeout,
 	), nil
 }
 
@@ -224,7 +225,9 @@ func (svc *muxServer) Stream(stream muxpb.Mux_StreamServer) error {
 		}
 	}
 
-	conn := newServerSideStream(stream, svc.localAddr, svc.remoteAddr, nil)
+	conn := newServerSideStream(stream, svc.localAddr, svc.remoteAddr, nil, func() {
+		_ = sess.Close()
+	}, svc.cfg.WriteTimeout)
 	sess.DeliverStream(requestID, conn)
 
 	// Keep the handler alive until Close() is called on conn (or context is done).

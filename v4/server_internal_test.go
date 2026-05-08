@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func TestServerHandleInboundStream(t *testing.T) {
 	})
 }
 
-func TestServerLoadConfigAddsAndRemovesTunnels(t *testing.T) {
+func TestServerReloadConfigAddsAndRemovesTunnels(t *testing.T) {
 	listenAddr := freePort(t)
 	s := newTestServer(t, nil)
 	t.Cleanup(func() { _ = s.Shutdown() })
@@ -113,7 +114,7 @@ func TestServerStartWithAPIListener(t *testing.T) {
 	})
 }
 
-func TestMuxHandlerServe(t *testing.T) {
+func TestLocalHandlerServe(t *testing.T) {
 	t.Run("no-session", func(t *testing.T) {
 		s := newTestServer(t, nil)
 		accepted, peer := net.Pipe()
@@ -216,17 +217,18 @@ func TestServerStaleSessionsAfterReload(t *testing.T) {
 	})
 }
 
-// TestServerLoadConfigPartialFailure verifies that LoadConfig returns nil even
+// TestServerReloadConfigPartialFailure verifies that ReloadConfig returns an
+// aggregated error when part of the reload fails,
 // when starting a new config-driven tunnel fails (e.g. port already in use),
 // and that the reload otherwise completes normally.
-func TestServerLoadConfigPartialFailure(t *testing.T) {
+func TestServerReloadConfigPartialFailure(t *testing.T) {
 	s := newTestServer(t, nil)
 	if err := s.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Shutdown() })
 
-	// Hold a port so that LoadConfig cannot bind to it.
+	// Hold a port so that ReloadConfig cannot bind to it.
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -234,14 +236,18 @@ func TestServerLoadConfigPartialFailure(t *testing.T) {
 	defer taken.Close()
 	busyAddr := taken.Addr().String()
 
-	// Load a config where one peer's listen address is unavailable.
+	// Reload a config where one peer's listen address is unavailable.
 	cfg := newTestConfig(t, map[string]any{
 		"identity": map[string]any{
 			"listen": map[string]any{"peer-busy": busyAddr},
 		},
 	})
-	if err := s.ReloadConfig(cfg); err != nil {
-		t.Fatalf("LoadConfig returned error on partial failure: %v", err)
+	err = s.ReloadConfig(cfg)
+	if err == nil {
+		t.Fatal("ReloadConfig() = nil, want aggregated error")
+	}
+	if !strings.Contains(err.Error(), busyAddr) {
+		t.Fatalf("ReloadConfig() error = %v, want mention of %q", err, busyAddr)
 	}
 
 	// Despite the error the config was still swapped in.
