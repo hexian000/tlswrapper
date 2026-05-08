@@ -63,7 +63,7 @@ func TestServerLoadConfigAddsAndRemovesTunnels(t *testing.T) {
 	s := newTestServer(t, nil)
 	t.Cleanup(func() { _ = s.Shutdown() })
 
-	if err := s.LoadConfig(newTestConfig(t, map[string]any{
+	if err := s.ReloadConfig(newTestConfig(t, map[string]any{
 		"identity": map[string]any{"listen": map[string]any{"peer-a": listenAddr}},
 	})); err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestServerLoadConfigAddsAndRemovesTunnels(t *testing.T) {
 	}
 	_ = conn.Close()
 
-	if err := s.LoadConfig(newTestConfig(t, nil)); err != nil {
+	if err := s.ReloadConfig(newTestConfig(t, nil)); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, 2*time.Second, func() bool {
@@ -204,7 +204,7 @@ func TestServerStaleSessionsAfterReload(t *testing.T) {
 	s.addSession(tn)
 
 	// Trigger reload — this marks tn as stale.
-	if err := s.LoadConfig(newTestConfig(t, nil)); err != nil {
+	if err := s.ReloadConfig(newTestConfig(t, nil)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -240,7 +240,7 @@ func TestServerLoadConfigPartialFailure(t *testing.T) {
 			"listen": map[string]any{"peer-busy": busyAddr},
 		},
 	})
-	if err := s.LoadConfig(cfg); err != nil {
+	if err := s.ReloadConfig(cfg); err != nil {
 		t.Fatalf("LoadConfig returned error on partial failure: %v", err)
 	}
 
@@ -275,7 +275,7 @@ func TestServerReloadMuxListen(t *testing.T) {
 	})
 
 	// Reload with addrB.
-	if err := s.LoadConfig(newTestConfig(t, map[string]any{"mux_listen": addrB})); err != nil {
+	if err := s.ReloadConfig(newTestConfig(t, map[string]any{"mux_listen": addrB})); err != nil {
 		t.Fatal(err)
 	}
 

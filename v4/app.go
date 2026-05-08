@@ -151,8 +151,8 @@ func AppMain(f *AppFlags) int {
 			slog.Error("read config: ", formats.Error(err))
 			continue
 		}
-		if err := server.LoadConfig(cfg); err != nil {
-			slog.Error("load config: ", formats.Error(err))
+		if err := server.ReloadConfig(cfg); err != nil {
+			slog.Error("reload config: ", formats.Error(err))
 			continue
 		}
 		_, _ = sd.Notify(sd.Ready)

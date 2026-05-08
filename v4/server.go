@@ -609,10 +609,10 @@ func (s *Server) Shutdown() error {
 	return nil
 }
 
-// LoadConfig reloads the configuration file.
+// ReloadConfig reloads the configuration file.
 // All sub-steps are attempted regardless of individual failures; errors are
-// logged but do not abort the reload. LoadConfig always returns nil.
-func (s *Server) LoadConfig(cfg *config.File) error {
+// logged but do not abort the reload. ReloadConfig always returns nil.
+func (s *Server) ReloadConfig(cfg *config.File) error {
 	// 1. Build new TLS config; retain old one on failure.
 	newTLSCfg, err := cfg.NewTLSConfig(appFlags.ServerName)
 	if err != nil {

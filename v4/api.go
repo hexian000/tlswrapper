@@ -72,7 +72,7 @@ func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(formats.Error(err)))
 		return
 	}
-	if err := h.s.LoadConfig(cfg); err != nil {
+	if err := h.s.ReloadConfig(cfg); err != nil {
 		// LoadConfig always returns nil; this branch exists for future use.
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(formats.Error(err)))
