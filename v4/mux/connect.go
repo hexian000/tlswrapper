@@ -63,12 +63,6 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 
-	dialAddr := conn.RemoteAddr().String()
-	tag := fmt.Sprintf("? => %v", dialAddr)
-	if cfg.LocalID != "" {
-		tag = fmt.Sprintf("`%s' => %v", cfg.LocalID, dialAddr)
-	}
-
 	sh := &muxStatsHandler{}
 	opts := cfg.grpcDialOptions()
 	opts = append(opts, grpc.WithStatsHandler(sh))
@@ -130,10 +124,6 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		_ = cc.Close()
 		return nil, ctx.Err()
 	}
-	if peerID != "" {
-		tag = fmt.Sprintf("`%s' => `%s'", cfg.LocalID, peerID)
-	}
-
 	cleanup := func() {
 		cancel()
 		_ = cc.Close()
@@ -146,7 +136,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		cancel,
 		cleanup,
 		conn.LocalAddr(), conn.RemoteAddr(),
-		peerID, tag,
+		peerID,
 		peerRejectsInbound,
 		&sh.metrics,
 	), nil
@@ -188,16 +178,11 @@ func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
 		return err
 	}
 
-	tag := fmt.Sprintf("? <= %v", svc.remoteAddr)
-	if peerID != "" {
-		tag = fmt.Sprintf("`%s' <= %v", peerID, svc.remoteAddr)
-	}
-
 	sess := newServerSession(
 		stream,
 		nil, // cleanup wired after grpcSrv reference is available in Server()
 		svc.localAddr, svc.remoteAddr,
-		peerID, tag,
+		peerID,
 		peerRejectsInbound,
 		&svc.sh.metrics,
 	)

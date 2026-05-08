@@ -269,18 +269,22 @@ func (s *Server) serveSession(ss mux.Session) {
 		return
 	}
 	now := time.Now()
-	msg := fmt.Sprintf("%s: session established", ss.Tag())
+	inbound := newTunnel(ss.PeerID(), "", s)
+	inbound.mu.Lock()
+	inbound.ss = ss
+	inbound.updateTagLocked(ss, nil)
+	tag := inbound.tag
+	inbound.lastChanged = now
+	inbound.mu.Unlock()
+	msg := fmt.Sprintf("%s: session established", tag)
 	slog.Notice(msg)
 	s.recentEvents.Add(now, msg)
 	s.stats.authorized.Add(1)
-	inbound := newTunnel(ss.PeerID(), "", s)
-	inbound.ss = ss
-	inbound.lastChanged = now
 	s.addSession(inbound)
 	s.numSessions.Add(1)
 	defer func() {
 		now := time.Now()
-		msg := fmt.Sprintf("%s: session closed", ss.Tag())
+		msg := fmt.Sprintf("%s: session closed", tag)
 		slog.Notice(msg)
 		s.recentEvents.Add(now, msg)
 		s.numSessions.Add(^uint32(0))
@@ -292,7 +296,7 @@ func (s *Server) serveSession(ss mux.Session) {
 			return
 		}
 		if err := s.g.Go(func() {
-			s.handleInboundStream(ss.PeerID(), stream)
+			s.handleInboundStream(inbound, ss.PeerID(), stream)
 		}); err != nil {
 			ioClose(stream)
 			return
@@ -301,7 +305,7 @@ func (s *Server) serveSession(ss mux.Session) {
 }
 
 // acceptInboundStreams drains server-initiated streams from a client-side session.
-func (s *Server) acceptInboundStreams(ss mux.Session) {
+func (s *Server) acceptInboundStreams(tn *tunnel, ss mux.Session) {
 	for {
 		stream, err := ss.Accept()
 		if err != nil {
@@ -309,7 +313,7 @@ func (s *Server) acceptInboundStreams(ss mux.Session) {
 		}
 		peerID := ss.PeerID()
 		if err := s.g.Go(func() {
-			s.handleInboundStream(peerID, stream)
+			s.handleInboundStream(tn, peerID, stream)
 		}); err != nil {
 			ioClose(stream)
 			return
@@ -318,7 +322,7 @@ func (s *Server) acceptInboundStreams(ss mux.Session) {
 }
 
 // handleInboundStream forwards one accepted server-side stream to the configured connect address.
-func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
+func (s *Server) handleInboundStream(tn *tunnel, peerID string, stream net.Conn) {
 	started := false
 	defer func() {
 		if !started {
@@ -327,19 +331,23 @@ func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
 	}()
 	s.stats.request.Add(1)
 	cfg, _ := s.getConfig()
+	seq := uint64(1)
+	peerIDForTag := peerID
+	if tn != nil {
+		seq = tn.nextStreamSeq()
+		if peerIDForTag == "" {
+			peerIDForTag = tn.id
+		}
+	}
+	tag := formatStreamTag(seq, false, cfg.Identity.Claim, peerID, peerIDForTag, stream.LocalAddr(), stream.RemoteAddr(), stream)
 	dialAddr := cfg.ServiceEntry(peerID).Connect
 	if dialAddr == "" {
 		dialAddr = cfg.Connect
 	}
 	if dialAddr == "" {
-		peerDisplay := "?"
-		if peerID != "" {
-			peerDisplay = fmt.Sprintf("%q", peerID)
-		}
-		slog.Warningf("stream %s: no connect address configured", peerDisplay)
+		slog.Warningf("%s: no connect address configured", tag)
 		return
 	}
-	tag := fmt.Sprintf("%q -> %s", peerID, dialAddr)
 	ctx := s.ctx.withTimeout()
 	if ctx == nil {
 		return
@@ -428,7 +436,8 @@ func (s *Server) loadSessions(cfg *config.File) error {
 		s.services[name] = ss
 		s.sessions = append(s.sessions, ss)
 		if err := ss.Start(cfg); err != nil {
-			slog.Errorf("session `%s': start: %s", name, formats.Error(err))
+			tag := ss.tagValue()
+			slog.Errorf("%s: start: %s", tag, formats.Error(err))
 		}
 	}
 	return nil
@@ -456,7 +465,7 @@ func (s *Server) reloadMuxListen(cfg *config.File) {
 		return
 	}
 	slog.Noticef("mux listen: %v", l.Addr())
-	h := &TLSHandler{s: s}
+	h := &MuxHandler{s: s}
 	startupStart, startupRate, startupFull := cfg.ParsedMaxStartups()
 	s.l = hlistener.Wrap(l, &hlistener.Config{
 		Start:       uint32(startupStart),
@@ -514,7 +523,7 @@ func (s *Server) Start() error {
 			return err
 		}
 		slog.Noticef("mux listen: %v", l.Addr())
-		h := &TLSHandler{s: s}
+		h := &MuxHandler{s: s}
 		c, _ := s.getConfig()
 		startupStart, startupRate, startupFull := c.ParsedMaxStartups()
 		s.l = hlistener.Wrap(l, &hlistener.Config{
@@ -577,7 +586,8 @@ func (s *Server) Shutdown() error {
 	s.mu.RUnlock()
 	for _, ss := range services {
 		if err := ss.Stop(); err != nil {
-			slog.Errorf("session `%s': %s", ss.id, formats.Error(err))
+			tag := ss.tagValue()
+			slog.Errorf("%s: %s", tag, formats.Error(err))
 		}
 	}
 	s.ctx.close()

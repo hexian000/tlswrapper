@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
@@ -31,6 +32,7 @@ type tunnel struct {
 	l        net.Listener // local TCP listener (only on config-driven tunnels with Listen)
 
 	mu          sync.RWMutex
+	tag         string
 	ss          mux.Session
 	idleSince   time.Time // when ss became stream-less (zero = not idle)
 	stale       bool      // marked after config reload; evicted when idle
@@ -40,20 +42,124 @@ type tunnel struct {
 	redialCount int
 	dialMu      sync.Mutex
 	lastChanged time.Time
+	streamSeq   atomic.Uint64
 }
 
 func newTunnel(id, dialAddr string, s *Server) *tunnel {
-	return &tunnel{
+	t := &tunnel{
 		id:        id,
 		dialAddr:  dialAddr,
 		s:         s,
 		closeSig:  make(chan struct{}),
 		redialSig: make(chan struct{}, 1),
 	}
+	t.tag = t.buildTunnelTag(nil, nil)
+	return t
 }
 
 func (t *tunnel) getConfig() (*config.File, *tls.Config) {
 	return t.s.getConfig()
+}
+
+func (t *tunnel) defaultDirectionOutbound() bool {
+	return t.dialAddr != ""
+}
+
+func addrLabel(addr net.Addr) string {
+	if addr == nil {
+		return ""
+	}
+	s := addr.String()
+	if s == "" {
+		return ""
+	}
+	return s
+}
+
+func fallbackLocalAddr(localAddr net.Addr, conn net.Conn) net.Addr {
+	if localAddr != nil {
+		return localAddr
+	}
+	if conn == nil {
+		return nil
+	}
+	return conn.LocalAddr()
+}
+
+func fallbackPeerAddr(peerAddr net.Addr, conn net.Conn) net.Addr {
+	if peerAddr != nil {
+		return peerAddr
+	}
+	if conn == nil {
+		return nil
+	}
+	return conn.RemoteAddr()
+}
+
+func resolveMeLabel(identity string, localAddr net.Addr, conn net.Conn) string {
+	if identity != "" {
+		return identity
+	}
+	if s := addrLabel(fallbackLocalAddr(localAddr, conn)); s != "" {
+		return s
+	}
+	return "?"
+}
+
+func resolvePeerLabel(peerIdentity, peerID string, peerAddr net.Addr, conn net.Conn) string {
+	if peerIdentity != "" {
+		return peerIdentity
+	}
+	if peerID != "" {
+		return peerID
+	}
+	if s := addrLabel(fallbackPeerAddr(peerAddr, conn)); s != "" {
+		return s
+	}
+	return "?"
+}
+
+func formatTunnelTag(outbound bool, identity, peerIdentity, peerID string, localAddr, peerAddr net.Addr, conn net.Conn) string {
+	arrow := "<="
+	if outbound {
+		arrow = "=>"
+	}
+	me := resolveMeLabel(identity, localAddr, conn)
+	peer := resolvePeerLabel(peerIdentity, peerID, peerAddr, conn)
+	return fmt.Sprintf("%s %s %s", me, arrow, peer)
+}
+
+func formatStreamTag(seq uint64, outbound bool, identity, peerIdentity, peerID string, localAddr, peerAddr net.Addr, conn net.Conn) string {
+	arrow := "<-"
+	if outbound {
+		arrow = "->"
+	}
+	me := resolveMeLabel(identity, localAddr, conn)
+	peer := resolvePeerLabel(peerIdentity, peerID, peerAddr, conn)
+	return fmt.Sprintf("[%d] %s %s %s", seq, me, arrow, peer)
+}
+
+func (t *tunnel) buildTunnelTag(ss mux.Session, conn net.Conn) string {
+	cfg, _ := t.getConfig()
+	peerID := t.id
+	var peerIdentity string
+	var localAddr, remoteAddr net.Addr
+	if ss != nil {
+		peerIdentity = ss.PeerID()
+		localAddr = ss.LocalAddr()
+		remoteAddr = ss.RemoteAddr()
+	}
+	return formatTunnelTag(t.defaultDirectionOutbound(), cfg.Identity.Claim, peerIdentity, peerID, localAddr, remoteAddr, conn)
+}
+
+func (t *tunnel) updateTagLocked(ss mux.Session, conn net.Conn) {
+	t.tag = t.buildTunnelTag(ss, conn)
+}
+
+func (t *tunnel) tagValue() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.tag
 }
 
 // Start applies the current config to a config-driven tunnel.
@@ -63,8 +169,9 @@ func (t *tunnel) Start(cfg *config.File) error {
 		if err != nil {
 			return err
 		}
-		slog.Noticef("session `%s': listen %v", t.id, l.Addr())
-		h := &MuxHandler{l: l, s: t.s, id: t.id}
+		tag := t.tagValue()
+		slog.Noticef("%s: listen %v", tag, l.Addr())
+		h := &LocalHandler{l: l, s: t.s, id: t.id}
 		if err := t.s.g.Go(func() {
 			t.s.Serve(l, h)
 		}); err != nil {
@@ -74,7 +181,8 @@ func (t *tunnel) Start(cfg *config.File) error {
 		t.l = l
 	}
 	if t.dialAddr != "" {
-		slog.Debugf("session `%s': start outbound", t.id)
+		tag := t.tagValue()
+		slog.Debugf("%s: start outbound", tag)
 		return t.s.g.Go(t.run)
 	}
 	return nil
@@ -94,7 +202,8 @@ func (t *tunnel) Stop() error {
 			ioClose(t.ss)
 			t.ss = nil
 		}
-		slog.Debugf("session `%s': stop", t.id)
+		tag := t.tag
+		slog.Debugf("%s: stop", tag)
 	})
 	return nil
 }
@@ -121,7 +230,8 @@ func (t *tunnel) checkIdle() {
 		numStreams = int64(m.StreamsStarted.Load()) - int64(m.StreamsSucceeded.Load()) - int64(m.StreamsFailed.Load())
 	}
 	if t.stale && numStreams == 0 {
-		slog.Infof("session `%s': stale session evicted after reload", t.id)
+		tag := t.tag
+		slog.Infof("%s: stale session evicted after reload", tag)
 		_ = t.ss.Close()
 		t.ss = nil
 		t.idleSince = time.Time{}
@@ -137,7 +247,8 @@ func (t *tunnel) checkIdle() {
 	}
 	// evict if idle too long
 	if idleTimeout > 0 && !t.idleSince.IsZero() && now.Sub(t.idleSince) >= idleTimeout {
-		slog.Infof("session `%s': idle session evicted after %v", t.id, now.Sub(t.idleSince))
+		tag := t.tag
+		slog.Infof("%s: idle session evicted after %v", tag, now.Sub(t.idleSince))
 		_ = t.ss.Close()
 		t.ss = nil
 		t.idleSince = time.Time{}
@@ -156,7 +267,8 @@ func (t *tunnel) redial() {
 		if redialCount > t.redialCount {
 			t.redialCount = redialCount
 		}
-		slog.Infof("session `%s': redial #%d to %s: %s", t.id, t.redialCount, t.dialAddr, formats.Error(err))
+		tag := t.tagValue()
+		slog.Infof("%s: redial #%d to %s: %s", tag, t.redialCount, t.dialAddr, formats.Error(err))
 		return
 	}
 	t.redialCount = 0
@@ -199,7 +311,8 @@ func (t *tunnel) schedule() <-chan time.Time {
 	if n < len(waitTimeConst) {
 		waitTime = waitTimeConst[n]
 	}
-	slog.Debugf("session `%s': redial scheduled after %v", t.id, waitTime)
+	tag := t.tagValue()
+	slog.Debugf("%s: redial scheduled after %v", tag, waitTime)
 	return time.After(waitTime)
 }
 
@@ -232,31 +345,33 @@ func (t *tunnel) run() {
 
 func (t *tunnel) addSession(ss mux.Session) {
 	now := time.Now()
-	msg := fmt.Sprintf("%s: session established", ss.Tag())
-	slog.Notice(msg)
-	t.s.recentEvents.Add(now, msg)
-
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	hadConn := t.ss != nil && !t.ss.IsClosed()
 	t.ss = ss
+	t.updateTagLocked(ss, nil)
+	tag := t.tag
+	t.streamSeq.Store(0)
 	t.stale = false
 	if !hadConn {
 		t.s.numSessions.Add(1)
 	}
 	t.lastChanged = now
+	t.mu.Unlock()
+
+	msg := fmt.Sprintf("%s: session established", tag)
+	slog.Notice(msg)
+	t.s.recentEvents.Add(now, msg)
 }
 
 func (t *tunnel) delSession(ss mux.Session) {
 	now := time.Now()
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.ss != ss {
+		t.mu.Unlock()
 		return
 	}
-	msg := fmt.Sprintf("%s: session closed", ss.Tag())
-	slog.Notice(msg)
-	t.s.recentEvents.Add(now, msg)
+	tag := t.tag
+	msg := fmt.Sprintf("%s: session closed", tag)
 	t.ss = nil
 	t.idleSince = time.Time{}
 	t.s.numSessions.Add(^uint32(0))
@@ -267,6 +382,10 @@ func (t *tunnel) delSession(ss mux.Session) {
 		default:
 		}
 	}
+	t.mu.Unlock()
+
+	slog.Notice(msg)
+	t.s.recentEvents.Add(now, msg)
 }
 
 func (t *tunnel) getSession() mux.Session {
@@ -286,6 +405,10 @@ func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
 	return ss.Open(ctx)
 }
 
+func (t *tunnel) nextStreamSeq() uint64 {
+	return t.streamSeq.Add(1)
+}
+
 // dial establishes a new outbound mux session.
 func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	cfg, tlscfg := t.getConfig()
@@ -301,7 +424,10 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	tag := fmt.Sprintf("`%s' => %v", t.id, rawConn.RemoteAddr())
+	t.mu.Lock()
+	t.updateTagLocked(nil, rawConn)
+	tag := t.tag
+	t.mu.Unlock()
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
@@ -347,7 +473,7 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	// Accept server-initiated streams so that dialStreamForServer conns do not
 	// pile up in acceptCh and numStreams never decrements (the stream leak).
 	if err := t.s.g.Go(func() {
-		t.s.acceptInboundStreams(ss)
+		t.s.acceptInboundStreams(t, ss)
 	}); err != nil {
 		_ = ss.Close()
 		return nil, err

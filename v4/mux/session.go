@@ -30,7 +30,6 @@ type Session interface {
 	Stats() *SessionMetrics
 	// PeerID returns the remote identity claim.
 	PeerID() string
-	Tag() string
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
 }
@@ -52,7 +51,6 @@ type session struct {
 
 	mu         sync.RWMutex
 	peerID     string
-	tag        string
 	localAddr  net.Addr
 	remoteAddr net.Addr
 
@@ -141,12 +139,6 @@ func (ss *session) PeerID() string {
 	return ss.peerID
 }
 
-func (ss *session) Tag() string {
-	ss.mu.RLock()
-	defer ss.mu.RUnlock()
-	return ss.tag
-}
-
 func (ss *session) LocalAddr() net.Addr { return ss.localAddr }
 
 func (ss *session) RemoteAddr() net.Addr { return ss.remoteAddr }
@@ -165,7 +157,7 @@ func newClientSession(
 	streamCtxCancel context.CancelFunc,
 	cleanup func(),
 	localAddr, remoteAddr net.Addr,
-	peerID, tag string,
+	peerID string,
 	peerRejectsInbound bool, metrics *SessionMetrics) *clientSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
@@ -180,7 +172,6 @@ func newClientSession(
 			acceptCh:           make(chan net.Conn, 16),
 			peerRejectsInbound: peerRejectsInbound,
 			peerID:             peerID,
-			tag:                tag,
 			localAddr:          localAddr,
 			remoteAddr:         remoteAddr,
 			closedCh:           make(chan struct{}),
@@ -246,7 +237,7 @@ func newServerSession(
 	ctrl controlStream,
 	cleanup func(),
 	localAddr, remoteAddr net.Addr,
-	peerID, tag string,
+	peerID string,
 	peerRejectsInbound bool,
 	metrics *SessionMetrics,
 ) *serverSession {
@@ -263,7 +254,6 @@ func newServerSession(
 			acceptCh:           make(chan net.Conn, 16),
 			peerRejectsInbound: peerRejectsInbound,
 			peerID:             peerID,
-			tag:                tag,
 			localAddr:          localAddr,
 			remoteAddr:         remoteAddr,
 			closedCh:           make(chan struct{}),

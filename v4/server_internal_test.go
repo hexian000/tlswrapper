@@ -18,7 +18,7 @@ func TestServerHandleInboundStream(t *testing.T) {
 		stream, peer := net.Pipe()
 		done := make(chan struct{})
 		go func() {
-			s.handleInboundStream("peer-a", stream)
+			s.handleInboundStream(nil, "peer-a", stream)
 			close(done)
 		}()
 		if err := peer.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
@@ -43,7 +43,7 @@ func TestServerHandleInboundStream(t *testing.T) {
 		stream, peer := net.Pipe()
 		done := make(chan struct{})
 		go func() {
-			s.handleInboundStream("peer-a", stream)
+			s.handleInboundStream(nil, "peer-a", stream)
 			close(done)
 		}()
 		transferAndVerify(t, peer, peer, []byte("hello inbound"))
@@ -119,7 +119,7 @@ func TestMuxHandlerServe(t *testing.T) {
 		accepted, peer := net.Pipe()
 		done := make(chan struct{})
 		go func() {
-			(&MuxHandler{s: s, id: "peer-a"}).Serve(context.Background(), accepted)
+			(&LocalHandler{s: s, id: "peer-a"}).Serve(context.Background(), accepted)
 			close(done)
 		}()
 		if err := peer.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
@@ -152,7 +152,7 @@ func TestMuxHandlerServe(t *testing.T) {
 		}()
 
 		accepted, peer := net.Pipe()
-		go (&MuxHandler{s: s, id: "peer-a"}).Serve(context.Background(), accepted)
+		go (&LocalHandler{s: s, id: "peer-a"}).Serve(context.Background(), accepted)
 		remote := <-remoteCh
 		if remote == nil {
 			t.Fatal("expected remote stream")

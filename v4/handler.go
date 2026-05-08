@@ -5,7 +5,6 @@ package tlswrapper
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"sync/atomic"
 	"time"
@@ -22,26 +21,26 @@ type Handler interface {
 	Serve(context.Context, net.Conn)
 }
 
-// TLSHandler upgrades accepted mux sockets into server-side sessions.
-type TLSHandler struct {
+// MuxHandler upgrades accepted mux sockets into server-side sessions.
+type MuxHandler struct {
 	s *Server
 
 	halfOpen atomic.Uint32
 }
 
 // Stats4Listener reports active sessions and handshakes still in progress.
-func (h *TLSHandler) Stats4Listener() (numSessions uint32, numHalfOpen uint32) {
+func (h *MuxHandler) Stats4Listener() (numSessions uint32, numHalfOpen uint32) {
 	numSessions = h.s.numSessions.Load()
 	numHalfOpen = h.halfOpen.Load()
 	return
 }
 
-func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
+func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 	h.halfOpen.Add(1)
 	defer h.halfOpen.Add(^uint32(0))
 	start := time.Now()
-	tag := fmt.Sprintf("? <= %v", conn.RemoteAddr())
 	cfg, tlscfg := h.s.getConfig()
+	tag := formatTunnelTag(false, cfg.Identity.Claim, "", "", conn.LocalAddr(), conn.RemoteAddr(), conn)
 	setTCPConnParams(cfg.Mux.TCP, conn)
 	conn = snet.FlowMeter(conn, h.s.flowStats)
 	if tlscfg == nil {
@@ -64,29 +63,36 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	h.s.serveSession(ss)
 }
 
-// MuxHandler forwards accepted local connections over a matching mux session.
-type MuxHandler struct {
+// LocalHandler forwards accepted local connections over a matching mux session.
+type LocalHandler struct {
 	l  net.Listener
 	s  *Server
 	id string
 }
 
-func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
+func (h *LocalHandler) Serve(ctx context.Context, accepted net.Conn) {
 	cfg, _ := h.s.getConfig()
 	setTCPConnParams(cfg.TCP, accepted)
-	ss := h.s.findSession(h.id)
-	if ss == nil {
-		slog.Warningf("%v -> `%s': no active session", accepted.RemoteAddr(), h.id)
+	t := h.s.findSession(h.id)
+	if t == nil {
+		tunnelTag := formatTunnelTag(true, cfg.Identity.Claim, "", h.id, accepted.LocalAddr(), nil, accepted)
+		slog.Warningf("%s: no active session", tunnelTag)
 		ioClose(accepted)
 		return
 	}
-	dialed, err := ss.OpenStream(ctx)
+	tunnelTag := t.tagValue()
+	peerIdentity := ""
+	if sess := t.getSession(); sess != nil {
+		peerIdentity = sess.PeerID()
+	}
+	dialed, err := t.OpenStream(ctx)
 	if err != nil {
-		slog.Errorf("%v -> `%s': %s", accepted.RemoteAddr(), h.id, formats.Error(err))
+		slog.Errorf("%s: %s", tunnelTag, formats.Error(err))
 		ioClose(accepted)
 		return
 	}
-	tag := fmt.Sprintf("%v -> `%s'", accepted.RemoteAddr(), h.id)
+	seq := t.nextStreamSeq()
+	tag := formatStreamTag(seq, true, cfg.Identity.Claim, peerIdentity, h.id, accepted.LocalAddr(), dialed.RemoteAddr(), dialed)
 	if err := h.s.f.Start(accepted, dialed, forwarder.HandlerFuncs{
 		WriteClosed: func(conn net.Conn, err error) {
 			if err != nil {

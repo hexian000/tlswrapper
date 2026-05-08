@@ -277,9 +277,9 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					formats.IECBytes(float64(ss.BytesSent)),
 					numStreams)
 			}
-			fprintf(w, "`%-18s': %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
+			fprintf(w, "%-20s: %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
 		} else {
-			fprintf(w, "`%-18s': never seen\n", ss.Name)
+			fprintf(w, "%-20s: never seen\n", ss.Name)
 		}
 	}
 
