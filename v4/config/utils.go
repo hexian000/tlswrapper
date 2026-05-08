@@ -15,7 +15,7 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
-// SetLogger sets up logging according to config
+// SetLogger applies cfg.Log to l.
 func (cfg *File) SetLogger(l *slog.Logger) error {
 	switch cfg.Log {
 	case "", "stdout":
@@ -32,7 +32,6 @@ func (cfg *File) SetLogger(l *slog.Logger) error {
 	return nil
 }
 
-// newX509CertPool parses a slice of PEM-encoded certificates into an x509.CertPool
 func newX509CertPool(authCerts []string) (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
 	for i, cert := range authCerts {
@@ -43,7 +42,7 @@ func newX509CertPool(authCerts []string) (*x509.CertPool, error) {
 	return certPool, nil
 }
 
-// Timeout returns the session inactivity timeout
+// Timeout returns PingTimeout as a duration.
 func (c *File) Timeout() time.Duration {
 	return time.Duration(c.PingTimeout) * time.Second
 }

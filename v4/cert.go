@@ -24,10 +24,9 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
-// keyGenerator defines a function that generates a public/private key pair
 type keyGenerator func() (pubKey any, key any, err error)
 
-// newCertificate creates a new certificate signed by the given parent certificate
+// newCertificate returns a leaf pair, or a self-signed CA when parent is nil.
 func newCertificate(parent *x509.Certificate, signKey any, sni string, pubKey any, key any) (certPEM []byte, keyPEM []byte, err error) {
 	rawKey, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
@@ -59,7 +58,7 @@ func newCertificate(parent *x509.Certificate, signKey any, sni string, pubKey an
 		},
 	}
 	if parent == nil {
-		// create self-signed certificate
+		// parent == nil means the generated certificate becomes its own signer.
 		parent = &tmpl
 		tmpl.BasicConstraintsValid = true
 		tmpl.IsCA = true
@@ -76,7 +75,6 @@ func newCertificate(parent *x509.Certificate, signKey any, sni string, pubKey an
 	return
 }
 
-// makeKeyGenerator creates a key generator for the given key type and size
 func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
 	switch keytype {
 	case "rsa":
@@ -127,7 +125,6 @@ func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
 	return nil, errors.New("invalid key type")
 }
 
-// parsePEM extracts the PEM block of the given type from the data
 func parsePEM(data []byte, blockType string) []byte {
 	var p *pem.Block
 	b := data
@@ -139,7 +136,6 @@ func parsePEM(data []byte, blockType string) []byte {
 	}
 }
 
-// readKeyPair reads a certificate and private key from files
 func readKeyPair(name string) (*x509.Certificate, any, error) {
 	certFile, keyFile := name+"-cert.pem", name+"-key.pem"
 	certPEM, err := os.ReadFile(certFile)
@@ -170,7 +166,6 @@ func readKeyPair(name string) (*x509.Certificate, any, error) {
 	return cert, key, nil
 }
 
-// writeKeyPair writes the certificate and private key to files
 func writeKeyPair(name string, certPEM, keyPEM []byte) error {
 	certFile, keyFile := name+"-cert.pem", name+"-key.pem"
 	if err := os.WriteFile(certFile, certPEM, 0644); err != nil {
@@ -183,7 +178,6 @@ func writeKeyPair(name string, certPEM, keyPEM []byte) error {
 	return nil
 }
 
-// genCerts generates certificates and private keys
 func genCerts(f *AppFlags) int {
 	keygen, err := makeKeyGenerator(f.KeyType, f.KeySize)
 	if err != nil {

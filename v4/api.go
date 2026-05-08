@@ -49,7 +49,7 @@ type apiConfigHandler struct {
 	s *Server
 }
 
-// ServeHTTP handles configuration update requests
+// ServeHTTP accepts POSTed config snapshots and applies ReloadConfig.
 func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -73,7 +73,7 @@ func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.s.ReloadConfig(cfg); err != nil {
-		// LoadConfig always returns nil; this branch exists for future use.
+		// ReloadConfig currently logs partial failures and returns nil.
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(formats.Error(err)))
 		return
@@ -157,7 +157,7 @@ type apiStatsHandler struct {
 	last apiStats
 }
 
-// ServeHTTP handles statistics requests
+// ServeHTTP renders human-readable stats; POST also includes rate deltas.
 func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var stateless bool
 	switch r.Method {
@@ -295,11 +295,13 @@ type serverMetricsCollector struct {
 	sessionUpDesc       *prometheus.Desc
 	sessionStreamsDesc  *prometheus.Desc
 
-	sessionStreamsStartedDesc   *prometheus.Desc
-	sessionStreamsSucceededDesc *prometheus.Desc
-	sessionStreamsFailedDesc    *prometheus.Desc
-	sessionMsgsSentDesc         *prometheus.Desc
-	sessionMsgsReceivedDesc     *prometheus.Desc
+	sessionStreamsStartedDesc     *prometheus.Desc
+	sessionStreamsSucceededDesc   *prometheus.Desc
+	sessionStreamsFailedDesc      *prometheus.Desc
+	sessionBytesSentDesc          *prometheus.Desc
+	sessionBytesReceivedDesc      *prometheus.Desc
+	sessionWireLengthSentDesc     *prometheus.Desc
+	sessionWireLengthReceivedDesc *prometheus.Desc
 }
 
 func newServerMetricsCollector(s *Server) prometheus.Collector {
@@ -365,13 +367,21 @@ func newServerMetricsCollector(s *Server) prometheus.Collector {
 			"tlswrapper_session_grpc_streams_failed_total",
 			"Total gRPC streams that ended with an error in the session.",
 			[]string{"session"}, nil),
-		sessionMsgsSentDesc: prometheus.NewDesc(
-			"tlswrapper_session_grpc_messages_sent_total",
-			"Total gRPC messages sent in the session.",
+		sessionBytesSentDesc: prometheus.NewDesc(
+			"tlswrapper_session_grpc_bytes_sent_total",
+			"Total payload bytes sent in the session.",
 			[]string{"session"}, nil),
-		sessionMsgsReceivedDesc: prometheus.NewDesc(
-			"tlswrapper_session_grpc_messages_received_total",
-			"Total gRPC messages received in the session.",
+		sessionBytesReceivedDesc: prometheus.NewDesc(
+			"tlswrapper_session_grpc_bytes_received_total",
+			"Total payload bytes received in the session.",
+			[]string{"session"}, nil),
+		sessionWireLengthSentDesc: prometheus.NewDesc(
+			"tlswrapper_session_grpc_wire_bytes_sent_total",
+			"Total wire bytes sent in the session.",
+			[]string{"session"}, nil),
+		sessionWireLengthReceivedDesc: prometheus.NewDesc(
+			"tlswrapper_session_grpc_wire_bytes_received_total",
+			"Total wire bytes received in the session.",
 			[]string{"session"}, nil),
 	}
 }
@@ -392,8 +402,10 @@ func (c *serverMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.sessionStreamsStartedDesc
 	ch <- c.sessionStreamsSucceededDesc
 	ch <- c.sessionStreamsFailedDesc
-	ch <- c.sessionMsgsSentDesc
-	ch <- c.sessionMsgsReceivedDesc
+	ch <- c.sessionBytesSentDesc
+	ch <- c.sessionBytesReceivedDesc
+	ch <- c.sessionWireLengthSentDesc
+	ch <- c.sessionWireLengthReceivedDesc
 }
 
 func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -432,10 +444,14 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			float64(ss.StreamsSucceeded), ss.Name)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsFailedDesc, prometheus.CounterValue,
 			float64(ss.StreamsFailed), ss.Name)
-		ch <- prometheus.MustNewConstMetric(c.sessionMsgsSentDesc, prometheus.CounterValue,
-			float64(ss.MessagesSent), ss.Name)
-		ch <- prometheus.MustNewConstMetric(c.sessionMsgsReceivedDesc, prometheus.CounterValue,
-			float64(ss.MessagesReceived), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionBytesSentDesc, prometheus.CounterValue,
+			float64(ss.BytesSent), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionBytesReceivedDesc, prometheus.CounterValue,
+			float64(ss.BytesReceived), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionWireLengthSentDesc, prometheus.CounterValue,
+			float64(ss.WireLengthSent), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionWireLengthReceivedDesc, prometheus.CounterValue,
+			float64(ss.WireLengthReceived), ss.Name)
 	}
 }
 
@@ -458,7 +474,7 @@ func newAPIMetricsHandler(s *Server) http.Handler {
 	})
 }
 
-// RunHTTPServer runs an HTTP server for metrics and configuration
+// RunHTTPServer serves health, config, stats, metrics, gc, and stack endpoints.
 func RunHTTPServer(l net.Listener, s *Server) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {

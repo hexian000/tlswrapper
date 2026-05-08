@@ -15,7 +15,7 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 )
 
-// loadPEM loads a PEM string or reads it from a file if it starts with '@'
+// loadPEM resolves "@path" PEM references used by TLS fields.
 func loadPEM(s string) (string, error) {
 	if fileName, ok := strings.CutPrefix(s, "@"); ok {
 		certPEM, err := os.ReadFile(fileName)
@@ -27,7 +27,7 @@ func loadPEM(s string) (string, error) {
 	return s, nil
 }
 
-// load resolves any "@path" references in the TLS config
+// load resolves any "@path" references in the TLS section.
 func (t *TLS) load() error {
 	certPEM, err := loadPEM(t.Certificate)
 	if err != nil {
@@ -66,7 +66,7 @@ func (cfg *File) load() error {
 	return nil
 }
 
-// Load loads configuration from a byte slice
+// Load decodes, validates, and normalizes one config snapshot.
 func Load(b []byte) (*File, error) {
 	cfg := Default
 	if err := json.Unmarshal(b, &cfg); err != nil {
@@ -84,7 +84,7 @@ func Load(b []byte) (*File, error) {
 	return &cfg, nil
 }
 
-// LoadFile loads configuration from a file
+// LoadFile reads path and delegates to Load.
 func LoadFile(path string) (*File, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -136,8 +136,7 @@ func parseMaxStartups(s string) (start, rate, full int, err error) {
 	return
 }
 
-// ParsedMaxStartups returns the parsed components of the MaxStartups throttle string.
-// Returns (0,0,0) if MaxStartups is empty.
+// ParsedMaxStartups parses MaxStartups, or returns zeros when it is empty.
 func (c *File) ParsedMaxStartups() (start, rate, full int) {
 	if c.MaxStartups == "" {
 		return
@@ -146,7 +145,7 @@ func (c *File) ParsedMaxStartups() (start, rate, full int) {
 	return
 }
 
-// Validate validates and clamps the configuration
+// Validate checks declared values and clamps tunables into supported ranges.
 func (c *File) Validate() error {
 	if err := checkType(c.Type); err != nil {
 		return err
@@ -186,7 +185,7 @@ func (c *File) Validate() error {
 	return nil
 }
 
-// Clone creates a deep copy of the configuration file
+// Clone deep-copies the configuration.
 func (cfg *File) Clone() (*File, error) {
 	b, err := json.Marshal(cfg)
 	if err != nil {
@@ -199,7 +198,7 @@ func (cfg *File) Clone() (*File, error) {
 	return c, nil
 }
 
-// Dump dumps the configuration file to JSON format
+// Dump returns the fully loaded config as indented JSON.
 func (cfg *File) Dump() ([]byte, error) {
 	c, err := cfg.Clone()
 	if err != nil {

@@ -17,26 +17,25 @@ import (
 	"github.com/hexian000/tlswrapper/v4/mux"
 )
 
-// Handler is a generic interface that handles incoming connections
+// Handler serves one accepted connection.
 type Handler interface {
 	Serve(context.Context, net.Conn)
 }
 
-// TLSHandler creates sessions from incoming TLS connections
+// TLSHandler upgrades accepted mux sockets into server-side sessions.
 type TLSHandler struct {
 	s *Server
 
 	halfOpen atomic.Uint32
 }
 
-// Stats4Listener returns the current number of sessions and half-open connections
+// Stats4Listener reports active sessions and handshakes still in progress.
 func (h *TLSHandler) Stats4Listener() (numSessions uint32, numHalfOpen uint32) {
 	numSessions = h.s.numSessions.Load()
 	numHalfOpen = h.halfOpen.Load()
 	return
 }
 
-// Serve handles an incoming connection by upgrading it to HTTP/2 and serving it.
 func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	h.halfOpen.Add(1)
 	defer h.halfOpen.Add(^uint32(0))
@@ -65,14 +64,13 @@ func (h *TLSHandler) Serve(ctx context.Context, conn net.Conn) {
 	h.s.serveSession(ss)
 }
 
-// MuxHandler forwards connections over the session
+// MuxHandler forwards accepted local connections over a matching mux session.
 type MuxHandler struct {
 	l  net.Listener
 	s  *Server
 	id string
 }
 
-// Serve handles an incoming connection
 func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
 	cfg, _ := h.s.getConfig()
 	setTCPConnParams(cfg.TCP, accepted)
@@ -109,10 +107,9 @@ func (h *MuxHandler) Serve(ctx context.Context, accepted net.Conn) {
 	slog.Debugf("%s: forward established", tag)
 }
 
-// EmptyHandler rejects all connections
+// EmptyHandler closes every accepted connection.
 type EmptyHandler struct{}
 
-// Serve handles an incoming connection
 func (h *EmptyHandler) Serve(_ context.Context, accepted net.Conn) {
 	ioClose(accepted)
 }

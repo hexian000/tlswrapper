@@ -16,7 +16,7 @@ import (
 // Config holds options for creating a mux session.
 // Zero values for numeric/duration fields use built-in defaults.
 type Config struct {
-	// LocalID is the local service identity sent in the handshake.
+	// LocalID is the local identity claim sent in the handshake.
 	LocalID string
 	// TLSConfig, when non-nil, causes Client/Server to perform a TLS handshake
 	// on the raw connection before starting gRPC. nil means plaintext.

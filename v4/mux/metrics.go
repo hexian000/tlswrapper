@@ -12,14 +12,15 @@ import (
 	muxpb "github.com/hexian000/tlswrapper/v4/mux/proto"
 )
 
-// SessionMetrics holds per-session gRPC transport statistics accumulated via
-// the grpc/stats.Handler API.  All fields are updated atomically.
+// SessionMetrics tracks per-session stream counts plus payload and wire bytes.
 type SessionMetrics struct {
-	StreamsStarted   atomic.Uint64
-	StreamsSucceeded atomic.Uint64
-	StreamsFailed    atomic.Uint64
-	MessagesSent     atomic.Uint64
-	MessagesReceived atomic.Uint64
+	StreamsStarted     atomic.Uint64
+	StreamsSucceeded   atomic.Uint64
+	StreamsFailed      atomic.Uint64
+	BytesSent          atomic.Uint64
+	BytesReceived      atomic.Uint64
+	WireLengthSent     atomic.Uint64
+	WireLengthReceived atomic.Uint64
 }
 
 // ctxKeyTrackRPC is used as a context key to mark RPCs that should be tracked.
@@ -55,11 +56,11 @@ func (h *muxStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 			h.metrics.StreamsFailed.Add(1)
 		}
 	case *stats.InPayload:
-		_ = v
-		h.metrics.MessagesReceived.Add(1)
+		h.metrics.BytesReceived.Add(uint64(v.Length))
+		h.metrics.WireLengthReceived.Add(uint64(v.WireLength))
 	case *stats.OutPayload:
-		_ = v
-		h.metrics.MessagesSent.Add(1)
+		h.metrics.BytesSent.Add(uint64(v.Length))
+		h.metrics.WireLengthSent.Add(uint64(v.WireLength))
 	}
 }
 

@@ -33,7 +33,7 @@ var (
 	ErrNoSession      = errors.New("no active session")
 )
 
-// Server object
+// Server owns listeners, config-driven tunnels, and active mux sessions.
 type Server struct {
 	cfg    *config.File
 	tlscfg *tls.Config
@@ -47,7 +47,7 @@ type Server struct {
 	recentEvents eventlog.Recent
 
 	mu       sync.RWMutex
-	services map[string]*tunnel // config-driven tunnels keyed by peer service ID
+	services map[string]*tunnel // config-driven tunnels keyed by config name, dial address, or ""
 	sessions []*tunnel          // all tunnels, including config-driven and inbound ephemeral
 	ctx      contextMgr
 
@@ -64,7 +64,7 @@ type Server struct {
 	}
 }
 
-// NewServer creates a server object
+// NewServer builds a Server from the initial config snapshot.
 func NewServer(cfg *config.File) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
@@ -97,9 +97,8 @@ func maxStreams(cfg *config.File) int {
 	return cfg.MaxStreams
 }
 
-// findSession returns the first active tunnel whose peer identity matches.
-// For outbound tunnels (keyed by dial address), the peer identity is discovered
-// after handshake and checked via ss.PeerID().
+// findSession matches either a tracked tunnel key or the remote identity
+// learned from the handshake.
 func (s *Server) findSession(peerID string) *tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -125,8 +124,7 @@ func (s *Server) getAllSessions() []*tunnel {
 	return result
 }
 
-// maintenanceLoop runs periodic idle-check and stale-session eviction for all tunnels.
-// It also covers inbound ephemeral tunnels, which have no dedicated run() goroutine.
+// maintenanceLoop also covers inbound tunnels, which have no dedicated run loop.
 func (s *Server) maintenanceLoop() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -170,7 +168,7 @@ func (s *Server) removeSession(target *tunnel) {
 	}
 }
 
-// ServerStats holds statistics of the server
+// ServerStats is the snapshot returned by Server.Stats.
 type ServerStats struct {
 	NumSessions int
 	Rx, Tx      uint64
@@ -182,7 +180,7 @@ type ServerStats struct {
 	sessions    []SessionStats
 }
 
-// Stats returns the current server statistics
+// Stats snapshots listener, traffic, and per-session metrics.
 func (s *Server) Stats() (stats ServerStats) {
 	if s.l != nil {
 		stats.Accepted, stats.Served = s.l.Stats()
@@ -231,7 +229,7 @@ func (s *Server) serveOne(accepted net.Conn, handler Handler) {
 	handler.Serve(ctx, accepted)
 }
 
-// Serve incoming connections with the given handler
+// Serve accepts until listener closes or Accept returns a fatal error.
 func (s *Server) Serve(listener net.Listener, handler Handler) {
 	for {
 		conn, err := listener.Accept()
@@ -302,9 +300,7 @@ func (s *Server) serveSession(ss mux.Session) {
 	}
 }
 
-// acceptInboundStreams drains the Accept queue of a client-side session and
-// dispatches each server-initiated stream to handleInboundStream.
-// It must be run in a goroutine; it returns when ss is closed.
+// acceptInboundStreams drains server-initiated streams from a client-side session.
 func (s *Server) acceptInboundStreams(ss mux.Session) {
 	for {
 		stream, err := ss.Accept()
@@ -374,7 +370,7 @@ func (s *Server) handleInboundStream(peerID string, stream net.Conn) {
 	started = true
 }
 
-// Listen starts listening on the given address
+// Listen binds a TCP listener and logs the bound address.
 func (s *Server) Listen(addr string) (net.Listener, error) {
 	listener, err := net.Listen(network, addr)
 	if err != nil {
@@ -385,12 +381,10 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 	return listener, err
 }
 
-// loadSessions creates and stops config-driven tunnels to match cfg.
+// loadSessions reconciles config-driven tunnels with cfg.
 func (s *Server) loadSessions(cfg *config.File) error {
-	// collect all keys that should be active:
-	//   - listen-only peers: keyed by peer ID
-	//   - outbound connections: keyed by dial address
-	//   - default ("") tunnel: driven by top-level MuxConnect/Listen
+	// Keys come from Identity.Listen names, Identity.MuxConnect addresses, and
+	// the default "" tunnel driven by the top-level Listen/MuxConnect fields.
 	activePeers := make(map[string]struct{})
 	for name := range cfg.Identity.Listen {
 		activePeers[name] = struct{}{}
@@ -404,7 +398,6 @@ func (s *Server) loadSessions(cfg *config.File) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// 1. stop config-driven tunnels that are no longer in the config
 	for name, ss := range s.services {
 		if _, ok := activePeers[name]; !ok {
 			if err := ss.Stop(); err != nil {
@@ -419,20 +412,16 @@ func (s *Server) loadSessions(cfg *config.File) error {
 			delete(s.services, name)
 		}
 	}
-	// 2. start config-driven tunnels for newly active peers
 	for name := range activePeers {
 		if _, exists := s.services[name]; exists {
 			continue
 		}
-		// determine dial address:
-		//   - "" (default tunnel): use top-level MuxConnect
-		//   - outbound tunnels from Identity.MuxConnect: name == dialAddr
-		//   - listen-only peers: no dial address
+		// Listen-only entries have no dial target; outbound-only entries use the
+		// key itself because Identity.MuxConnect is keyed by address.
 		var dialAddr string
 		if name == "" {
 			dialAddr = cfg.MuxConnect
 		} else if _, isListen := cfg.Identity.Listen[name]; !isListen {
-			// not a listen-only peer — must be an outbound addr from MuxConnect
 			dialAddr = name
 		}
 		ss := newTunnel(name, dialAddr, s)
@@ -517,7 +506,7 @@ func (s *Server) reloadAPIListen(cfg *config.File) {
 	s.apiListener = l
 }
 
-// Start the service
+// Start brings up listeners, maintenance, and config-driven tunnels.
 func (s *Server) Start() error {
 	if s.cfg.MuxListen != "" {
 		l, err := s.Listen(s.cfg.MuxListen)
@@ -569,9 +558,8 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Shutdown gracefully
+// Shutdown stops listeners, tunnels, sessions, and forwarders in that order.
 func (s *Server) Shutdown() error {
-	// stop all listeners
 	if s.l != nil {
 		ioClose(s.l)
 		s.l = nil
@@ -580,7 +568,7 @@ func (s *Server) Shutdown() error {
 		ioClose(s.apiListener)
 		s.apiListener = nil
 	}
-	// stop all config-driven tunnels so their per-service listeners exit Accept()
+	// Stop config-driven tunnels first so their local listeners exit Accept().
 	s.mu.RLock()
 	services := make([]*tunnel, 0, len(s.services))
 	for _, ss := range s.services {
@@ -592,17 +580,14 @@ func (s *Server) Shutdown() error {
 			slog.Errorf("session %q: %s", ss.id, formats.Error(err))
 		}
 	}
-	// cancel all contexts
 	s.ctx.close()
-	// signal all goroutines to stop
 	s.g.Close()
-	// close all active HTTP/2 sessions to unblock Serve loops
+	// Closing sessions unblocks any remaining Accept loops.
 	for _, ss := range s.getAllSessions() {
 		if ss := ss.getSession(); ss != nil {
 			_ = ss.Close()
 		}
 	}
-	// close all forwards
 	s.f.Close()
 	slog.Info("waiting for unfinished connections")
 	s.g.Wait()

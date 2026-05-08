@@ -42,6 +42,5 @@ func main() {
 	if code := tlswrapper.AppMain(f); code != 0 {
 		os.Exit(code)
 	}
-	/* tribute to the DOS command "DEBUG" */
 	slog.Debug("program terminated normally")
 }

@@ -67,8 +67,8 @@ func (h HandlerFuncs) OnClosed() {
 // Forwarder manages bidirectional forwarding between connection pairs.
 type Forwarder interface {
 	// Start begins forwarding data between accepted and dialed.
-	// handler may be nil. If Start returns nil, handler.OnDone is called exactly once
-	// after both directions finish and resources are released.
+	// handler may be nil. If Start returns nil, OnWriteClosed runs once per
+	// direction and OnClosed runs once after both directions finish.
 	Start(accepted net.Conn, dialed net.Conn, handler EventHandler) error
 	Count() int
 	Close()
@@ -81,7 +81,7 @@ type forwarder struct {
 	counter chan struct{}
 }
 
-// New creates a new Forwarder with the given maximum concurrent connections
+// New returns a Forwarder limited to maxConn active connection pairs.
 func New(maxConn int, g routines.Group) Forwarder {
 	return &forwarder{
 		conn:    make(map[net.Conn]struct{}),
@@ -184,7 +184,7 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 			_ = accepted.Close()
 			_ = dialed.Close()
 		})
-		// The second direction never ran; synthesise its OnHalfClose (src=accepted)
+		// The second direction never ran; synthesise its OnWriteClosed callback
 		// so the handler always receives exactly two calls.
 		if handler != nil {
 			handler.OnWriteClosed(accepted, err)
@@ -201,12 +201,10 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 	return nil
 }
 
-// Count returns the current number of active connections
 func (f *forwarder) Count() int {
 	return len(f.counter)
 }
 
-// Close closes all active connections managed by the forwarder
 func (f *forwarder) Close() {
 	f.mu.Lock()
 	defer f.mu.Unlock()

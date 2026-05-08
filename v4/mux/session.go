@@ -20,26 +20,18 @@ const metaRequestIDKey = "x-mux-request-id"
 
 // Session is the public interface for a mux session over a single gRPC connection.
 type Session interface {
-	// Open opens a new logical stream to the peer.
 	Open(ctx context.Context) (net.Conn, error)
-	// Accept waits for the next incoming stream.
 	Accept() (net.Conn, error)
-	// Close shuts down the session. Safe to call multiple times.
 	Close() error
-	// IsClosed reports whether the session has been closed.
 	IsClosed() bool
-	// CloseChan returns a channel that is closed when the session closes.
 	CloseChan() <-chan struct{}
 	// Stats returns the gRPC transport statistics for this session.
 	// Returns nil when stats collection is not available.
 	Stats() *SessionMetrics
-	// PeerID returns the remote service identity.
+	// PeerID returns the remote identity claim.
 	PeerID() string
-	// Tag returns the human-readable session tag for logging.
 	Tag() string
-	// LocalAddr returns the local network address.
 	LocalAddr() net.Addr
-	// RemoteAddr returns the remote network address.
 	RemoteAddr() net.Addr
 }
 
@@ -115,7 +107,6 @@ func (ss *session) DeliverStream(requestID string, conn net.Conn) {
 	}
 }
 
-// Accept waits for the next incoming stream.
 func (ss *session) Accept() (net.Conn, error) {
 	select {
 	case conn := <-ss.acceptCh:
@@ -130,7 +121,6 @@ func (ss *session) Accept() (net.Conn, error) {
 	}
 }
 
-// IsClosed reports whether the session has been closed.
 func (ss *session) IsClosed() bool {
 	select {
 	case <-ss.closedCh:
@@ -140,35 +130,27 @@ func (ss *session) IsClosed() bool {
 	}
 }
 
-// CloseChan returns a channel that is closed when the session closes.
 func (ss *session) CloseChan() <-chan struct{} { return ss.closedCh }
 
-// Stats returns the gRPC transport statistics for this session.
 func (ss *session) Stats() *SessionMetrics { return ss.metrics }
 
-// PeerID returns the remote service identity.
+// PeerID returns the remote identity claim.
 func (ss *session) PeerID() string {
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
 	return ss.peerID
 }
 
-// Tag returns the human-readable session tag for logging.
 func (ss *session) Tag() string {
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
 	return ss.tag
 }
 
-// LocalAddr returns the local network address.
 func (ss *session) LocalAddr() net.Addr { return ss.localAddr }
 
-// RemoteAddr returns the remote network address.
 func (ss *session) RemoteAddr() net.Addr { return ss.remoteAddr }
 
-// ---- clientSession ----
-
-// clientSession is a mux session established from the client side (via Client()).
 type clientSession struct {
 	session
 	grpcClient      muxpb.MuxClient
@@ -231,7 +213,6 @@ func (ss *clientSession) dialStreamForServer(requestID string) {
 	}
 }
 
-// Open opens a new logical stream to the peer.
 func (ss *clientSession) Open(ctx context.Context) (net.Conn, error) {
 	if ss.IsClosed() {
 		return nil, ErrSessionClosed
@@ -246,7 +227,6 @@ func (ss *clientSession) Open(ctx context.Context) (net.Conn, error) {
 	return newClientSideStream(cs, ss.localAddr, ss.remoteAddr, nil), nil
 }
 
-// Close shuts down the client session. Safe to call multiple times.
 func (ss *clientSession) Close() error {
 	ss.closeOnce.Do(func() {
 		close(ss.closedCh)
@@ -258,9 +238,6 @@ func (ss *clientSession) Close() error {
 	return nil
 }
 
-// ---- serverSession ----
-
-// serverSession is a mux session established from the server side (via Server()).
 type serverSession struct {
 	session
 }
@@ -301,7 +278,7 @@ func newServerSession(
 	return ss
 }
 
-// Open opens a new logical stream to the peer (server-side: sends OpenRequest and waits for client dial-back).
+// Open asks the client to dial back a Stream RPC and waits for delivery.
 func (ss *serverSession) Open(ctx context.Context) (net.Conn, error) {
 	if ss.IsClosed() {
 		return nil, ErrSessionClosed
@@ -342,7 +319,6 @@ func (ss *serverSession) Open(ctx context.Context) (net.Conn, error) {
 	}
 }
 
-// Close shuts down the server session. Safe to call multiple times.
 func (ss *serverSession) Close() error {
 	ss.closeOnce.Do(func() {
 		close(ss.closedCh)

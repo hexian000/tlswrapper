@@ -33,7 +33,7 @@ func init() {
 	std.SetLevel(slog.LevelVerbose)
 }
 
-// AppFlags holds the command-line arguments
+// AppFlags carries CLI inputs for AppMain.
 type AppFlags struct {
 	Help       bool
 	Color      bool
@@ -65,7 +65,6 @@ func (f *AppFlags) Validate() error {
 
 var appFlags AppFlags
 
-// dumpConfig dumps the configuration file to stdout
 func dumpConfig(f *AppFlags) int {
 	var cfg *config.File
 	if f.Config == "" {
@@ -88,7 +87,7 @@ func dumpConfig(f *AppFlags) int {
 	return 0
 }
 
-// AppMain is the main entry point of the application
+// AppMain runs the CLI entry point until shutdown.
 func AppMain(f *AppFlags) int {
 	if f.LogLevel >= 0 {
 		slog.Default().SetLevel(slog.Level(f.LogLevel))
@@ -144,7 +143,6 @@ func AppMain(f *AppFlags) int {
 			_, _ = sd.Notify(sd.Stopping)
 			break
 		}
-		// reload
 		_, _ = sd.Notify(sd.Reloading)
 		cfg, err := config.LoadFile(f.Config)
 		if err != nil {

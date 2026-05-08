@@ -55,15 +55,15 @@ type TCP struct {
 }
 
 type Identity struct {
-	// Self identity claimed in the handshake
+	// Identity string sent to the peer during the mux handshake
 	Claim string `json:"claim,omitempty"`
-	// Dial addresses for outbound mux connections
+	// Additional outbound mux dial targets besides the top-level MuxConnect
 	MuxConnect []string `json:"mux_connect,omitempty"`
-	// Peer identity to local listen address mapping
+	// Local listen addresses keyed by the remote identity they should use
 	Listen map[string]string `json:"listen,omitempty"`
 }
 
-// ServiceEntry is the effective config-driven tunnel entry for one peer name.
+// ServiceEntry is the effective config-driven tunnel settings for one key.
 type ServiceEntry struct {
 	Listen string
 	// Forwarding target for streams arriving from an inbound ephemeral tunnel.
@@ -84,7 +84,7 @@ type File struct {
 	Listen string `json:"listen,omitempty"`
 	// Forwarding target for streams arriving from inbound ephemeral tunnels
 	Connect string `json:"connect,omitempty"`
-	// Service identity and per-peer routing settings
+	// Handshake identity plus per-peer tunnel settings
 	Identity Identity `json:"identity,omitempty"`
 	// Application-level keepalive probe interval in seconds
 	KeepAlive int `json:"keepalive"`

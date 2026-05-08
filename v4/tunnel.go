@@ -20,14 +20,13 @@ import (
 	"github.com/hexian000/tlswrapper/v4/mux"
 )
 
-// tunnel manages exactly one mux connection slot for a named peer.
-// Config-driven tunnels (tracked in Server.services) are created from config and
-// can own listeners plus a redial loop.
-// Inbound tunnels (dialAddr == "") are created by serveSession for accepted mux
-// connections and are removed when that connection closes.
+// tunnel owns at most one active mux session.
+// Config-driven tunnels are tracked in Server.services and may also own a
+// listener plus a redial loop. Inbound tunnels are created for accepted
+// sessions and disappear with that session.
 type tunnel struct {
-	id       string // peer service ID; used for logging and lookup
-	dialAddr string // MuxConnect address; empty for inbound ephemeral tunnels
+	id       string // config key or remote identity; used for lookup and logging
+	dialAddr string // outbound dial target; empty for inbound accepted sessions
 	s        *Server
 	l        net.Listener // local TCP listener (only on config-driven tunnels with Listen)
 
@@ -57,8 +56,7 @@ func (t *tunnel) getConfig() (*config.File, *tls.Config) {
 	return t.s.getConfig()
 }
 
-// Start starts a config-driven tunnel from the provided config snapshot.
-// When dialAddr != "", it also starts the redial loop for that tunnel.
+// Start applies the current config to a config-driven tunnel.
 func (t *tunnel) Start(cfg *config.File) error {
 	if listenAddr := cfg.ServiceEntry(t.id).Listen; listenAddr != "" {
 		l, err := t.s.Listen(listenAddr)
@@ -82,7 +80,7 @@ func (t *tunnel) Start(cfg *config.File) error {
 	return nil
 }
 
-// Stop stops the tunnel lifecycle and closes its listener during shutdown.
+// Stop closes the listener and current session once.
 func (t *tunnel) Stop() error {
 	t.stopOnce.Do(func() {
 		close(t.closeSig)
@@ -242,7 +240,7 @@ func (t *tunnel) addSession(ss mux.Session) {
 	defer t.mu.Unlock()
 	hadConn := t.ss != nil && !t.ss.IsClosed()
 	t.ss = ss
-	t.stale = false // new session is not stale
+	t.stale = false
 	if !hadConn {
 		t.s.numSessions.Add(1)
 	}
@@ -280,7 +278,6 @@ func (t *tunnel) getSession() mux.Session {
 	return t.ss
 }
 
-// OpenStream opens a new stream over the session's active mux connection.
 func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
 	ss := t.getSession()
 	if ss == nil {
@@ -289,7 +286,7 @@ func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
 	return ss.Open(ctx)
 }
 
-// dial dials the configured peer and establishes the mux session for this tunnel.
+// dial establishes a new outbound mux session.
 func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	cfg, tlscfg := t.getConfig()
 	if t.dialAddr == "" {
@@ -360,26 +357,28 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	return ss, nil
 }
 
-// SessionStats holds statistics of a session.
+// SessionStats snapshots the most recent session state for one tunnel key.
 type SessionStats struct {
 	Name        string
 	LastChanged time.Time
 	Active      bool
-	// gRPC transport statistics (zero when unavailable)
-	StreamsStarted   uint64
-	StreamsSucceeded uint64
-	StreamsFailed    uint64
-	MessagesSent     uint64
-	MessagesReceived uint64
+	// gRPC transport statistics; zero when unavailable.
+	StreamsStarted     uint64
+	StreamsSucceeded   uint64
+	StreamsFailed      uint64
+	BytesSent          uint64
+	BytesReceived      uint64
+	WireLengthSent     uint64
+	WireLengthReceived uint64
 }
 
-// Stats returns the current statistics of the session.
+// Stats snapshots the current session state.
 func (t *tunnel) Stats() SessionStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	active := t.ss != nil && !t.ss.IsClosed()
 	name := t.id
-	var streamsStarted, streamsSucceeded, streamsFailed, messagesSent, messagesReceived uint64
+	var streamsStarted, streamsSucceeded, streamsFailed, bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
 	if active {
 		if peerID := t.ss.PeerID(); peerID != "" {
 			name = peerID
@@ -388,18 +387,22 @@ func (t *tunnel) Stats() SessionStats {
 			streamsStarted = uint64(m.StreamsStarted.Load())
 			streamsSucceeded = uint64(m.StreamsSucceeded.Load())
 			streamsFailed = uint64(m.StreamsFailed.Load())
-			messagesSent = uint64(m.MessagesSent.Load())
-			messagesReceived = uint64(m.MessagesReceived.Load())
+			bytesSent = uint64(m.BytesSent.Load())
+			bytesReceived = uint64(m.BytesReceived.Load())
+			wireLengthSent = uint64(m.WireLengthSent.Load())
+			wireLengthReceived = uint64(m.WireLengthReceived.Load())
 		}
 	}
 	return SessionStats{
-		Name:             name,
-		LastChanged:      t.lastChanged,
-		Active:           active,
-		StreamsStarted:   streamsStarted,
-		StreamsSucceeded: streamsSucceeded,
-		StreamsFailed:    streamsFailed,
-		MessagesSent:     messagesSent,
-		MessagesReceived: messagesReceived,
+		Name:               name,
+		LastChanged:        t.lastChanged,
+		Active:             active,
+		StreamsStarted:     streamsStarted,
+		StreamsSucceeded:   streamsSucceeded,
+		StreamsFailed:      streamsFailed,
+		BytesSent:          bytesSent,
+		BytesReceived:      bytesReceived,
+		WireLengthSent:     wireLengthSent,
+		WireLengthReceived: wireLengthReceived,
 	}
 }

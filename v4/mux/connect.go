@@ -219,7 +219,7 @@ func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
 	return nil
 }
 
-// Stream handles a single logical stream RPC.
+// Stream routes one Stream RPC into the session after Control succeeds.
 func (svc *muxServer) Stream(stream muxpb.Mux_StreamServer) error {
 	// Wait for the Control handshake to complete before accepting streams.
 	select {

@@ -21,12 +21,10 @@ type h2Addr struct{ Addr string }
 func (a h2Addr) Network() string { return "tcp" }
 func (a h2Addr) String() string  { return a.Addr }
 
-// chunkSender is the write side of a gRPC stream carrying Chunks.
 type chunkSender interface {
 	Send(*muxpb.Chunk) error
 }
 
-// chunkRecver is the read side of a gRPC stream carrying Chunks.
 type chunkRecver interface {
 	Recv() (*muxpb.Chunk, error)
 }
@@ -53,7 +51,6 @@ type grpcStream struct {
 	closeOnce sync.Once
 }
 
-// Read implements net.Conn.
 func (s *grpcStream) Read(b []byte) (int, error) {
 	for {
 		if len(s.readBuf) > 0 {
@@ -74,7 +71,6 @@ func (s *grpcStream) Read(b []byte) (int, error) {
 	}
 }
 
-// Write implements net.Conn.
 func (s *grpcStream) Write(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
@@ -90,13 +86,11 @@ func (s *grpcStream) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// CloseWrite half-closes the write side.
 func (s *grpcStream) CloseWrite() error {
 	return s.closeWrite()
 }
 
-// Close fully closes the stream: half-closes the write side and signals
-// the server-side Stream handler (via doneCh) that it may return.
+// Close half-closes the write side and releases any waiter on doneCh.
 func (s *grpcStream) Close() error {
 	s.closeOnce.Do(func() {
 		_ = s.closeWrite()

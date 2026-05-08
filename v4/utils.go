@@ -13,7 +13,7 @@ import (
 	"github.com/hexian000/tlswrapper/v4/config"
 )
 
-// ioClose closes the given io.Closer and logs any error
+// ioClose logs close failures instead of dropping them.
 func ioClose(c io.Closer) {
 	if err := c.Close(); err != nil {
 		msg := fmt.Sprintf("close: %s", formats.Error(err))
@@ -28,7 +28,7 @@ type tcpConn interface {
 	SetWriteBuffer(bytes int) error
 }
 
-// setTCPConnParams applies TCP socket options to a connection.
+// setTCPConnParams applies configured socket options when conn exposes them.
 func setTCPConnParams(tcp config.TCP, conn net.Conn) {
 	tcpConn, ok := conn.(tcpConn)
 	if !ok {
