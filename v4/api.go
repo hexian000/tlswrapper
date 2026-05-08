@@ -230,11 +230,12 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fprintf(w, "%-20s: %d (%d streams)\n", "Num Sessions", stats.NumSessions, numStreams)
 	fprintf(w, "%-20s: %d started, %d ok, %d fail\n", "Streams",
 		streamsStarted, streamsSucceeded, streamsFailed)
-	fprintf(w, "%-20s: Rx %s (%s wire), Tx %s (%s wire)\n", "gRPC Bytes",
-		formats.IECBytes(float64(bytesReceived)), formats.IECBytes(float64(wireLengthReceived)),
-		formats.IECBytes(float64(bytesSent)), formats.IECBytes(float64(wireLengthSent)))
-	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Traffic",
+	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Mux Traffic",
 		formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
+	fprintf(w, "%-20s: Rx %s, Tx %s\n", "TCP Traffic",
+		formats.IECBytes(float64(bytesReceived)), formats.IECBytes(float64(bytesSent)))
+	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Wire Traffic",
+		formats.IECBytes(float64(wireLengthReceived)), formats.IECBytes(float64(wireLengthSent)))
 	rejected := stats.Accepted - stats.Served
 	fprintf(w, "%-20s: %d (%+d rejected)\n", "Listener Accepts",
 		stats.Served, rejected)
@@ -271,10 +272,10 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status := "offline"
 			if ss.Active {
 				numStreams := ss.StreamsStarted - (ss.StreamsSucceeded + ss.StreamsFailed)
-				status = fmt.Sprintf("%d streams, rx %s (%s wire), tx %s (%s wire)",
-					numStreams,
-					formats.IECBytes(float64(ss.BytesReceived)), formats.IECBytes(float64(ss.WireLengthReceived)),
-					formats.IECBytes(float64(ss.BytesSent)), formats.IECBytes(float64(ss.WireLengthSent)))
+				status = fmt.Sprintf("Rx %s, Tx %s; %d streams",
+					formats.IECBytes(float64(ss.BytesReceived)),
+					formats.IECBytes(float64(ss.BytesSent)),
+					numStreams)
 			}
 			fprintf(w, "`%-18s': %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
 		} else {
