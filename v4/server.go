@@ -322,7 +322,7 @@ func (s *Server) acceptInboundStreams(tn *tunnel, ss mux.Session) {
 }
 
 // handleInboundStream forwards one accepted server-side stream to the configured connect address.
-func (s *Server) handleInboundStream(tn *tunnel, peerID string, stream net.Conn) {
+func (s *Server) handleInboundStream(t *tunnel, peerID string, stream net.Conn) {
 	started := false
 	defer func() {
 		if !started {
@@ -331,15 +331,13 @@ func (s *Server) handleInboundStream(tn *tunnel, peerID string, stream net.Conn)
 	}()
 	s.stats.request.Add(1)
 	cfg, _ := s.getConfig()
-	seq := uint64(1)
 	peerIDForTag := peerID
-	if tn != nil {
-		seq = tn.nextStreamSeq()
+	if t != nil {
 		if peerIDForTag == "" {
-			peerIDForTag = tn.id
+			peerIDForTag = t.id
 		}
 	}
-	tag := formatStreamTag(seq, false, cfg.Identity.Claim, peerID, peerIDForTag, stream.LocalAddr(), stream.RemoteAddr(), stream)
+	tag := formatStreamTag(false, cfg.Identity.Claim, peerID, peerIDForTag, stream.LocalAddr(), stream.RemoteAddr(), stream)
 	dialAddr := cfg.ServiceEntry(peerID).Connect
 	if dialAddr == "" {
 		dialAddr = cfg.Connect

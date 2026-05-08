@@ -91,8 +91,7 @@ func (h *LocalHandler) Serve(ctx context.Context, accepted net.Conn) {
 		ioClose(accepted)
 		return
 	}
-	seq := t.nextStreamSeq()
-	tag := formatStreamTag(seq, true, cfg.Identity.Claim, peerIdentity, h.id, accepted.LocalAddr(), dialed.RemoteAddr(), dialed)
+	tag := formatStreamTag(true, cfg.Identity.Claim, peerIdentity, h.id, accepted.LocalAddr(), dialed.RemoteAddr(), dialed)
 	if err := h.s.f.Start(accepted, dialed, forwarder.HandlerFuncs{
 		WriteClosed: func(conn net.Conn, err error) {
 			if err != nil {

@@ -11,7 +11,6 @@ import (
 	"math/rand"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
@@ -42,7 +41,6 @@ type tunnel struct {
 	redialCount int
 	dialMu      sync.Mutex
 	lastChanged time.Time
-	streamSeq   atomic.Uint64
 }
 
 func newTunnel(id, dialAddr string, s *Server) *tunnel {
@@ -108,14 +106,14 @@ func formatTunnelTag(outbound bool, identity, peerIdentity, peerID string, local
 	return fmt.Sprintf("%s %s %s", me, arrow, peer)
 }
 
-func formatStreamTag(seq uint64, outbound bool, identity, peerIdentity, peerID string, localAddr, peerAddr net.Addr, conn net.Conn) string {
+func formatStreamTag(outbound bool, identity, peerIdentity, peerID string, localAddr, peerAddr net.Addr, conn net.Conn) string {
 	arrow := "<-"
 	if outbound {
 		arrow = "->"
 	}
 	me := resolveMeLabel(identity, localAddr, conn)
 	peer := resolvePeerLabel(peerIdentity, peerID, peerAddr, conn)
-	return fmt.Sprintf("[%d] %s %s %s", seq, me, arrow, peer)
+	return fmt.Sprintf("%s %s %s", me, arrow, peer)
 }
 
 func (t *tunnel) buildTunnelTag(ss mux.Session, conn net.Conn) string {
@@ -329,7 +327,6 @@ func (t *tunnel) addSession(ss mux.Session) {
 	t.ss = ss
 	t.updateTagLocked(ss, nil)
 	tag := t.tag
-	t.streamSeq.Store(0)
 	t.stale = false
 	if !hadConn {
 		t.s.numSessions.Add(1)
@@ -382,10 +379,6 @@ func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
 		return nil, ErrNoSession
 	}
 	return ss.Open(ctx)
-}
-
-func (t *tunnel) nextStreamSeq() uint64 {
-	return t.streamSeq.Add(1)
 }
 
 // dial establishes a new outbound mux session.
