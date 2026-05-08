@@ -64,7 +64,7 @@ type session struct {
 	localAddr  net.Addr
 	remoteAddr net.Addr
 
-	openSeq   atomic.Int64
+	openSeq   atomic.Uint64
 	closedCh  chan struct{}
 	closeOnce sync.Once
 	cleanup   func()
@@ -310,7 +310,7 @@ func (ss *serverSession) Open(ctx context.Context) (net.Conn, error) {
 		return nil, ErrInboundRejected
 	}
 
-	rid := strconv.FormatInt(ss.openSeq.Add(1), 10)
+	rid := strconv.FormatUint(ss.openSeq.Add(1), 10)
 	ch := make(chan net.Conn, 1)
 	ss.pendingMu.Lock()
 	ss.pending[rid] = ch
