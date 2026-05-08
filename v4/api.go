@@ -231,11 +231,11 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fprintf(w, "%-20s: %d started, %d ok, %d fail\n", "Streams",
 		streamsStarted, streamsSucceeded, streamsFailed)
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Mux Traffic",
-		formats.IECBytes(float64(bytesReceived)), formats.IECBytes(float64(bytesSent)))
-	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Wire Traffic",
 		formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
-	fprintf(w, "%-20s: Rx %s, Tx %s\n", "TCP Traffic",
+	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Wire Traffic",
 		formats.IECBytes(float64(wireLengthReceived)), formats.IECBytes(float64(wireLengthSent)))
+	fprintf(w, "%-20s: Rx %s, Tx %s\n", "TCP Traffic",
+		formats.IECBytes(float64(bytesReceived)), formats.IECBytes(float64(bytesSent)))
 	rejected := stats.Accepted - stats.Served
 	fprintf(w, "%-20s: %d (%+d rejected)\n", "Listener Accepts",
 		stats.Served, rejected)
