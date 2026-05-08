@@ -65,43 +65,17 @@ func (t *tunnel) defaultDirectionOutbound() bool {
 	return t.dialAddr != ""
 }
 
-func addrLabel(addr net.Addr) string {
-	if addr == nil {
-		return ""
-	}
-	s := addr.String()
-	if s == "" {
-		return ""
-	}
-	return s
-}
-
-func fallbackLocalAddr(localAddr net.Addr, conn net.Conn) net.Addr {
-	if localAddr != nil {
-		return localAddr
-	}
-	if conn == nil {
-		return nil
-	}
-	return conn.LocalAddr()
-}
-
-func fallbackPeerAddr(peerAddr net.Addr, conn net.Conn) net.Addr {
-	if peerAddr != nil {
-		return peerAddr
-	}
-	if conn == nil {
-		return nil
-	}
-	return conn.RemoteAddr()
-}
-
 func resolveMeLabel(identity string, localAddr net.Addr, conn net.Conn) string {
 	if identity != "" {
 		return identity
 	}
-	if s := addrLabel(fallbackLocalAddr(localAddr, conn)); s != "" {
-		return s
+	if localAddr == nil && conn != nil {
+		localAddr = conn.LocalAddr()
+	}
+	if localAddr != nil {
+		if s := localAddr.String(); s != "" {
+			return s
+		}
 	}
 	return "?"
 }
@@ -113,8 +87,13 @@ func resolvePeerLabel(peerIdentity, peerID string, peerAddr net.Addr, conn net.C
 	if peerID != "" {
 		return peerID
 	}
-	if s := addrLabel(fallbackPeerAddr(peerAddr, conn)); s != "" {
-		return s
+	if peerAddr == nil && conn != nil {
+		peerAddr = conn.RemoteAddr()
+	}
+	if peerAddr != nil {
+		if s := peerAddr.String(); s != "" {
+			return s
+		}
 	}
 	return "?"
 }
