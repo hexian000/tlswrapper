@@ -20,15 +20,17 @@ Wrap TCP-based services with multiplexed mutual TLS tunnels.
 
 ## Features
 
-- Multiplexed: Multiple TCP streams share a single long-lived transport connection.
-- Bidirectional Forwarding: Each peer can expose local services and reach remote services over the same underlying connection.
-- Named Peer Routing: Map peer identities to config-driven mux dial targets and local listen addresses.
-- TLS 1.3 or Plaintext: Protect traffic with [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS), or run in plaintext on trusted links.
-- Certificate Allowlist: Authorize exact peer certificates or any certificates signed by an authorized issuer.
-- Built-in Certificate Tooling: Generate RSA, ECDSA, or Ed25519 key pairs, either self-signed or signed by an existing key pair.
-- Automatic Recovery: Config-driven tunnels can redial mux_connect targets with backoff, and configuration can be reloaded without restarting the process.
-- Observability: Expose health checks, human-readable stats, Prometheus metrics, and recent events through the optional HTTP management API.
-- Tunable Limits: Configure keepalive, timeouts, flow-control windows, session and stream limits, backlog, and connection throttling.
+- **Multiplexed**: Multiple TCP streams share a single long-lived transport connection.
+- **Bidirectional Forwarding**: Each peer can expose local services and reach remote services over the same underlying connection.
+- **mTLS 1.3 Security**: Protect traffic with [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS), or run in plaintext on trusted links.
+- **Built-in Certificate Tool**: Generate RSA, ECDSA, or Ed25519 key pairs, either self-signed or signed by an existing key pair.
+- **Certificate Allowlist**: Authorize exact peer certificates or any certificates signed by an authorized issuer. System CAs are never consulted.
+- **Named Peer Routing**: Map peer identities to config-driven mux dial targets and local listen addresses.
+- **Automatic Recovery**: Config-driven tunnels can redial mux_connect targets with backoff on disconnect.
+- **Hot Reloading**: Apply updated configuration at runtime via SIGHUP or the HTTP management API without restarting the process.
+- **Tunable Limits**: Configure keepalive, timeouts, flow-control windows, session and stream limits, backlog, and connection throttling.
+- **Observability**: Expose health checks, human-readable stats, Prometheus metrics, and recent events through the optional HTTP management API.
+- **systemd Integration**: Sends sd_notify Ready, Reloading, and Stopping state notifications when managed by systemd.
 
 At runtime, tlswrapper maintains two tunnel lifecycles: config-driven tunnels loaded from configuration, and inbound ephemeral tunnels created for accepted mux connections. The latter are removed as soon as the underlying mux connection closes.
 
