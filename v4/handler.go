@@ -6,7 +6,6 @@ package tlswrapper
 import (
 	"context"
 	"net"
-	"sync/atomic"
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
@@ -24,25 +23,11 @@ type Handler interface {
 // MuxHandler upgrades accepted mux sockets into server-side sessions.
 type MuxHandler struct {
 	s *Server
-
-	handshakesInFlight atomic.Uint32
-}
-
-// ListenerStats reports active sessions and mux handshakes still in progress.
-func (h *MuxHandler) ListenerStats() (numSessions uint32, numHandshakesInFlight uint32) {
-	numSessions = h.s.numSessions.Load()
-	numHandshakesInFlight = h.handshakesInFlight.Load()
-	return
-}
-
-// Stats4Listener is a legacy alias for ListenerStats.
-func (h *MuxHandler) Stats4Listener() (numSessions uint32, numHalfOpen uint32) {
-	return h.ListenerStats()
 }
 
 func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
-	h.handshakesInFlight.Add(1)
-	defer h.handshakesInFlight.Add(^uint32(0))
+	h.s.stats.numHalfOpen.Add(1)
+	defer h.s.stats.numHalfOpen.Add(^uint32(0))
 	start := time.Now()
 	cfg, tlscfg := h.s.getConfig()
 	tag := formatTunnelTag(false, cfg.Identity.Claim, "", "", conn.LocalAddr(), conn.RemoteAddr(), conn)

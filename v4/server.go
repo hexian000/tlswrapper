@@ -54,13 +54,14 @@ type Server struct {
 	dialer net.Dialer
 	g      routines.Group
 
-	numSessions atomic.Uint32
-	started     time.Time
+	started time.Time
 
 	stats struct {
-		authorized atomic.Uint64
-		request    atomic.Uint64
-		success    atomic.Uint64
+		numSessions atomic.Uint32
+		numHalfOpen atomic.Uint32
+		authorized  atomic.Uint64
+		request     atomic.Uint64
+		success     atomic.Uint64
 	}
 }
 
@@ -281,13 +282,13 @@ func (s *Server) serveSession(ss mux.Session) {
 	s.recentEvents.Add(now, msg)
 	s.stats.authorized.Add(1)
 	s.addSession(inbound)
-	s.numSessions.Add(1)
+	s.stats.numSessions.Add(1)
 	defer func() {
 		now := time.Now()
 		msg := fmt.Sprintf("%s: session closed", tag)
 		slog.Notice(msg)
 		s.recentEvents.Add(now, msg)
-		s.numSessions.Add(^uint32(0))
+		s.stats.numSessions.Add(^uint32(0))
 		s.removeSession(inbound)
 	}()
 	for {
@@ -473,7 +474,7 @@ func (s *Server) reloadMuxListen(cfg *config.File) error {
 		Full:        uint32(startupFull),
 		Rate:        float64(startupRate) / 100.0,
 		MaxSessions: uint32(cfg.MaxSessions),
-		Stats:       h.ListenerStats,
+		Stats:       s.ListenerStats,
 	})
 	if err := s.g.Go(func() {
 		s.Serve(s.l, h)
@@ -535,7 +536,7 @@ func (s *Server) Start() error {
 			Full:        uint32(startupFull),
 			Rate:        float64(startupRate) / 100.0,
 			MaxSessions: uint32(c.MaxSessions),
-			Stats:       h.ListenerStats,
+			Stats:       s.ListenerStats,
 		})
 		if err := s.g.Go(func() {
 			s.Serve(s.l, h)
@@ -644,6 +645,11 @@ func (s *Server) ReloadConfig(cfg *config.File) error {
 	s.recentEvents.Add(time.Now(), "config loaded")
 	slog.Notice("config loaded")
 	return errors.Join(errs...)
+}
+
+// ListenerStats reports active sessions and mux handshakes still in progress.
+func (s *Server) ListenerStats() (uint32, uint32) {
+	return s.stats.numSessions.Load(), s.stats.numHalfOpen.Load()
 }
 
 func (s *Server) getConfig() (*config.File, *tls.Config) {

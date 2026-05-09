@@ -329,7 +329,7 @@ func (t *tunnel) addSession(ss mux.Session) {
 	tag := t.tag
 	t.stale = false
 	if !hadConn {
-		t.s.numSessions.Add(1)
+		t.s.stats.numSessions.Add(1)
 	}
 	t.lastChanged = now
 	t.mu.Unlock()
@@ -350,7 +350,7 @@ func (t *tunnel) delSession(ss mux.Session) {
 	msg := fmt.Sprintf("%s: session closed", tag)
 	t.ss = nil
 	t.idleSince = time.Time{}
-	t.s.numSessions.Add(^uint32(0))
+	t.s.stats.numSessions.Add(^uint32(0))
 	t.lastChanged = now
 	if t.dialAddr != "" {
 		select {
