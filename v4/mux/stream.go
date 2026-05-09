@@ -44,6 +44,7 @@ type grpcStream struct {
 	closeWrite func() error // half-close write side
 	onClose    func()       // called once on first Close()
 	abortWrite func()       // called when a blocked write times out
+	abortRead  func()       // called when a blocked read times out
 
 	readBuf    []byte
 	localAddr  net.Addr
@@ -51,6 +52,7 @@ type grpcStream struct {
 	writeTimer time.Duration
 
 	mu            sync.RWMutex
+	readDeadline  time.Time
 	writeDeadline time.Time
 	doneCh        chan struct{}
 	closeOnce     sync.Once
@@ -63,7 +65,7 @@ func (s *grpcStream) Read(b []byte) (int, error) {
 			s.readBuf = s.readBuf[n:]
 			return n, nil
 		}
-		chunk, err := s.recver.Recv()
+		chunk, err := s.recvChunk()
 		if err != nil {
 			if err == io.EOF {
 				return 0, io.EOF
@@ -74,6 +76,48 @@ func (s *grpcStream) Read(b []byte) (int, error) {
 			s.readBuf = chunk.Data
 		}
 	}
+}
+
+func (s *grpcStream) recvChunk() (*muxpb.Chunk, error) {
+	if timeout, ok := s.readTimeout(); ok {
+		if timeout <= 0 {
+			if s.abortRead != nil {
+				s.abortRead()
+			}
+			return nil, os.ErrDeadlineExceeded
+		}
+		type result struct {
+			chunk *muxpb.Chunk
+			err   error
+		}
+		resCh := make(chan result, 1)
+		go func() {
+			chunk, err := s.recver.Recv()
+			resCh <- result{chunk, err}
+		}()
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		select {
+		case res := <-resCh:
+			return res.chunk, res.err
+		case <-timer.C:
+			if s.abortRead != nil {
+				s.abortRead()
+			}
+			return nil, os.ErrDeadlineExceeded
+		}
+	}
+	return s.recver.Recv()
+}
+
+func (s *grpcStream) readTimeout() (time.Duration, bool) {
+	s.mu.RLock()
+	deadline := s.readDeadline
+	s.mu.RUnlock()
+	if !deadline.IsZero() {
+		return time.Until(deadline), true
+	}
+	return 0, false
 }
 
 func (s *grpcStream) Write(b []byte) (int, error) {
@@ -142,9 +186,21 @@ func (s *grpcStream) Close() error {
 func (s *grpcStream) LocalAddr() net.Addr  { return s.localAddr }
 func (s *grpcStream) RemoteAddr() net.Addr { return s.remoteAddr }
 
-// Deadline methods are not supported.
-func (s *grpcStream) SetDeadline(t time.Time) error     { return ErrNoDeadline }
-func (s *grpcStream) SetReadDeadline(t time.Time) error { return ErrNoDeadline }
+func (s *grpcStream) SetDeadline(t time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.readDeadline = t
+	s.writeDeadline = t
+	return nil
+}
+
+func (s *grpcStream) SetReadDeadline(t time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.readDeadline = t
+	return nil
+}
+
 func (s *grpcStream) SetWriteDeadline(t time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -181,6 +237,7 @@ func newClientSideStream(
 		closeWrite: cs.CloseSend,
 		onClose:    onClose,
 		abortWrite: abortWrite,
+		abortRead:  abortWrite,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
 		writeTimer: writeTimeout,
@@ -205,6 +262,7 @@ func newServerSideStream(
 		closeWrite: func() error { return nil },
 		onClose:    onClose,
 		abortWrite: abortWrite,
+		abortRead:  abortWrite,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
 		writeTimer: writeTimeout,
