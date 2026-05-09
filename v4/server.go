@@ -80,7 +80,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 	}
 	s.ctx.timeout = func() time.Duration {
 		cfg, _ := s.getConfig()
-		return cfg.Timeout()
+		return cfg.ConnectTimeout()
 	}
 	tlscfg, err := cfg.NewTLSConfig(appFlags.ServerName)
 	if err != nil {
@@ -91,10 +91,10 @@ func NewServer(cfg *config.File) (*Server, error) {
 }
 
 func maxStreams(cfg *config.File) int {
-	if cfg.MaxStreams == 0 {
+	if cfg.Mux.MaxStreams == 0 {
 		return 1024
 	}
-	return cfg.MaxStreams
+	return cfg.Mux.MaxStreams
 }
 
 // findSession matches either a tracked tunnel key or the remote identity

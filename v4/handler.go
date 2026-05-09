@@ -54,13 +54,15 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 	h2cfg := &mux.Config{
 		TLSConfig:            tlscfg,
 		LocalID:              cfg.Identity.Claim,
-		WriteTimeout:         time.Duration(cfg.SendTimeout) * time.Second,
+		WriteTimeout:         time.Duration(cfg.Mux.SendTimeout) * time.Second,
 		SessionWindow:        int32(cfg.Mux.SessionWindow),
 		StreamWindow:         int32(cfg.Mux.StreamWindow),
 		MaxConcurrentStreams: uint32(cfg.Mux.MaxHalfOpen),
-		IdleTimeout:          cfg.Timeout(),
+		IdleTimeout:          time.Duration(cfg.Mux.IdleTimeout) * time.Second,
 	}
-	ss, err := mux.Server(ctx, conn, h2cfg)
+	hsCtx, hsCancel := context.WithTimeout(ctx, cfg.ConnectTimeout())
+	defer hsCancel()
+	ss, err := mux.Server(hsCtx, conn, h2cfg)
 	if err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return

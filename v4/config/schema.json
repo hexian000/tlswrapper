@@ -41,34 +41,6 @@
             "description": "Forwarding target address for streams arriving from inbound ephemeral tunnels.",
             "type": "string"
         },
-        "timeout": {
-            "description": "Session ping timeout in seconds. Clamped to [5, 86400]. Default: 15.",
-            "type": "integer",
-            "minimum": 5,
-            "maximum": 86400,
-            "default": 15
-        },
-        "keepalive": {
-            "description": "Keepalive probe interval in seconds. Clamped to [1, 86400]. Default: 25.",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 86400,
-            "default": 25
-        },
-        "send_timeout": {
-            "description": "Mux connection write timeout in seconds. Detects stalled links by timing out writes on the underlying mux connection. Clamped to [5, timeout]. Default: 15.",
-            "type": "integer",
-            "minimum": 5,
-            "maximum": 86400,
-            "default": 15
-        },
-        "idle_timeout": {
-            "description": "Session idle timeout in seconds. 0 disables idle eviction; otherwise clamped to [5, 31557600]. Default: 0.",
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 31557600,
-            "default": 0
-        },
         "loglevel": {
             "description": "Log verbosity: 0=silence, 1=fatal, 2=error, 3=warning, 4=notice, 5=info, 6=debug, 7=verbose, 8=veryverbose. Default: 4.",
             "type": "integer",
@@ -81,12 +53,6 @@
             "type": "integer",
             "minimum": 0,
             "default": 128
-        },
-        "max_streams": {
-            "description": "Maximum concurrent streams per session. 0 uses the internal default (1024). Default: 0.",
-            "type": "integer",
-            "minimum": 0,
-            "default": 0
         },
         "max_startups": {
             "description": "Unauthenticated connection throttle in 'start:rate:full' format. Beyond 'start' connections, each new one is dropped with probability 'rate'% until the queue reaches 'full'.",
@@ -182,6 +148,47 @@
                     "type": "integer",
                     "minimum": 0,
                     "default": 256
+                },
+                "max_streams": {
+                    "description": "Maximum concurrent streams per session. 0 uses the internal default (1024). Default: 0.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0
+                },
+                "connect_timeout": {
+                    "description": "Connection establishment timeout in seconds, covering TCP dial, TLS handshake, and mux protocol handshake. Clamped to [1, 86400]. Default: 15.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 86400,
+                    "default": 15
+                },
+                "timeout": {
+                    "description": "Session ping timeout in seconds. Clamped to [5, 86400]. Default: 15.",
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 86400,
+                    "default": 15
+                },
+                "keepalive": {
+                    "description": "Keepalive probe interval in seconds. Clamped to [1, 86400]. Default: 25.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 86400,
+                    "default": 25
+                },
+                "send_timeout": {
+                    "description": "Mux connection write timeout in seconds. Detects stalled links by timing out writes on the underlying mux connection. Clamped to [5, timeout]. Default: 15.",
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 86400,
+                    "default": 15
+                },
+                "idle_timeout": {
+                    "description": "Session idle timeout in seconds. 0 disables idle eviction; otherwise clamped to [5, 31557600]. Default: 0.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 31557600,
+                    "default": 0
                 }
             },
             "additionalProperties": false

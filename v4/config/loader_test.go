@@ -75,35 +75,46 @@ func TestCheckType(t *testing.T) {
 func TestValidate(t *testing.T) {
 	t.Run("clamps-ping-timeout-low", func(t *testing.T) {
 		c := Default
-		c.PingTimeout = 1
+		c.Mux.PingTimeout = 1
 		if err := c.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		if c.PingTimeout != 5 {
-			t.Fatalf("PingTimeout = %d, want 5", c.PingTimeout)
+		if c.Mux.PingTimeout != 5 {
+			t.Fatalf("PingTimeout = %d, want 5", c.Mux.PingTimeout)
 		}
 	})
 
 	t.Run("preserves-keepalive-above-ping-timeout", func(t *testing.T) {
 		c := Default
-		c.PingTimeout = 10
-		c.KeepAlive = 20
+		c.Mux.PingTimeout = 10
+		c.Mux.KeepAlive = 20
 		if err := c.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		if c.KeepAlive != 20 {
-			t.Fatalf("KeepAlive = %d, want %d", c.KeepAlive, 20)
+		if c.Mux.KeepAlive != 20 {
+			t.Fatalf("KeepAlive = %d, want %d", c.Mux.KeepAlive, 20)
 		}
 	})
 
 	t.Run("clamps-send-timeout-low", func(t *testing.T) {
 		c := Default
-		c.SendTimeout = 1
+		c.Mux.SendTimeout = 1
 		if err := c.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		if c.SendTimeout != 5 {
-			t.Fatalf("SendTimeout = %d, want 5", c.SendTimeout)
+		if c.Mux.SendTimeout != 5 {
+			t.Fatalf("SendTimeout = %d, want 5", c.Mux.SendTimeout)
+		}
+	})
+
+	t.Run("clamps-connect-timeout-low", func(t *testing.T) {
+		c := Default
+		c.Mux.ConnectTimeout = 0
+		if err := c.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if c.Mux.ConnectTimeout != 1 {
+			t.Fatalf("ConnectTimeout = %d, want 1", c.Mux.ConnectTimeout)
 		}
 	})
 
@@ -212,18 +223,20 @@ func TestLoad(t *testing.T) {
 
 	t.Run("overrides-defaults", func(t *testing.T) {
 		data, _ := json.Marshal(map[string]any{
-			"type":         Type,
-			"timeout":      30,
-			"keepalive":    10,
-			"send_timeout": 12,
-			"api_listen":   "127.0.0.1:9090",
+			"type":       Type,
+			"api_listen": "127.0.0.1:9090",
+			"mux": map[string]any{
+				"timeout":      30,
+				"keepalive":    10,
+				"send_timeout": 12,
+			},
 		})
 		cfg, err := Load(data)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.PingTimeout != 30 {
-			t.Fatalf("PingTimeout = %d, want 30", cfg.PingTimeout)
+		if cfg.Mux.PingTimeout != 30 {
+			t.Fatalf("PingTimeout = %d, want 30", cfg.Mux.PingTimeout)
 		}
 		if cfg.APIListen != "127.0.0.1:9090" {
 			t.Fatalf("APIListen = %q, want %q", cfg.APIListen, "127.0.0.1:9090")
@@ -239,8 +252,8 @@ func TestLoad(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.KeepAlive != Default.KeepAlive {
-			t.Fatalf("KeepAlive = %d, want %d", cfg.KeepAlive, Default.KeepAlive)
+		if cfg.Mux.KeepAlive != Default.Mux.KeepAlive {
+			t.Fatalf("KeepAlive = %d, want %d", cfg.Mux.KeepAlive, Default.Mux.KeepAlive)
 		}
 	})
 

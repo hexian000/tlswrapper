@@ -27,7 +27,7 @@ func TestTunnelCheckIdle(t *testing.T) {
 
 	t.Run("evicts-idle-session", func(t *testing.T) {
 		_, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "server"})
-		tn := newTunnel("peer-a", "", newTestServer(t, map[string]any{"idle_timeout": 5}))
+		tn := newTunnel("peer-a", "", newTestServer(t, map[string]any{"mux": map[string]any{"idle_timeout": 5}}))
 		tn.ss = srv
 		tn.idleSince = time.Now().Add(-6 * time.Second)
 		tn.checkIdle()

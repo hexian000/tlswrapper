@@ -63,15 +63,15 @@ func TestAPIConfigHandler(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		s := newTestServer(t, nil)
 		h := &apiConfigHandler{s: s}
-		body := []byte(`{"type":"` + config.Type + `","timeout":30}`)
+		body := []byte(`{"type":"` + config.Type + `","mux":{"timeout":30}}`)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/config", bytes.NewReader(body)))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 		}
 		cfg, _ := s.getConfig()
-		if cfg.PingTimeout != 30 {
-			t.Fatalf("PingTimeout = %d, want 30", cfg.PingTimeout)
+		if cfg.Mux.PingTimeout != 30 {
+			t.Fatalf("PingTimeout = %d, want 30", cfg.Mux.PingTimeout)
 		}
 	})
 }

@@ -39,6 +39,18 @@ type Mux struct {
 	// Historical name for the maximum concurrent streams per mux session.
 	// Maps to HTTP/2 MaxConcurrentStreams; 0 disables the explicit limit.
 	MaxHalfOpen int `json:"max_halfopen"`
+	// Maximum concurrent streams per session (0 = internal default 1024)
+	MaxStreams int `json:"max_streams"`
+	// Connection establishment timeout in seconds, covering TCP dial, TLS handshake, and mux protocol handshake
+	ConnectTimeout int `json:"connect_timeout"`
+	// Session ping timeout in seconds
+	PingTimeout int `json:"timeout"`
+	// Application-level keepalive probe interval in seconds
+	KeepAlive int `json:"keepalive"`
+	// Mux connection write timeout in seconds; detects stalled links by timing out writes on the underlying connection
+	SendTimeout int `json:"send_timeout"`
+	// Session idle eviction timeout in seconds (0 = disabled)
+	IdleTimeout int `json:"idle_timeout"`
 }
 
 // TCP holds TCP socket options.
@@ -88,22 +100,12 @@ type File struct {
 	Connect string `json:"connect,omitempty"`
 	// Handshake identity plus per-peer tunnel settings
 	Identity Identity `json:"identity,omitempty"`
-	// Application-level keepalive probe interval in seconds
-	KeepAlive int `json:"keepalive"`
-	// Session ping timeout in seconds
-	PingTimeout int `json:"timeout"`
-	// Mux connection write timeout in seconds; detects stalled links by timing out writes on the underlying connection
-	SendTimeout int `json:"send_timeout"`
-	// Session idle eviction timeout in seconds (0 = disabled)
-	IdleTimeout int `json:"idle_timeout"`
 	// Log output destination ("stdout", "stderr", "syslog", "discard")
 	Log string `json:"log,omitempty"`
 	// Log verbosity level
 	LogLevel slog.Level `json:"loglevel"`
 	// Maximum concurrent mux sessions (0 = unlimited)
 	MaxSessions int `json:"max_sessions"`
-	// Maximum concurrent streams per session (0 = internal default 1024)
-	MaxStreams int `json:"max_streams"`
 	// Unauthenticated connection throttle in "start:rate:full" format
 	MaxStartups string `json:"max_startups,omitempty"`
 	// Disable automatic redial for config-driven tunnels with MuxConnect
@@ -120,16 +122,10 @@ type File struct {
 var Default = File{
 	Type: Type,
 
-	KeepAlive:   25,
-	PingTimeout: 15,
-	SendTimeout: 15,
-	IdleTimeout: 0,
-
 	Log:      "stdout",
 	LogLevel: slog.LevelNotice,
 
 	MaxSessions: 128,
-	MaxStreams:  0,
 	MaxStartups: "10:30:60",
 
 	Mux: Mux{
@@ -138,7 +134,13 @@ var Default = File{
 			NoDelay:   true,
 			Backlog:   16,
 		},
-		MaxHalfOpen: 256,
+		MaxHalfOpen:    256,
+		KeepAlive:      25,
+		PingTimeout:    15,
+		SendTimeout:    15,
+		IdleTimeout:    0,
+		MaxStreams:     0,
+		ConnectTimeout: 15,
 	},
 	TCP: TCP{
 		KeepAlive: false,

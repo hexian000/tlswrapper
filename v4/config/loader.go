@@ -156,11 +156,12 @@ func (c *File) Validate() error {
 		}
 	}
 	// clamp timing fields
-	clampInt(&c.PingTimeout, 5, 86400)
-	clampInt(&c.KeepAlive, 1, 86400)
-	clampInt(&c.SendTimeout, 5, c.PingTimeout)
-	if c.IdleTimeout != 0 {
-		clampInt(&c.IdleTimeout, 5, 31557600)
+	clampInt(&c.Mux.PingTimeout, 5, 86400)
+	clampInt(&c.Mux.KeepAlive, 1, 86400)
+	clampInt(&c.Mux.SendTimeout, 5, c.Mux.PingTimeout)
+	clampInt(&c.Mux.ConnectTimeout, 1, 86400)
+	if c.Mux.IdleTimeout != 0 {
+		clampInt(&c.Mux.IdleTimeout, 5, 31557600)
 	}
 	if c.Mux.SessionWindow != 0 {
 		clampInt(&c.Mux.SessionWindow, 65535, math.MaxInt32)

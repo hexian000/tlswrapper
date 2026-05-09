@@ -42,9 +42,9 @@ func newX509CertPool(authCerts []string) (*x509.CertPool, error) {
 	return certPool, nil
 }
 
-// Timeout returns PingTimeout as a duration.
-func (c *File) Timeout() time.Duration {
-	return time.Duration(c.PingTimeout) * time.Second
+// ConnectTimeout returns the connection establishment timeout as a duration.
+func (c *File) ConnectTimeout() time.Duration {
+	return time.Duration(c.Mux.ConnectTimeout) * time.Second
 }
 
 // NewTLSConfig creates a tls.Config from the TLS section.

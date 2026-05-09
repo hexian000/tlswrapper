@@ -187,7 +187,7 @@ func (t *tunnel) Stop() error {
 
 func (t *tunnel) checkIdle() {
 	cfg, _ := t.getConfig()
-	idleTimeout := time.Duration(cfg.IdleTimeout) * time.Second
+	idleTimeout := time.Duration(cfg.Mux.IdleTimeout) * time.Second
 	now := time.Now()
 
 	t.mu.Lock()
@@ -408,9 +408,9 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	h2cfg := &mux.Config{
 		TLSConfig:     tlscfg,
 		LocalID:       cfg.Identity.Claim,
-		KeepAlive:     time.Duration(cfg.KeepAlive) * time.Second,
-		PingTimeout:   time.Duration(cfg.PingTimeout) * time.Second,
-		WriteTimeout:  time.Duration(cfg.SendTimeout) * time.Second,
+		KeepAlive:     time.Duration(cfg.Mux.KeepAlive) * time.Second,
+		PingTimeout:   time.Duration(cfg.Mux.PingTimeout) * time.Second,
+		WriteTimeout:  time.Duration(cfg.Mux.SendTimeout) * time.Second,
 		SessionWindow: int32(cfg.Mux.SessionWindow),
 		StreamWindow:  int32(cfg.Mux.StreamWindow),
 	}

@@ -28,14 +28,15 @@ func newTestConfig(t *testing.T, overrides map[string]any) *config.File {
 	t.Helper()
 	fields := map[string]any{
 		"type":         config.Type,
-		"timeout":      10,
-		"keepalive":    5,
-		"send_timeout": 8,
 		"max_startups": "10:30:60",
 		"log":          "discard",
 		"mux": map[string]any{
-			"tcp":          map[string]any{"nodelay": true, "backlog": 4},
-			"max_halfopen": 16,
+			"tcp":             map[string]any{"nodelay": true, "backlog": 4},
+			"max_halfopen":    16,
+			"timeout":         10,
+			"keepalive":       5,
+			"send_timeout":    8,
+			"connect_timeout": 10,
 		},
 		"tcp": map[string]any{"nodelay": true, "backlog": 4},
 	}
