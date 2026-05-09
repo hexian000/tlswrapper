@@ -27,7 +27,7 @@ type Config struct {
 	// Client-side transport tuning.
 	KeepAlive     time.Duration // default 25s
 	PingTimeout   time.Duration // default 15s
-	WriteTimeout  time.Duration // per-stream write timeout; 0 disables it
+	WriteTimeout  time.Duration // connection-level write timeout on the underlying net.Conn; 0 disables it
 	SessionWindow int32         // 0 = gRPC dynamic flow control
 	StreamWindow  int32         // 0 = gRPC dynamic flow control
 

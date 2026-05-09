@@ -1,0 +1,29 @@
+// tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
+// This code is licensed under MIT license (see LICENSE for details)
+
+package mux
+
+import (
+	"net"
+	"time"
+)
+
+// writeTimeoutConn wraps a net.Conn and enforces a per-Write deadline.
+// Before each Write call the write deadline is set to now+timeout; it is
+// cleared unconditionally afterwards. This provides connection-level write
+// timeout detection (early detection of a stalled link) without relying on
+// any OS-specific socket option.
+type writeTimeoutConn struct {
+	net.Conn
+	timeout time.Duration
+}
+
+func (c *writeTimeoutConn) Write(b []byte) (int, error) {
+	if err := c.Conn.SetWriteDeadline(time.Now().Add(c.timeout)); err != nil {
+		return 0, err
+	}
+	n, err := c.Conn.Write(b)
+	// Always clear the deadline so reads and future writes are not affected.
+	_ = c.Conn.SetWriteDeadline(time.Time{})
+	return n, err
+}

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	muxpb "github.com/hexian000/tlswrapper/v4/mux/proto"
 	"google.golang.org/grpc/metadata"
@@ -149,7 +148,6 @@ type clientSession struct {
 	grpcClient      muxpb.MuxClient
 	streamCtx       context.Context
 	streamCtxCancel context.CancelFunc
-	writeTimeout    time.Duration
 }
 
 func newClientSession(
@@ -160,8 +158,7 @@ func newClientSession(
 	cleanup func(),
 	localAddr, remoteAddr net.Addr,
 	peerID string,
-	peerRejectsInbound bool, metrics *SessionMetrics,
-	writeTimeout time.Duration) *clientSession {
+	peerRejectsInbound bool, metrics *SessionMetrics) *clientSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
 	}
@@ -184,7 +181,6 @@ func newClientSession(
 		grpcClient:      grpcClient,
 		streamCtx:       streamCtx,
 		streamCtxCancel: streamCtxCancel,
-		writeTimeout:    writeTimeout,
 	}
 	ss.session.onOpenRequest = ss.dialStreamForServer
 	go func() {
@@ -202,7 +198,7 @@ func (ss *clientSession) dialStreamForServer(requestID string) {
 		streamCancel()
 		return
 	}
-	conn := newClientSideStream(cs, ss.localAddr, ss.remoteAddr, streamCancel, streamCancel, ss.writeTimeout)
+	conn := newClientSideStream(cs, ss.localAddr, ss.remoteAddr, streamCancel, streamCancel)
 	select {
 	case ss.acceptCh <- conn:
 	case <-ss.closedCh:
@@ -223,7 +219,7 @@ func (ss *clientSession) Open(ctx context.Context) (net.Conn, error) {
 		streamCancel()
 		return nil, err
 	}
-	return newClientSideStream(cs, ss.localAddr, ss.remoteAddr, streamCancel, streamCancel, ss.writeTimeout), nil
+	return newClientSideStream(cs, ss.localAddr, ss.remoteAddr, streamCancel, streamCancel), nil
 }
 
 func (ss *clientSession) Close() error {

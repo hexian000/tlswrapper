@@ -56,7 +56,7 @@
             "default": 25
         },
         "send_timeout": {
-            "description": "Per-stream write timeout in seconds. Clamped to [5, timeout]. Default: 15.",
+            "description": "Mux connection write timeout in seconds. Detects stalled links by timing out writes on the underlying mux connection. Clamped to [5, timeout]. Default: 15.",
             "type": "integer",
             "minimum": 5,
             "maximum": 86400,

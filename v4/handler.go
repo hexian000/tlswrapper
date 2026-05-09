@@ -54,6 +54,7 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 	h2cfg := &mux.Config{
 		TLSConfig:            tlscfg,
 		LocalID:              cfg.Identity.Claim,
+		WriteTimeout:         time.Duration(cfg.SendTimeout) * time.Second,
 		SessionWindow:        int32(cfg.Mux.SessionWindow),
 		StreamWindow:         int32(cfg.Mux.StreamWindow),
 		MaxConcurrentStreams: uint32(cfg.Mux.MaxHalfOpen),

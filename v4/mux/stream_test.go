@@ -33,42 +33,6 @@ func (r *blockingChunkRecver) Recv() (*muxpb.Chunk, error) {
 	return nil, errors.New("aborted")
 }
 
-func TestGrpcStreamWriteTimeout(t *testing.T) {
-	unblock := make(chan struct{})
-	aborted := make(chan struct{}, 1)
-	stream := &grpcStream{
-		sender: stubChunkSender{send: func(*muxpb.Chunk) error {
-			<-unblock
-			return errors.New("aborted")
-		}},
-		recver:     stubChunkRecver{},
-		closeWrite: func() error { return nil },
-		abortWrite: func() {
-			select {
-			case aborted <- struct{}{}:
-			default:
-			}
-			close(unblock)
-		},
-		writeTimer: 20 * time.Millisecond,
-		doneCh:     make(chan struct{}),
-	}
-
-	start := time.Now()
-	_, err := stream.Write([]byte("payload"))
-	if !errors.Is(err, os.ErrDeadlineExceeded) {
-		t.Fatalf("Write() error = %v, want %v", err, os.ErrDeadlineExceeded)
-	}
-	if elapsed := time.Since(start); elapsed < 20*time.Millisecond {
-		t.Fatalf("Write() returned too early after %v", elapsed)
-	}
-	select {
-	case <-aborted:
-	case <-time.After(time.Second):
-		t.Fatal("abortWrite was not called")
-	}
-}
-
 func TestGrpcStreamSetWriteDeadline(t *testing.T) {
 	stream := &grpcStream{
 		sender:     stubChunkSender{send: func(*muxpb.Chunk) error { return nil }},

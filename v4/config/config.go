@@ -92,7 +92,7 @@ type File struct {
 	KeepAlive int `json:"keepalive"`
 	// Session ping timeout in seconds
 	PingTimeout int `json:"timeout"`
-	// Per-stream write timeout in seconds
+	// Mux connection write timeout in seconds; detects stalled links by timing out writes on the underlying connection
 	SendTimeout int `json:"send_timeout"`
 	// Session idle eviction timeout in seconds (0 = disabled)
 	IdleTimeout int `json:"idle_timeout"`

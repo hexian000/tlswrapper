@@ -49,7 +49,6 @@ type grpcStream struct {
 	readBuf    []byte
 	localAddr  net.Addr
 	remoteAddr net.Addr
-	writeTimer time.Duration
 
 	mu            sync.RWMutex
 	readDeadline  time.Time
@@ -211,13 +210,9 @@ func (s *grpcStream) SetWriteDeadline(t time.Time) error {
 func (s *grpcStream) writeTimeout() (time.Duration, bool) {
 	s.mu.RLock()
 	deadline := s.writeDeadline
-	timeout := s.writeTimer
 	s.mu.RUnlock()
 	if !deadline.IsZero() {
 		return time.Until(deadline), true
-	}
-	if timeout > 0 {
-		return timeout, true
 	}
 	return 0, false
 }
@@ -229,7 +224,6 @@ func newClientSideStream(
 	localAddr, remoteAddr net.Addr,
 	onClose func(),
 	abortWrite func(),
-	writeTimeout time.Duration,
 ) net.Conn {
 	return &grpcStream{
 		sender:     cs,
@@ -240,7 +234,6 @@ func newClientSideStream(
 		abortRead:  abortWrite,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
-		writeTimer: writeTimeout,
 		doneCh:     make(chan struct{}),
 	}
 }
@@ -254,7 +247,6 @@ func newServerSideStream(
 	localAddr, remoteAddr net.Addr,
 	onClose func(),
 	abortWrite func(),
-	writeTimeout time.Duration,
 ) *grpcStream {
 	return &grpcStream{
 		sender:     ss,
@@ -265,7 +257,6 @@ func newServerSideStream(
 		abortRead:  abortWrite,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
-		writeTimer: writeTimeout,
 		doneCh:     make(chan struct{}),
 	}
 }
