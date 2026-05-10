@@ -52,8 +52,7 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
 	}
-	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
-	h.s.serveSession(ss)
+	h.s.serveSession(ss, time.Since(start))
 }
 
 // LocalHandler forwards accepted local connections over a matching mux session.

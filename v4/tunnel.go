@@ -320,7 +320,7 @@ func (t *tunnel) run() {
 	}
 }
 
-func (t *tunnel) addSession(ss mux.Session) {
+func (t *tunnel) addSession(ss mux.Session, setupDur time.Duration) {
 	now := time.Now()
 	t.mu.Lock()
 	hadConn := t.ss != nil && !t.ss.IsClosed()
@@ -334,7 +334,7 @@ func (t *tunnel) addSession(ss mux.Session) {
 	t.lastChanged = now
 	t.mu.Unlock()
 
-	msg := fmt.Sprintf("%s: session established", tag)
+	msg := fmt.Sprintf("%s: session established (setup: %s)", tag, formats.Duration(setupDur))
 	slog.Notice(msg)
 	t.s.recentEvents.Add(now, msg)
 }
@@ -420,7 +420,7 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 		return nil, err
 	}
 
-	t.addSession(ss)
+	t.addSession(ss, time.Since(start))
 	// When the session closes, trigger a redial.
 	if err := t.s.g.Go(func() {
 		defer t.delSession(ss)
@@ -451,7 +451,6 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 		return nil, err
 	}
 
-	slog.Debugf("%s: setup %v", tag, formats.Duration(time.Since(start)))
 	return ss, nil
 }
 

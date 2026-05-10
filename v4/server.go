@@ -258,7 +258,7 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 // serveSession handles one accepted mux session.
 // It creates an inbound ephemeral tunnel, keeps it registered for lookup, and
 // removes it when the underlying mux session closes.
-func (s *Server) serveSession(ss mux.Session) {
+func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
 	// When the group closes, close ss to unblock Accept().
 	if err := s.g.Go(func() {
 		select {
@@ -277,7 +277,7 @@ func (s *Server) serveSession(ss mux.Session) {
 	tag := inbound.tag
 	inbound.lastChanged = now
 	inbound.mu.Unlock()
-	msg := fmt.Sprintf("%s: session established", tag)
+	msg := fmt.Sprintf("%s: session established (setup: %s)", tag, formats.Duration(setupDur))
 	slog.Notice(msg)
 	s.recentEvents.Add(now, msg)
 	s.stats.authorized.Add(1)

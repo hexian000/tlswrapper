@@ -55,13 +55,8 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 	}
 
 	if cfg.TLSConfig != nil {
-		tlsConn := tls.Client(conn, cfg.TLSConfig)
-		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			return nil, err
-		}
-		conn = tlsConn
+		conn = tls.Client(conn, cfg.TLSConfig)
 	}
-	_ = conn.SetDeadline(time.Time{})
 	if cfg.WriteTimeout > 0 {
 		conn = &writeTimeoutConn{Conn: conn, timeout: cfg.WriteTimeout}
 	}
@@ -127,6 +122,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		_ = cc.Close()
 		return nil, ctx.Err()
 	}
+	_ = conn.SetDeadline(time.Time{})
 	cleanup := func() {
 		cancel()
 		_ = cc.Close()
@@ -251,13 +247,8 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 	}
 
 	if cfg.TLSConfig != nil {
-		tlsConn := tls.Server(conn, cfg.TLSConfig)
-		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			return nil, err
-		}
-		conn = tlsConn
+		conn = tls.Server(conn, cfg.TLSConfig)
 	}
-	_ = conn.SetDeadline(time.Time{})
 	if cfg.WriteTimeout > 0 {
 		conn = &writeTimeoutConn{Conn: conn, timeout: cfg.WriteTimeout}
 	}
@@ -278,6 +269,7 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 	case sess := <-svc.ready:
 		// Wire up cleanup: stopping the gRPC server closes all streams.
 		sess.cleanup = func() { grpcSrv.Stop() }
+		_ = conn.SetDeadline(time.Time{})
 		return sess, nil
 	case <-ctx.Done():
 		grpcSrv.Stop()
