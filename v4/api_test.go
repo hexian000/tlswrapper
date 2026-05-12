@@ -149,7 +149,7 @@ func TestAPIMetricsHandler(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 		}
 		body := rec.Body.String()
-		for _, want := range []string{"tlswrapper_uptime_seconds", "tlswrapper_sessions"} {
+		for _, want := range []string{"tlswrapper_uptime_seconds", "tlswrapper_sessions", "tlswrapper_streams"} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("body %q does not contain %q", body, want)
 			}

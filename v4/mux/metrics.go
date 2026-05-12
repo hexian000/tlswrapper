@@ -17,6 +17,7 @@ type SessionMetrics struct {
 	StreamsStarted     atomic.Uint64
 	StreamsSucceeded   atomic.Uint64
 	StreamsFailed      atomic.Uint64
+	NumStreams         atomic.Int64
 	BytesSent          atomic.Uint64
 	BytesReceived      atomic.Uint64
 	WireLengthSent     atomic.Uint64
@@ -49,12 +50,14 @@ func (h *muxStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	case *stats.Begin:
 		_ = v
 		h.metrics.StreamsStarted.Add(1)
+		h.metrics.NumStreams.Add(1)
 	case *stats.End:
 		if v.Error == nil {
 			h.metrics.StreamsSucceeded.Add(1)
 		} else {
 			h.metrics.StreamsFailed.Add(1)
 		}
+		h.metrics.NumStreams.Add(-1)
 	case *stats.InPayload:
 		h.metrics.BytesReceived.Add(uint64(v.Length))
 		h.metrics.WireLengthReceived.Add(uint64(v.WireLength))

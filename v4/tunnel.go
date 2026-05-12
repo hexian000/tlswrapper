@@ -204,7 +204,7 @@ func (t *tunnel) checkIdle() {
 	m := t.ss.Stats()
 	var numStreams int64
 	if m != nil {
-		numStreams = int64(m.StreamsStarted.Load()) - int64(m.StreamsSucceeded.Load()) - int64(m.StreamsFailed.Load())
+		numStreams = m.NumStreams.Load()
 	}
 	if t.stale && numStreams == 0 {
 		tag := t.tag
@@ -463,6 +463,7 @@ type SessionStats struct {
 	StreamsStarted     uint64
 	StreamsSucceeded   uint64
 	StreamsFailed      uint64
+	NumStreams         int64
 	BytesSent          uint64
 	BytesReceived      uint64
 	WireLengthSent     uint64
@@ -476,6 +477,7 @@ func (t *tunnel) Stats() SessionStats {
 	active := t.ss != nil && !t.ss.IsClosed()
 	name := t.id
 	var streamsStarted, streamsSucceeded, streamsFailed, bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
+	var numStreams int64
 	if active {
 		if peerID := t.ss.PeerID(); peerID != "" {
 			name = peerID
@@ -484,6 +486,7 @@ func (t *tunnel) Stats() SessionStats {
 			streamsStarted = uint64(m.StreamsStarted.Load())
 			streamsSucceeded = uint64(m.StreamsSucceeded.Load())
 			streamsFailed = uint64(m.StreamsFailed.Load())
+			numStreams = m.NumStreams.Load()
 			bytesSent = uint64(m.BytesSent.Load())
 			bytesReceived = uint64(m.BytesReceived.Load())
 			wireLengthSent = uint64(m.WireLengthSent.Load())
@@ -497,6 +500,7 @@ func (t *tunnel) Stats() SessionStats {
 		StreamsStarted:     streamsStarted,
 		StreamsSucceeded:   streamsSucceeded,
 		StreamsFailed:      streamsFailed,
+		NumStreams:         numStreams,
 		BytesSent:          bytesSent,
 		BytesReceived:      bytesReceived,
 		WireLengthSent:     wireLengthSent,
