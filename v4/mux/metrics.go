@@ -14,7 +14,8 @@ import (
 
 // SessionMetrics tracks per-session stream counts plus payload and wire bytes.
 type SessionMetrics struct {
-	StreamsStarted     atomic.Uint64
+	StreamsOpened      atomic.Uint64 // streams actively opened by this endpoint
+	StreamsAccepted    atomic.Uint64 // streams passively accepted by this endpoint
 	StreamsSucceeded   atomic.Uint64
 	StreamsFailed      atomic.Uint64
 	NumStreams         atomic.Int64
@@ -49,7 +50,6 @@ func (h *muxStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	switch v := s.(type) {
 	case *stats.Begin:
 		_ = v
-		h.metrics.StreamsStarted.Add(1)
 		h.metrics.NumStreams.Add(1)
 	case *stats.End:
 		if v.Error == nil {

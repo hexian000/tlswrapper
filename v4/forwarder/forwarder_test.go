@@ -144,6 +144,14 @@ func TestForwarderConnLimit(t *testing.T) {
 	}
 }
 
+func TestForwarderHalfOpenCount(t *testing.T) {
+	g := newTestGroup(t)
+	f := New(10, g)
+	if got := f.HalfOpenCount(); got != 0 {
+		t.Fatalf("HalfOpenCount() before any starts = %d, want 0", got)
+	}
+}
+
 func TestForwarderCount(t *testing.T) {
 	g := newTestGroup(t)
 	f := New(10, g)

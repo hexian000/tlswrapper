@@ -100,6 +100,9 @@ func (ss *session) DeliverStream(requestID string, conn net.Conn) {
 	}
 	select {
 	case ss.acceptCh <- conn:
+		if ss.metrics != nil {
+			ss.metrics.StreamsAccepted.Add(1)
+		}
 	case <-ss.closedCh:
 		_ = conn.Close()
 	}
@@ -201,6 +204,9 @@ func (ss *clientSession) dialStreamForServer(requestID string) {
 	conn := newClientSideStream(cs, ss.localAddr, ss.remoteAddr, streamCancel, streamCancel)
 	select {
 	case ss.acceptCh <- conn:
+		if ss.metrics != nil {
+			ss.metrics.StreamsAccepted.Add(1)
+		}
 	case <-ss.closedCh:
 		_ = conn.Close()
 	}
@@ -218,6 +224,9 @@ func (ss *clientSession) Open(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		streamCancel()
 		return nil, err
+	}
+	if ss.metrics != nil {
+		ss.metrics.StreamsOpened.Add(1)
 	}
 	return newClientSideStream(cs, ss.localAddr, ss.remoteAddr, streamCancel, streamCancel), nil
 }
@@ -304,6 +313,9 @@ func (ss *serverSession) Open(ctx context.Context) (net.Conn, error) {
 	case conn, ok := <-ch:
 		if !ok {
 			return nil, ErrSessionClosed
+		}
+		if ss.metrics != nil {
+			ss.metrics.StreamsOpened.Add(1)
 		}
 		return conn, nil
 	case <-ss.closedCh:

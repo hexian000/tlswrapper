@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,11 +59,13 @@ type Server struct {
 	started time.Time
 
 	stats struct {
-		numSessions atomic.Uint32
-		numHalfOpen atomic.Uint32
-		authorized  atomic.Uint64
-		request     atomic.Uint64
-		success     atomic.Uint64
+		numSessions          atomic.Uint32
+		numSessionsCreated   atomic.Uint64
+		numSessionsFinalized atomic.Uint64
+		numHalfOpen          atomic.Uint32
+		authorized           atomic.Uint64
+		request              atomic.Uint64
+		success              atomic.Uint64
 	}
 }
 
@@ -169,16 +173,30 @@ func (s *Server) removeSession(target *tunnel) {
 	}
 }
 
+// StreamLatencyStats holds P50/P90/P99/MAX percentiles for stream open latency.
+// Available is false when no samples have been recorded yet.
+type StreamLatencyStats struct {
+	P50, P90, P99, Max time.Duration
+	Available          bool
+}
+
 // ServerStats is the snapshot returned by Server.Stats.
 type ServerStats struct {
-	NumSessions int
-	Rx, Tx      uint64
-	Accepted    uint64
-	Served      uint64
-	Authorized  uint64
-	ReqTotal    uint64
-	ReqSuccess  uint64
-	sessions    []SessionStats
+	NumSessions          uint32
+	NumSessionsCreated   uint64
+	NumSessionsFinalized uint64
+	NumHalfOpen          uint32
+	NumStreamsHalfOpen   uint32
+	StreamOpenActive     uint64
+	StreamOpenPassive    uint64
+	StreamLatency        StreamLatencyStats
+	Rx, Tx               uint64
+	Accepted             uint64
+	Served               uint64
+	Authorized           uint64
+	ReqTotal             uint64
+	ReqSuccess           uint64
+	sessions             []SessionStats
 }
 
 // Stats snapshots listener, traffic, and per-session metrics.
@@ -186,9 +204,10 @@ func (s *Server) Stats() (stats ServerStats) {
 	if s.l != nil {
 		stats.Accepted, stats.Served = s.l.Stats()
 	}
+	allTunnels := s.getAllSessions()
 	sessionMap := make(map[string]SessionStats)
-	for _, ss := range s.getAllSessions() {
-		v := ss.Stats()
+	for _, t := range allTunnels {
+		v := t.Stats()
 		if v.Active {
 			stats.NumSessions++
 		}
@@ -202,6 +221,38 @@ func (s *Server) Stats() (stats ServerStats) {
 	stats.Rx, stats.Tx = s.flowStats.Read.Load(), s.flowStats.Written.Load()
 	stats.Authorized = s.stats.authorized.Load()
 	stats.ReqTotal, stats.ReqSuccess = s.stats.request.Load(), s.stats.success.Load()
+	stats.NumHalfOpen = s.stats.numHalfOpen.Load()
+	stats.NumSessionsCreated = s.stats.numSessionsCreated.Load()
+	stats.NumSessionsFinalized = s.stats.numSessionsFinalized.Load()
+	stats.NumStreamsHalfOpen = uint32(s.f.HalfOpenCount())
+	for _, ss := range stats.sessions {
+		stats.StreamOpenActive += ss.StreamsOpened
+		stats.StreamOpenPassive += ss.StreamsAccepted
+	}
+	var latSamples []time.Duration
+	for _, t := range allTunnels {
+		snap := t.streamLatency.Snapshot()
+		for _, d := range snap {
+			if d > 0 {
+				latSamples = append(latSamples, d)
+			}
+		}
+	}
+	if len(latSamples) > 0 {
+		slices.Sort(latSamples)
+		n := len(latSamples)
+		at := func(pct float64) time.Duration {
+			i := int(math.Floor(float64(n) * pct))
+			if i >= n {
+				i = n - 1
+			}
+			return latSamples[i]
+		}
+		stats.StreamLatency = StreamLatencyStats{
+			P50: at(0.50), P90: at(0.90), P99: at(0.99),
+			Max: latSamples[n-1], Available: true,
+		}
+	}
 	return
 }
 
@@ -283,12 +334,14 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
 	s.stats.authorized.Add(1)
 	s.addSession(inbound)
 	s.stats.numSessions.Add(1)
+	s.stats.numSessionsCreated.Add(1)
 	defer func() {
 		now := time.Now()
 		msg := fmt.Sprintf("%s: session closed", tag)
 		slog.Notice(msg)
 		s.recentEvents.Add(now, msg)
 		s.stats.numSessions.Add(^uint32(0))
+		s.stats.numSessionsFinalized.Add(1)
 		s.removeSession(inbound)
 	}()
 	for {

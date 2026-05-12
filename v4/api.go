@@ -214,22 +214,29 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		printMemStats(w)
 	}
 	stats := h.s.Stats()
-	var streamsStarted, streamsSucceeded, streamsFailed uint64
-	var numStreams int64
+	var numStreams uint32
 	var bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
 	for _, ss := range stats.sessions {
-		streamsStarted += ss.StreamsStarted
-		streamsSucceeded += ss.StreamsSucceeded
-		streamsFailed += ss.StreamsFailed
 		numStreams += ss.NumStreams
 		bytesSent += ss.BytesSent
 		bytesReceived += ss.BytesReceived
 		wireLengthSent += ss.WireLengthSent
 		wireLengthReceived += ss.WireLengthReceived
 	}
-	fprintf(w, "%-20s: %d (%d streams)\n", "Num Sessions", stats.NumSessions, numStreams)
-	fprintf(w, "%-20s: %d started, %d ok, %d fail\n", "Streams",
-		streamsStarted, streamsSucceeded, streamsFailed)
+	fprintf(w, "%-20s: %d / %d (+%d)\n", "Sessions",
+		stats.NumSessions, int64(stats.NumSessionsCreated)-int64(stats.NumSessionsFinalized), stats.NumHalfOpen)
+	fprintf(w, "%-20s: %d (+%d)\n", "Streams", numStreams, stats.NumStreamsHalfOpen)
+	fprintf(w, "%-20s: %d active, %d passive\n", "Stream Opens",
+		stats.StreamOpenActive, stats.StreamOpenPassive)
+	if stats.StreamLatency.Available {
+		fprintf(w, "%-20s: P50=%s P90=%s P99=%s MAX=%s\n", "Stream Latency",
+			formats.Duration(stats.StreamLatency.P50),
+			formats.Duration(stats.StreamLatency.P90),
+			formats.Duration(stats.StreamLatency.P99),
+			formats.Duration(stats.StreamLatency.Max))
+	} else {
+		fprintf(w, "%-20s: (never)\n", "Stream Latency")
+	}
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Mux Traffic",
 		formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Wire Traffic",
@@ -306,7 +313,8 @@ type serverMetricsCollector struct {
 	sessionUpDesc       *prometheus.Desc
 	sessionStreamsDesc  *prometheus.Desc
 
-	sessionStreamsStartedDesc     *prometheus.Desc
+	sessionStreamsOpenedDesc      *prometheus.Desc
+	sessionStreamsAcceptedDesc    *prometheus.Desc
 	sessionStreamsSucceededDesc   *prometheus.Desc
 	sessionStreamsFailedDesc      *prometheus.Desc
 	sessionBytesSentDesc          *prometheus.Desc
@@ -366,9 +374,13 @@ func newServerMetricsCollector(s *Server) prometheus.Collector {
 			"tlswrapper_session_streams",
 			"Number of streams in the session.",
 			[]string{"session"}, nil),
-		sessionStreamsStartedDesc: prometheus.NewDesc(
-			"tlswrapper_session_grpc_streams_started_total",
-			"Total gRPC streams started in the session.",
+		sessionStreamsOpenedDesc: prometheus.NewDesc(
+			"tlswrapper_session_streams_opened_total",
+			"Total streams actively opened by this session.",
+			[]string{"session"}, nil),
+		sessionStreamsAcceptedDesc: prometheus.NewDesc(
+			"tlswrapper_session_streams_accepted_total",
+			"Total streams passively accepted by this session.",
 			[]string{"session"}, nil),
 		sessionStreamsSucceededDesc: prometheus.NewDesc(
 			"tlswrapper_session_grpc_streams_succeeded_total",
@@ -410,7 +422,8 @@ func (c *serverMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.requestsSuccessDesc
 	ch <- c.sessionUpDesc
 	ch <- c.sessionStreamsDesc
-	ch <- c.sessionStreamsStartedDesc
+	ch <- c.sessionStreamsOpenedDesc
+	ch <- c.sessionStreamsAcceptedDesc
 	ch <- c.sessionStreamsSucceededDesc
 	ch <- c.sessionStreamsFailedDesc
 	ch <- c.sessionBytesSentDesc
@@ -442,7 +455,7 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(c.requestsSuccessDesc, prometheus.CounterValue,
 		float64(stats.ReqSuccess))
 
-	var numStreams int64
+	var numStreams uint32
 	for _, ss := range stats.sessions {
 		up := 0.0
 		if ss.Active {
@@ -453,8 +466,10 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		numStreams += ss.NumStreams
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsDesc, prometheus.GaugeValue,
 			float64(ss.NumStreams), ss.Name)
-		ch <- prometheus.MustNewConstMetric(c.sessionStreamsStartedDesc, prometheus.CounterValue,
-			float64(ss.StreamsStarted), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionStreamsOpenedDesc, prometheus.CounterValue,
+			float64(ss.StreamsOpened), ss.Name)
+		ch <- prometheus.MustNewConstMetric(c.sessionStreamsAcceptedDesc, prometheus.CounterValue,
+			float64(ss.StreamsAccepted), ss.Name)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsSucceededDesc, prometheus.CounterValue,
 			float64(ss.StreamsSucceeded), ss.Name)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsFailedDesc, prometheus.CounterValue,

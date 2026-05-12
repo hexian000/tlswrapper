@@ -71,14 +71,16 @@ type Forwarder interface {
 	// direction and OnClosed runs once after both directions finish.
 	Start(accepted net.Conn, dialed net.Conn, handler EventHandler) error
 	Count() int
+	HalfOpenCount() int
 	Close()
 }
 
 type forwarder struct {
-	mu      sync.Mutex
-	g       routines.Group
-	conn    map[net.Conn]struct{}
-	counter chan struct{}
+	mu          sync.Mutex
+	g           routines.Group
+	conn        map[net.Conn]struct{}
+	counter     chan struct{}
+	numHalfOpen atomic.Int32
 }
 
 // New returns a Forwarder limited to maxConn active connection pairs.
@@ -167,7 +169,11 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 		if handler != nil {
 			handler.OnWriteClosed(src, err)
 		}
-		if remaining.Add(-1) == 0 {
+		switch remaining.Add(-1) {
+		case 1:
+			f.numHalfOpen.Add(1)
+		case 0:
+			f.numHalfOpen.Add(-1)
 			cleanup()
 			if handler != nil {
 				handler.OnClosed()
@@ -189,7 +195,11 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 		if handler != nil {
 			handler.OnWriteClosed(accepted, err)
 		}
-		if remaining.Add(-1) == 0 {
+		switch remaining.Add(-1) {
+		case 1:
+			f.numHalfOpen.Add(1)
+		case 0:
+			f.numHalfOpen.Add(-1)
 			// First goroutine already finished; we are responsible for cleanup.
 			cleanup()
 			if handler != nil {
@@ -203,6 +213,10 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 
 func (f *forwarder) Count() int {
 	return len(f.counter)
+}
+
+func (f *forwarder) HalfOpenCount() int {
+	return int(f.numHalfOpen.Load())
 }
 
 func (f *forwarder) Close() {

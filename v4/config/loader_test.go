@@ -5,6 +5,8 @@ package config
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -257,6 +259,27 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
+	t.Run("tls-inline-success", func(t *testing.T) {
+		data, _ := json.Marshal(map[string]any{
+			"type": Type,
+			"tls": map[string]any{
+				"cert":      utilsTestCertPEM,
+				"key":       utilsTestKeyPEM,
+				"authcerts": []string{utilsTestCertPEM},
+			},
+		})
+		cfg, err := Load(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.TLS == nil {
+			t.Fatal("TLS should not be nil")
+		}
+		if len(cfg.TLS.AuthCerts) != 1 {
+			t.Fatalf("len(AuthCerts) = %d, want 1", len(cfg.TLS.AuthCerts))
+		}
+	})
+
 	t.Run("loads-socket-buffers", func(t *testing.T) {
 		data, _ := json.Marshal(map[string]any{
 			"type": Type,
@@ -374,6 +397,85 @@ func TestServiceEntry(t *testing.T) {
 		e := cfg.ServiceEntry("unknown")
 		if e.Listen != "" {
 			t.Fatalf("Listen = %q, want empty", e.Listen)
+		}
+	})
+}
+
+func TestLoadPEM(t *testing.T) {
+	t.Run("plain-string", func(t *testing.T) {
+		got, err := loadPEM("INLINE")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "INLINE" {
+			t.Fatalf("loadPEM() = %q, want %q", got, "INLINE")
+		}
+	})
+
+	t.Run("load-from-file", func(t *testing.T) {
+		dir := t.TempDir()
+		pemPath := filepath.Join(dir, "cert.pem")
+		want := "CERT-DATA"
+		if err := os.WriteFile(pemPath, []byte(want), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := loadPEM("@" + pemPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("loadPEM() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("load-file-error", func(t *testing.T) {
+		_, err := loadPEM("@/path/does/not/exist")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+func TestLoadFile(t *testing.T) {
+	t.Run("valid-file", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.json")
+		data, _ := json.Marshal(map[string]any{"type": Type})
+		if err := os.WriteFile(configPath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := LoadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg == nil {
+			t.Fatal("LoadFile returned nil config")
+		}
+	})
+
+	t.Run("read-error", func(t *testing.T) {
+		_, err := LoadFile("/path/does/not/exist")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("tls-file-reference-error", func(t *testing.T) {
+		data, _ := json.Marshal(map[string]any{
+			"type": Type,
+			"tls": map[string]any{
+				"cert": "@/path/does/not/exist",
+				"key":  "INLINE",
+			},
+		})
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.json")
+		if err := os.WriteFile(configPath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadFile(configPath)
+		if err == nil {
+			t.Fatal("expected error, got nil")
 		}
 	})
 }

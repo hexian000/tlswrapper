@@ -4,7 +4,12 @@
 package config
 
 import (
+	"bytes"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/hexian000/gosnippets/slog"
 )
 
 // Test PEM material (self-signed, for testing only — copied from v4/tls_test.go).
@@ -184,4 +189,103 @@ func TestNewX509CertPool(t *testing.T) {
 			t.Fatal("expected non-nil cert pool")
 		}
 	})
+}
+
+func TestSetLogger(t *testing.T) {
+	l := slog.NewLogger()
+	tests := []struct {
+		name    string
+		log     string
+		wantErr bool
+	}{
+		{name: "default-empty", log: ""},
+		{name: "stdout", log: "stdout"},
+		{name: "stderr", log: "stderr"},
+		{name: "discard", log: "discard"},
+		{name: "unknown", log: "somewhere", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &File{Log: tt.log}
+			err := cfg.SetLogger(l)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("SetLogger() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestConnectTimeout(t *testing.T) {
+	cfg := &File{}
+	cfg.Mux.ConnectTimeout = 12
+	if got := cfg.ConnectTimeout(); got != 12*time.Second {
+		t.Fatalf("ConnectTimeout() = %v, want %v", got, 12*time.Second)
+	}
+}
+
+func TestLogWrapperWrite(t *testing.T) {
+	t.Run("error-prefix", func(t *testing.T) {
+		var buf bytes.Buffer
+		l := slog.NewLogger()
+		l.SetLevel(slog.LevelError)
+		l.SetOutput(slog.OutputWriter, &buf)
+		w := &logWrapper{Logger: l}
+		n, err := w.Write([]byte("[ERR] boom\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != len("[ERR] boom\n") {
+			t.Fatalf("n = %d, want %d", n, len("[ERR] boom\\n"))
+		}
+		if !strings.Contains(buf.String(), "boom") {
+			t.Fatalf("log output %q does not contain %q", buf.String(), "boom")
+		}
+	})
+
+	t.Run("warn-prefix", func(t *testing.T) {
+		var buf bytes.Buffer
+		l := slog.NewLogger()
+		l.SetLevel(slog.LevelWarning)
+		l.SetOutput(slog.OutputWriter, &buf)
+		w := &logWrapper{Logger: l}
+		_, err := w.Write([]byte("[WARN] watch\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(buf.String(), "watch") {
+			t.Fatalf("log output %q does not contain %q", buf.String(), "watch")
+		}
+	})
+
+	t.Run("no-prefix", func(t *testing.T) {
+		var buf bytes.Buffer
+		l := slog.NewLogger()
+		l.SetLevel(slog.LevelError)
+		l.SetOutput(slog.OutputWriter, &buf)
+		w := &logWrapper{Logger: l}
+		_, err := w.Write([]byte("plain message\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(buf.String(), "plain message") {
+			t.Fatalf("log output %q does not contain %q", buf.String(), "plain message")
+		}
+	})
+}
+
+func TestNewTLSConfigInvalidAuthCert(t *testing.T) {
+	cfg := &File{
+		TLS: &TLS{
+			Certificate: utilsTestCertPEM,
+			PrivateKey:  utilsTestKeyPEM,
+			AuthCerts:   []string{"not-a-pem"},
+		},
+	}
+	_, err := cfg.NewTLSConfig("example.com")
+	if err == nil {
+		t.Fatal("expected error for invalid auth cert")
+	}
 }

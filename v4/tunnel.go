@@ -30,17 +30,18 @@ type tunnel struct {
 	s        *Server
 	l        net.Listener // local TCP listener (only on config-driven tunnels with Listen)
 
-	mu          sync.RWMutex
-	tag         string
-	ss          mux.Session
-	idleSince   time.Time // when ss became stream-less (zero = not idle)
-	stale       bool      // marked after config reload; evicted when idle
-	closeSig    chan struct{}
-	stopOnce    sync.Once
-	redialSig   chan struct{}
-	redialCount int
-	dialMu      sync.Mutex
-	lastChanged time.Time
+	mu            sync.RWMutex
+	tag           string
+	ss            mux.Session
+	idleSince     time.Time // when ss became stream-less (zero = not idle)
+	stale         bool      // marked after config reload; evicted when idle
+	closeSig      chan struct{}
+	stopOnce      sync.Once
+	redialSig     chan struct{}
+	redialCount   int
+	dialMu        sync.Mutex
+	lastChanged   time.Time
+	streamLatency latencyRing
 }
 
 func newTunnel(id, dialAddr string, s *Server) *tunnel {
@@ -330,6 +331,7 @@ func (t *tunnel) addSession(ss mux.Session, setupDur time.Duration) {
 	t.stale = false
 	if !hadConn {
 		t.s.stats.numSessions.Add(1)
+		t.s.stats.numSessionsCreated.Add(1)
 	}
 	t.lastChanged = now
 	t.mu.Unlock()
@@ -351,6 +353,7 @@ func (t *tunnel) delSession(ss mux.Session) {
 	t.ss = nil
 	t.idleSince = time.Time{}
 	t.s.stats.numSessions.Add(^uint32(0))
+	t.s.stats.numSessionsFinalized.Add(1)
 	t.lastChanged = now
 	if t.dialAddr != "" {
 		select {
@@ -378,7 +381,13 @@ func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
 	if ss == nil {
 		return nil, ErrNoSession
 	}
-	return ss.Open(ctx)
+	start := time.Now()
+	conn, err := ss.Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t.streamLatency.Record(time.Since(start))
+	return conn, nil
 }
 
 // dial establishes a new outbound mux session.
@@ -460,14 +469,18 @@ type SessionStats struct {
 	LastChanged time.Time
 	Active      bool
 	// gRPC transport statistics; zero when unavailable.
-	StreamsStarted     uint64
+	StreamsOpened      uint64
+	StreamsAccepted    uint64
 	StreamsSucceeded   uint64
 	StreamsFailed      uint64
-	NumStreams         int64
+	NumStreams         uint32
 	BytesSent          uint64
 	BytesReceived      uint64
 	WireLengthSent     uint64
 	WireLengthReceived uint64
+	// StreamLatency holds pre-computed percentiles of this tunnel's
+	// stream-open latency ring.
+	StreamLatency StreamLatencyStats
 }
 
 // Stats snapshots the current session state.
@@ -476,28 +489,31 @@ func (t *tunnel) Stats() SessionStats {
 	defer t.mu.RUnlock()
 	active := t.ss != nil && !t.ss.IsClosed()
 	name := t.id
-	var streamsStarted, streamsSucceeded, streamsFailed, bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
-	var numStreams int64
+	var streamsOpened, streamsAccepted, streamsSucceeded, streamsFailed, bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
+	var numStreams uint32
 	if active {
 		if peerID := t.ss.PeerID(); peerID != "" {
 			name = peerID
 		}
 		if m := t.ss.Stats(); m != nil {
-			streamsStarted = uint64(m.StreamsStarted.Load())
+			streamsOpened = uint64(m.StreamsOpened.Load())
+			streamsAccepted = uint64(m.StreamsAccepted.Load())
 			streamsSucceeded = uint64(m.StreamsSucceeded.Load())
 			streamsFailed = uint64(m.StreamsFailed.Load())
-			numStreams = m.NumStreams.Load()
+			numStreams = uint32(m.NumStreams.Load())
 			bytesSent = uint64(m.BytesSent.Load())
 			bytesReceived = uint64(m.BytesReceived.Load())
 			wireLengthSent = uint64(m.WireLengthSent.Load())
 			wireLengthReceived = uint64(m.WireLengthReceived.Load())
 		}
 	}
+	p50, p90, p99, pmax, latOk := t.streamLatency.Percentiles()
 	return SessionStats{
 		Name:               name,
 		LastChanged:        t.lastChanged,
 		Active:             active,
-		StreamsStarted:     streamsStarted,
+		StreamsOpened:      streamsOpened,
+		StreamsAccepted:    streamsAccepted,
 		StreamsSucceeded:   streamsSucceeded,
 		StreamsFailed:      streamsFailed,
 		NumStreams:         numStreams,
@@ -505,5 +521,6 @@ func (t *tunnel) Stats() SessionStats {
 		BytesReceived:      bytesReceived,
 		WireLengthSent:     wireLengthSent,
 		WireLengthReceived: wireLengthReceived,
+		StreamLatency:      StreamLatencyStats{P50: p50, P90: p90, P99: p99, Max: pmax, Available: latOk},
 	}
 }

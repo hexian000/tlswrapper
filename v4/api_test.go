@@ -104,7 +104,7 @@ func TestAPIStatsHandler(t *testing.T) {
 			t.Fatalf("Cache-Control = %q, want %q", got, "no-store")
 		}
 		body := rec.Body.String()
-		for _, want := range []string{"Num Sessions", "Requests", "Recent Events", "config loaded"} {
+		for _, want := range []string{"Sessions", "Streams", "Requests", "Recent Events", "config loaded"} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("body %q does not contain %q", body, want)
 			}
