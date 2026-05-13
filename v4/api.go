@@ -256,10 +256,10 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		fprintf(w, "%-20s: %.1f/s (%+.1f/s rejected)\n", "Authorized",
 			float64(stats.Served-h.last.Served)/dt,
-			float64((stats.Accepted-stats.Served)-(h.last.Accepted-h.last.Served))/dt)
+			float64((stats.Accepted-h.last.Accepted)-(stats.Served-h.last.Served))/dt)
 		fprintf(w, "%-20s: %.1f/s (%+.1f/s)\n", "Request Rate",
 			float64(stats.ReqSuccess-h.last.ReqSuccess)/dt,
-			float64((stats.ReqTotal-stats.ReqSuccess)-(h.last.ReqTotal-h.last.ReqSuccess))/dt)
+			float64((stats.ReqTotal-h.last.ReqTotal)-(stats.ReqSuccess-h.last.ReqSuccess))/dt)
 		fprintf(w, "%-20s: Rx %s/s, Tx %s/s\n", "Bandwidth",
 			formats.IECBytes(float64(stats.Rx-h.last.Rx)/dt),
 			formats.IECBytes(float64(stats.Tx-h.last.Tx)/dt))
