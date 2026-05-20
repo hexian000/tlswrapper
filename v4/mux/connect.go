@@ -61,7 +61,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		conn = &writeTimeoutConn{Conn: conn, timeout: cfg.WriteTimeout}
 	}
 
-	sh := &muxStatsHandler{}
+	sh := newMuxStatsHandler()
 	opts := cfg.grpcDialOptions()
 	opts = append(opts, grpc.WithStatsHandler(sh))
 	connCh := make(chan net.Conn, 1)
@@ -138,6 +138,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		peerIdentity,
 		peerRejectsInbound,
 		&sh.metrics,
+		sh.idleNotify,
 	), nil
 }
 
@@ -184,6 +185,7 @@ func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
 		peerIdentity,
 		peerRejectsInbound,
 		&svc.sh.metrics,
+		svc.sh.idleNotify,
 	)
 
 	svc.mu.Lock()
@@ -253,7 +255,7 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		conn = &writeTimeoutConn{Conn: conn, timeout: cfg.WriteTimeout}
 	}
 
-	sh := &muxStatsHandler{}
+	sh := newMuxStatsHandler()
 	svc := newMuxServer(cfg, conn.LocalAddr(), conn.RemoteAddr(), sh)
 	grpcSrv := grpc.NewServer(append(cfg.grpcServerOptions(), grpc.StatsHandler(sh))...)
 	muxpb.RegisterMuxServer(grpcSrv, svc)

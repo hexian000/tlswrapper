@@ -25,6 +25,9 @@ type Session interface {
 	Close() error
 	IsClosed() bool
 	CloseChan() <-chan struct{}
+	// IdleChan returns a channel that receives a signal each time the number of
+	// active streams drops to zero.  May return nil when stats are unavailable.
+	IdleChan() <-chan struct{}
 	// Stats returns the gRPC transport statistics for this session.
 	// Returns nil when stats collection is not available.
 	Stats() *SessionMetrics
@@ -59,7 +62,8 @@ type session struct {
 	closeOnce sync.Once
 	cleanup   func()
 
-	metrics *SessionMetrics
+	metrics    *SessionMetrics
+	idleNotify <-chan struct{}
 }
 
 func (ss *session) recvControlLoop() {
@@ -133,6 +137,8 @@ func (ss *session) IsClosed() bool {
 
 func (ss *session) CloseChan() <-chan struct{} { return ss.closedCh }
 
+func (ss *session) IdleChan() <-chan struct{} { return ss.idleNotify }
+
 func (ss *session) Stats() *SessionMetrics { return ss.metrics }
 
 // PeerIdentity returns the remote identity claim.
@@ -161,7 +167,9 @@ func newClientSession(
 	cleanup func(),
 	localAddr, remoteAddr net.Addr,
 	peerIdentity string,
-	peerRejectsInbound bool, metrics *SessionMetrics) *clientSession {
+	peerRejectsInbound bool,
+	metrics *SessionMetrics,
+	idleNotify <-chan struct{}) *clientSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
 	}
@@ -180,6 +188,7 @@ func newClientSession(
 			closedCh:           make(chan struct{}),
 			cleanup:            cleanup,
 			metrics:            metrics,
+			idleNotify:         idleNotify,
 		},
 		grpcClient:      grpcClient,
 		streamCtx:       streamCtx,
@@ -253,6 +262,7 @@ func newServerSession(
 	peerIdentity string,
 	peerRejectsInbound bool,
 	metrics *SessionMetrics,
+	idleNotify <-chan struct{},
 ) *serverSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
@@ -272,6 +282,7 @@ func newServerSession(
 			closedCh:           make(chan struct{}),
 			cleanup:            cleanup,
 			metrics:            metrics,
+			idleNotify:         idleNotify,
 		},
 	}
 	go func() {

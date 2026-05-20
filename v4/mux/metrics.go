@@ -30,8 +30,14 @@ type ctxKeyTrackRPC struct{}
 
 // muxStatsHandler implements grpc/stats.Handler.  It filters events to the
 // Stream RPC only (ignoring Control) and accumulates them into metrics.
+// idleNotify receives a signal (non-blocking) each time NumStreams drops to 0.
 type muxStatsHandler struct {
-	metrics SessionMetrics
+	metrics    SessionMetrics
+	idleNotify chan struct{}
+}
+
+func newMuxStatsHandler() *muxStatsHandler {
+	return &muxStatsHandler{idleNotify: make(chan struct{}, 1)}
 }
 
 // TagRPC marks the context for Stream RPCs so HandleRPC can filter quickly.
@@ -57,7 +63,12 @@ func (h *muxStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 		} else {
 			h.metrics.StreamsFailed.Add(1)
 		}
-		h.metrics.NumStreams.Add(-1)
+		if h.metrics.NumStreams.Add(-1) == 0 {
+			select {
+			case h.idleNotify <- struct{}{}:
+			default:
+			}
+		}
 	case *stats.InPayload:
 		h.metrics.BytesReceived.Add(uint64(v.Length))
 		h.metrics.WireLengthReceived.Add(uint64(v.WireLength))

@@ -41,14 +41,15 @@ func TestTunnelCheckIdle(t *testing.T) {
 }
 
 func TestTunnelSchedule(t *testing.T) {
-	tn := newTunnel("", newTestServer(t, nil))
-	if ch := tn.schedule(); ch == nil {
-		t.Fatal("expected schedule channel")
+	// Connected (no failures): schedule returns nil so run() idles on events only.
+	tn := newTunnel("127.0.0.1:1", newTestServer(t, nil))
+	if ch := tn.schedule(); ch != nil {
+		t.Fatal("expected nil schedule channel when connected")
 	}
-	tn.dialAddr = "127.0.0.1:1"
+	// After a redial failure the backoff table kicks in.
 	tn.redialCount = 1
 	if ch := tn.schedule(); ch == nil {
-		t.Fatal("expected redial schedule channel")
+		t.Fatal("expected redial schedule channel after failure")
 	}
 }
 

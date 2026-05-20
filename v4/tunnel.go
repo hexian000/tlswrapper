@@ -251,7 +251,6 @@ func (t *tunnel) redial() {
 }
 
 func (t *tunnel) maintenance() {
-	t.checkIdle()
 	if t.getSession() == nil {
 		cfg, _ := t.getConfig()
 		if !cfg.NoRedial && t.dialAddr != "" {
@@ -264,9 +263,10 @@ func (t *tunnel) maintenance() {
 func (t *tunnel) schedule() <-chan time.Time {
 	cfg, _ := t.getConfig()
 	if cfg.NoRedial || t.dialAddr == "" || t.redialCount < 1 {
-		pause := 10 * time.Minute
-		pause += time.Duration(rand.Int63n(int64(10 * time.Minute)))
-		return time.After(pause)
+		// Connected (or no redial needed): sleep until an event wakes the loop.
+		// maintenanceLoop handles idle eviction; run() only needs to react to
+		// redialSig, closeSig, or group shutdown.
+		return nil
 	}
 	n := t.redialCount - 1
 	var waitTimeConst = [...]time.Duration{
@@ -282,11 +282,14 @@ func (t *tunnel) schedule() <-chan time.Time {
 		1 * time.Minute,
 		2 * time.Minute,
 		5 * time.Minute,
+		10 * time.Minute,
 	}
 	waitTime := waitTimeConst[len(waitTimeConst)-1]
 	if n < len(waitTimeConst) {
 		waitTime = waitTimeConst[n]
 	}
+	// Apply ±20% jitter to spread reconnect storms.
+	waitTime += time.Duration(rand.Int63n(int64(waitTime*2/5))) - waitTime/5
 	tag := t.tagValue()
 	slog.Debugf("%s: redial scheduled after %v", tag, waitTime)
 	return time.After(waitTime)
@@ -319,6 +322,69 @@ func (t *tunnel) run() {
 	}
 }
 
+// watchIdleSession monitors ss for idle-timeout and stale eviction without
+// polling.  It relies on ss.IdleChan() which fires each time NumStreams drops
+// to zero.  The goroutine exits when the session closes or the group shuts down.
+func (t *tunnel) watchIdleSession(ss mux.Session) {
+	idleCh := ss.IdleChan()
+	if idleCh == nil {
+		return // session does not support idle notifications
+	}
+	closeCh := ss.CloseChan()
+	groupCloseCh := t.s.g.CloseC()
+
+	cfg, _ := t.getConfig()
+	idleTimeout := time.Duration(cfg.Mux.IdleTimeout) * time.Second
+
+	// idle tracks whether we already know NumStreams==0 (idleCh just fired) so
+	// we can skip the outer wait and go straight to (re)starting the timer.
+	idle := false
+	for {
+		if !idle {
+			select {
+			case <-idleCh:
+				idle = true
+			case <-closeCh:
+				return
+			case <-groupCloseCh:
+				return
+			}
+		}
+
+		// Immediate check handles stale eviction (config reload case).
+		t.checkIdle()
+		idle = false
+		if ss.IsClosed() {
+			return
+		}
+		if idleTimeout <= 0 {
+			// No idle timeout configured; only stale eviction needed (handled above).
+			continue
+		}
+
+		// Wait idleTimeout; reset the timer if another idle event arrives first
+		// (meaning streams resumed and dropped again).
+		timer := time.NewTimer(idleTimeout)
+		select {
+		case <-timer.C:
+			t.checkIdle()
+			// Whether evicted or not, loop back and wait for the next idle event.
+		case <-idleCh:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			// Streams resumed and became idle again; skip outer wait, restart timer.
+			idle = true
+		case <-closeCh:
+			timer.Stop()
+			return
+		case <-groupCloseCh:
+			timer.Stop()
+			return
+		}
+	}
+}
+
 func (t *tunnel) addSession(ss mux.Session, setupDur time.Duration) {
 	now := time.Now()
 	t.mu.Lock()
@@ -337,6 +403,7 @@ func (t *tunnel) addSession(ss mux.Session, setupDur time.Duration) {
 	msg := fmt.Sprintf("%s: session established (setup: %s)", tag, formats.Duration(setupDur))
 	slog.Notice(msg)
 	t.s.recentEvents.Add(now, msg)
+	_ = t.s.g.Go(func() { t.watchIdleSession(ss) })
 }
 
 func (t *tunnel) delSession(ss mux.Session) {

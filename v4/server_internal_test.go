@@ -187,8 +187,8 @@ func TestEmptyHandlerServeClosesConn(t *testing.T) {
 }
 
 // TestServerStaleSessionsAfterReload verifies that sessions present before a
-// config reload are marked stale and evicted by maintenanceLoop once they
-// become idle (no active streams) — behaving like idle_timeout=0.
+// config reload are marked stale and evicted immediately when they are already
+// idle (no active streams) — behaving like idle_timeout=0.
 func TestServerStaleSessionsAfterReload(t *testing.T) {
 	s := newTestServer(t, nil)
 	if err := s.Start(); err != nil {
@@ -209,13 +209,14 @@ func TestServerStaleSessionsAfterReload(t *testing.T) {
 	s.acceptedTunnels[srv] = tn
 	s.mu.Unlock()
 
-	// Trigger reload — this marks tn as stale.
+	// Trigger reload — markSessionsStale now calls checkIdle immediately,
+	// so the already-idle stale session is evicted synchronously.
 	if err := s.ReloadConfig(newTestConfig(t, nil)); err != nil {
 		t.Fatal(err)
 	}
 
-	// maintenanceLoop should evict the stale idle session within ~2 s.
-	waitFor(t, 3*time.Second, func() bool {
+	// Eviction is synchronous; no polling needed, but use waitFor as a safety net.
+	waitFor(t, time.Second, func() bool {
 		tn.mu.RLock()
 		defer tn.mu.RUnlock()
 		return tn.ss == nil || tn.ss.IsClosed()

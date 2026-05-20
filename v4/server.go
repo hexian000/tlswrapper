@@ -140,30 +140,16 @@ func (s *Server) getAllTunnels() []*tunnel {
 	return result
 }
 
-// maintenanceLoop also covers inbound tunnels, which have no dedicated run loop.
-func (s *Server) maintenanceLoop() {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			for _, t := range s.getAllTunnels() {
-				t.checkIdle()
-			}
-		case <-s.g.CloseC():
-			return
-		}
-	}
-}
-
-// markSessionsStale marks all currently tracked sessions as stale.
-// After a config reload, stale sessions are evicted by maintenanceLoop
-// as soon as they become idle (no active streams), behaving like idle_timeout=0.
+// markSessionsStale marks all currently tracked sessions as stale and
+// immediately evicts those that are already idle (no active streams).
+// Sessions with active streams are evicted by watchIdleSession when they
+// become idle.
 func (s *Server) markSessionsStale() {
 	for _, t := range s.getAllTunnels() {
 		t.mu.Lock()
 		t.stale = true
 		t.mu.Unlock()
+		t.checkIdle()
 	}
 }
 
@@ -353,6 +339,7 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
 	s.mu.Unlock()
 	s.stats.numSessions.Add(1)
 	s.stats.numSessionsCreated.Add(1)
+	_ = s.g.Go(func() { inbound.watchIdleSession(ss) })
 	defer func() {
 		now := time.Now()
 		msg := fmt.Sprintf("%s: session closed", tag)
@@ -629,9 +616,6 @@ func (s *Server) Start() error {
 			return err
 		}
 		s.apiListener = l
-	}
-	if err := s.g.Go(s.maintenanceLoop); err != nil {
-		return err
 	}
 	if err := s.loadSessions(s.cfg); err != nil {
 		return err
