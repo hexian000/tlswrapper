@@ -270,7 +270,7 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	fprintf(w, "\n> Sessions\n")
 	sort.Slice(stats.sessions, func(i, j int) bool {
-		return stats.sessions[i].Name < stats.sessions[j].Name
+		return stats.sessions[i].PeerIdentity < stats.sessions[j].PeerIdentity
 	})
 	for _, ss := range stats.sessions {
 		if (ss.LastChanged != time.Time{}) {
@@ -278,9 +278,9 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if ss.Active {
 				status = fmt.Sprintf("%d streams", ss.NumStreams)
 			}
-			fprintf(w, "%-20s: %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
+			fprintf(w, "%-20s: %s %s\n", ss.PeerIdentity, ss.LastChanged.Format(slog.TimeLayout), status)
 		} else {
-			fprintf(w, "%-20s: never seen\n", ss.Name)
+			fprintf(w, "%-20s: never seen\n", ss.PeerIdentity)
 		}
 	}
 
@@ -354,43 +354,43 @@ func newServerMetricsCollector(s *Server) prometheus.Collector {
 		sessionUpDesc: prometheus.NewDesc(
 			"tlswrapper_session_up",
 			"Whether the session is active (1=active, 0=offline).",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 		sessionStreamsDesc: prometheus.NewDesc(
 			"tlswrapper_session_streams",
 			"Number of streams in the session.",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 		sessionStreamsOpenedDesc: prometheus.NewDesc(
 			"tlswrapper_session_streams_opened_total",
 			"Total streams actively opened by this session.",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 		sessionStreamsAcceptedDesc: prometheus.NewDesc(
 			"tlswrapper_session_streams_accepted_total",
 			"Total streams passively accepted by this session.",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 		sessionStreamsSucceededDesc: prometheus.NewDesc(
 			"tlswrapper_session_grpc_streams_succeeded_total",
 			"Total gRPC streams that ended successfully in the session.",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 		sessionStreamsFailedDesc: prometheus.NewDesc(
 			"tlswrapper_session_grpc_streams_failed_total",
 			"Total gRPC streams that ended with an error in the session.",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 		sessionBytesSentDesc: prometheus.NewDesc(
 			"tlswrapper_session_grpc_bytes_sent_total",
 			"Total payload bytes sent in the session.",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 		sessionBytesReceivedDesc: prometheus.NewDesc(
 			"tlswrapper_session_grpc_bytes_received_total",
 			"Total payload bytes received in the session.",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 		sessionWireLengthSentDesc: prometheus.NewDesc(
 			"tlswrapper_session_grpc_wire_bytes_sent_total",
 			"Total wire bytes sent in the session.",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 		sessionWireLengthReceivedDesc: prometheus.NewDesc(
 			"tlswrapper_session_grpc_wire_bytes_received_total",
 			"Total wire bytes received in the session.",
-			[]string{"session"}, nil),
+			[]string{"identity"}, nil),
 	}
 }
 
@@ -441,26 +441,26 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			up = 1.0
 		}
 		ch <- prometheus.MustNewConstMetric(c.sessionUpDesc, prometheus.GaugeValue,
-			up, ss.Name)
+			up, ss.PeerIdentity)
 		numStreams += ss.NumStreams
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsDesc, prometheus.GaugeValue,
-			float64(ss.NumStreams), ss.Name)
+			float64(ss.NumStreams), ss.PeerIdentity)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsOpenedDesc, prometheus.CounterValue,
-			float64(ss.StreamsOpened), ss.Name)
+			float64(ss.StreamsOpened), ss.PeerIdentity)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsAcceptedDesc, prometheus.CounterValue,
-			float64(ss.StreamsAccepted), ss.Name)
+			float64(ss.StreamsAccepted), ss.PeerIdentity)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsSucceededDesc, prometheus.CounterValue,
-			float64(ss.StreamsSucceeded), ss.Name)
+			float64(ss.StreamsSucceeded), ss.PeerIdentity)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsFailedDesc, prometheus.CounterValue,
-			float64(ss.StreamsFailed), ss.Name)
+			float64(ss.StreamsFailed), ss.PeerIdentity)
 		ch <- prometheus.MustNewConstMetric(c.sessionBytesSentDesc, prometheus.CounterValue,
-			float64(ss.BytesSent), ss.Name)
+			float64(ss.BytesSent), ss.PeerIdentity)
 		ch <- prometheus.MustNewConstMetric(c.sessionBytesReceivedDesc, prometheus.CounterValue,
-			float64(ss.BytesReceived), ss.Name)
+			float64(ss.BytesReceived), ss.PeerIdentity)
 		ch <- prometheus.MustNewConstMetric(c.sessionWireLengthSentDesc, prometheus.CounterValue,
-			float64(ss.WireLengthSent), ss.Name)
+			float64(ss.WireLengthSent), ss.PeerIdentity)
 		ch <- prometheus.MustNewConstMetric(c.sessionWireLengthReceivedDesc, prometheus.CounterValue,
-			float64(ss.WireLengthReceived), ss.Name)
+			float64(ss.WireLengthReceived), ss.PeerIdentity)
 	}
 	ch <- prometheus.MustNewConstMetric(c.streamsDesc, prometheus.GaugeValue,
 		float64(numStreams))

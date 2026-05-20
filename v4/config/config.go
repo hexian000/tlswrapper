@@ -77,13 +77,6 @@ type Identity struct {
 	Listen map[string]string `json:"listen,omitempty"`
 }
 
-// ServiceEntry is the effective config-driven tunnel settings for one key.
-type ServiceEntry struct {
-	Listen string
-	// Forwarding target for streams arriving from an inbound ephemeral tunnel.
-	Connect string
-}
-
 // File represents the top-level configuration structure.
 type File struct {
 	// MIME type identifying the config format and version
@@ -149,15 +142,11 @@ var Default = File{
 	},
 }
 
-// ServiceEntry returns the effective ServiceEntry for the given peer name.
-// For the empty name "", the top-level Listen/Connect fields define
-// the default unnamed config-driven tunnel.
-func (c *File) ServiceEntry(name string) ServiceEntry {
-	entry := ServiceEntry{Connect: c.Connect}
+// FindListen returns the effective listen address for the given peer name.
+// For the empty name "", the top-level Listen field is returned.
+func (c *File) FindListen(name string) string {
 	if name == "" {
-		entry.Listen = c.Listen
-		return entry
+		return c.Listen
 	}
-	entry.Listen = c.Identity.Listen[name]
-	return entry
+	return c.Identity.Listen[name]
 }

@@ -47,8 +47,12 @@ type Server struct {
 	recentEvents eventlog.Recent
 
 	mu              sync.RWMutex
-	identityTunnels map[string]*tunnel      // config-driven tunnels, keyed by t.id
-	acceptedTunnels map[mux.Session]*tunnel // inbound tunnels keyed by their mux session
+	mainTunnel      *tunnel                      // top-level cfg.MuxConnect tunnel
+	localListener   net.Listener                 // top-level cfg.Listen listener
+	localListenAddr string                       // address currently bound by localListener
+	identityTunnels []*tunnel                    // cfg.Identity.MuxConnect[i] tunnels (positional)
+	identities      map[string]*identityListener // cfg.Identity.Listen[name] listeners
+	acceptedTunnels map[mux.Session]*tunnel      // inbound tunnels keyed by their mux session
 	ctx             contextMgr
 
 	dialer net.Dialer
@@ -76,7 +80,8 @@ func NewServer(cfg *config.File) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
 		cfg:             cfg,
-		identityTunnels: make(map[string]*tunnel),
+		identityTunnels: make([]*tunnel, 0),
+		identities:      make(map[string]*identityListener),
 		acceptedTunnels: make(map[mux.Session]*tunnel),
 		ctx: contextMgr{
 			contexts: make(map[context.Context]context.CancelFunc),
@@ -104,21 +109,15 @@ func maxStreams(cfg *config.File) int {
 	return cfg.Mux.MaxStreams
 }
 
-// findSession matches either a tracked tunnel key or the remote identity
-// learned from the handshake.
+// findSession returns the outbound tunnel whose active session has the given
+// peer identity. An empty peerIdentity returns the top-level mainTunnel.
 func (s *Server) findSession(peerIdentity string) *tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if t, ok := s.identityTunnels[peerIdentity]; ok {
-		if t.getSession() != nil {
-			return t
-		}
-		// key matched but no active session; still search other tunnels by handshake identity
+	if peerIdentity == "" {
+		return s.mainTunnel
 	}
-	for id, t := range s.identityTunnels {
-		if id == peerIdentity {
-			continue
-		}
+	for _, t := range s.identityTunnels {
 		if sess := t.getSession(); sess != nil && sess.PeerIdentity() == peerIdentity {
 			return t
 		}
@@ -129,10 +128,15 @@ func (s *Server) findSession(peerIdentity string) *tunnel {
 func (s *Server) getAllTunnels() []*tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]*tunnel, 0, len(s.identityTunnels)+len(s.acceptedTunnels))
-	for _, t := range s.identityTunnels {
-		result = append(result, t)
+	cap := len(s.identityTunnels) + len(s.acceptedTunnels)
+	if s.mainTunnel != nil {
+		cap++
 	}
+	result := make([]*tunnel, 0, cap)
+	if s.mainTunnel != nil {
+		result = append(result, s.mainTunnel)
+	}
+	result = append(result, s.identityTunnels...)
 	for _, t := range s.acceptedTunnels {
 		result = append(result, t)
 	}
@@ -202,8 +206,19 @@ func (s *Server) Stats() (stats ServerStats) {
 		if v.Active {
 			stats.NumSessions++
 		}
-		if prev, ok := sessionMap[v.Name]; !ok || v.LastChanged.After(prev.LastChanged) {
-			sessionMap[v.Name] = v
+		// All tunnels contribute to aggregated stream-open and traffic counts,
+		// regardless of whether they have a peer identity.
+		stats.StreamOpenActive += v.StreamsOpened
+		stats.StreamOpenPassive += v.StreamsAccepted
+		stats.BytesReceived += v.BytesReceived
+		stats.BytesSent += v.BytesSent
+		stats.WireLengthReceived += v.WireLengthReceived
+		stats.WireLengthSent += v.WireLengthSent
+		// Only sessions with a known peer identity are listed individually.
+		if v.PeerIdentity != "" {
+			if prev, ok := sessionMap[v.PeerIdentity]; !ok || v.LastChanged.After(prev.LastChanged) {
+				sessionMap[v.PeerIdentity] = v
+			}
 		}
 	}
 	for _, sstats := range sessionMap {
@@ -215,10 +230,6 @@ func (s *Server) Stats() (stats ServerStats) {
 	stats.NumSessionsCreated = s.stats.numSessionsCreated.Load()
 	stats.NumSessionsFinalized = s.stats.numSessionsFinalized.Load()
 	stats.NumStreamsHalfOpen = uint32(s.f.HalfOpenCount())
-	for _, ss := range stats.sessions {
-		stats.StreamOpenActive += ss.StreamsOpened
-		stats.StreamOpenPassive += ss.StreamsAccepted
-	}
 	var latSamples []time.Duration
 	for _, t := range allTunnels {
 		snap := t.streamLatency.Snapshot()
@@ -243,16 +254,11 @@ func (s *Server) Stats() (stats ServerStats) {
 			Max: latSamples[n-1], Available: true,
 		}
 	}
-	stats.BytesReceived = s.stats.payloadBytesReceived.Load()
-	stats.BytesSent = s.stats.payloadBytesSent.Load()
-	stats.WireLengthReceived = s.stats.muxBytesReceived.Load()
-	stats.WireLengthSent = s.stats.muxBytesSent.Load()
-	for _, ss := range stats.sessions {
-		stats.BytesReceived += ss.BytesReceived
-		stats.BytesSent += ss.BytesSent
-		stats.WireLengthReceived += ss.WireLengthReceived
-		stats.WireLengthSent += ss.WireLengthSent
-	}
+	// Add cumulative bytes from already-closed sessions.
+	stats.BytesReceived += s.stats.payloadBytesReceived.Load()
+	stats.BytesSent += s.stats.payloadBytesSent.Load()
+	stats.WireLengthReceived += s.stats.muxBytesReceived.Load()
+	stats.WireLengthSent += s.stats.muxBytesSent.Load()
 	return
 }
 
@@ -323,7 +329,6 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
 	now := time.Now()
 	inbound := newTunnel("", s)
 	inbound.mu.Lock()
-	inbound.id = ss.PeerIdentity()
 	inbound.ss = ss
 	inbound.updateTagLocked(ss, nil)
 	tag := inbound.tag
@@ -399,10 +404,7 @@ func (s *Server) handleInboundStream(t *tunnel, peerIdentity string, stream net.
 		}
 	}
 	tag := formatStreamTag(false, cfg.Identity.Claim, peerIdentity, peerIdentityForTag, stream.LocalAddr(), stream.RemoteAddr(), stream)
-	dialAddr := cfg.ServiceEntry(peerIdentity).Connect
-	if dialAddr == "" {
-		dialAddr = cfg.Connect
-	}
+	dialAddr := cfg.Connect
 	if dialAddr == "" {
 		slog.Warningf("%s: no connect address configured", tag)
 		return
@@ -448,50 +450,115 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 	return listener, err
 }
 
-// loadSessions reconciles config-driven tunnels with cfg.
-func (s *Server) loadSessions(cfg *config.File) error {
+// loadTunnels reconciles identity listeners and outbound tunnels with cfg.
+func (s *Server) loadTunnels(cfg *config.File) error {
 	var errs []error
-	// Keys come from Identity.Listen names, Identity.MuxConnect addresses, and
-	// the default "" tunnel driven by the top-level Listen/MuxConnect fields.
-	activePeers := make(map[string]struct{})
-	for name := range cfg.Identity.Listen {
-		activePeers[name] = struct{}{}
-	}
-	for _, addr := range cfg.Identity.MuxConnect {
-		activePeers[addr] = struct{}{}
-	}
-	if cfg.Listen != "" || cfg.MuxConnect != "" {
-		activePeers[""] = struct{}{}
-	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for id, t := range s.identityTunnels {
-		if _, ok := activePeers[id]; ok {
-			delete(activePeers, id)
-		} else {
-			delete(s.identityTunnels, id)
-			if err := t.Stop(); err != nil {
-				slog.Errorf("session %q: %s", id, formats.Error(err))
-				errs = append(errs, fmt.Errorf("stop session %q: %w", id, err))
+
+	// === Part 0: Reconcile mainTunnel (top-level cfg.MuxConnect) ===
+	if s.mainTunnel != nil && s.mainTunnel.dialAddr != cfg.MuxConnect {
+		if err := s.mainTunnel.Stop(); err != nil {
+			tag := s.mainTunnel.tagValue()
+			slog.Errorf("%s: %s", tag, formats.Error(err))
+			errs = append(errs, fmt.Errorf("stop main tunnel: %w", err))
+		}
+		s.mainTunnel = nil
+	}
+	if cfg.MuxConnect != "" && s.mainTunnel == nil {
+		t := newTunnel(cfg.MuxConnect, s)
+		t.tag = t.buildTunnelTag(nil, nil)
+		s.mainTunnel = t
+		if err := t.Start(); err != nil {
+			tag := t.tagValue()
+			slog.Errorf("%s: start: %s", tag, formats.Error(err))
+			errs = append(errs, fmt.Errorf("start main tunnel: %w", err))
+		}
+	}
+
+	// === Part 0b: Reconcile localListener (top-level cfg.Listen) ===
+	if s.localListenAddr != cfg.Listen {
+		if s.localListener != nil {
+			ioClose(s.localListener)
+			s.localListener = nil
+			s.localListenAddr = ""
+		}
+		if cfg.Listen != "" {
+			l, err := s.Listen(cfg.Listen)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("listen %s: %w", cfg.Listen, err))
+			} else {
+				h := &LocalHandler{s: s, id: ""}
+				if err := s.g.Go(func() { s.Serve(l, h) }); err != nil {
+					slog.Errorf("local listen goroutine: %s", formats.Error(err))
+					errs = append(errs, fmt.Errorf("local listen goroutine: %w", err))
+					ioClose(l)
+				} else {
+					s.localListener = l
+					s.localListenAddr = cfg.Listen
+				}
 			}
 		}
 	}
-	for name := range activePeers {
-		// Listen-only entries have no dial target; outbound-only entries use the
-		// key itself because Identity.MuxConnect is keyed by address.
-		var dialAddr string
-		if name == "" {
-			dialAddr = cfg.MuxConnect
-		} else if _, isListen := cfg.Identity.Listen[name]; !isListen {
-			dialAddr = name
+
+	// === Part 1: Reconcile identity listeners (cfg.Identity.Listen) ===
+	activeListens := make(map[string]string)
+	for name, addr := range cfg.Identity.Listen {
+		activeListens[name] = addr
+	}
+	// Stop stale identity listeners.
+	for id, il := range s.identities {
+		if _, ok := activeListens[id]; ok {
+			delete(activeListens, id) // still active, retain
+		} else {
+			delete(s.identities, id)
+			il.stop()
 		}
-		ss := newTunnel(dialAddr, s)
-		ss.id = name
-		ss.tag = ss.buildTunnelTag(nil, nil)
-		s.identityTunnels[name] = ss
-		if err := ss.Start(cfg); err != nil {
-			tag := ss.tagValue()
+	}
+	// Create new identity listeners.
+	for id, listenAddr := range activeListens {
+		l, err := s.Listen(listenAddr)
+		if err != nil {
+			slog.Errorf("identity %q: listen: %s", id, formats.Error(err))
+			errs = append(errs, fmt.Errorf("identity %q: listen: %w", id, err))
+			continue
+		}
+		il := &identityListener{id: id, l: l}
+		if err := il.start(s); err != nil {
+			slog.Errorf("identity %q: start: %s", id, formats.Error(err))
+			errs = append(errs, fmt.Errorf("identity %q: start: %w", id, err))
+			ioClose(l)
+			continue
+		}
+		s.identities[id] = il
+	}
+
+	// === Part 2: Reconcile identityTunnels by position (cfg.Identity.MuxConnect) ===
+	desired := cfg.Identity.MuxConnect
+	// Find the first position where config diverges from the current slice.
+	keepCount := min(len(s.identityTunnels), len(desired))
+	for i := range keepCount {
+		if s.identityTunnels[i].dialAddr != desired[i] {
+			keepCount = i
+			break
+		}
+	}
+	// Stop tunnels past the keep boundary.
+	for i := keepCount; i < len(s.identityTunnels); i++ {
+		if err := s.identityTunnels[i].Stop(); err != nil {
+			slog.Errorf("tunnel %s: %s", s.identityTunnels[i].dialAddr, formats.Error(err))
+			errs = append(errs, fmt.Errorf("stop tunnel %s: %w", s.identityTunnels[i].dialAddr, err))
+		}
+	}
+	s.identityTunnels = s.identityTunnels[:keepCount]
+	// Create new tunnels for added entries.
+	for i := keepCount; i < len(desired); i++ {
+		t := newTunnel(desired[i], s)
+		t.tag = t.buildTunnelTag(nil, nil)
+		s.identityTunnels = append(s.identityTunnels, t)
+		if err := t.Start(); err != nil {
+			tag := t.tagValue()
 			slog.Errorf("%s: start: %s", tag, formats.Error(err))
 			errs = append(errs, fmt.Errorf("start %s: %w", tag, err))
 		}
@@ -660,7 +727,7 @@ func (s *Server) Start() error {
 		}
 		s.apiListener = l
 	}
-	if err := s.loadSessions(s.cfg); err != nil {
+	if err := s.loadTunnels(s.cfg); err != nil {
 		return err
 	}
 	if err := s.g.Go(s.maintenanceLoop); err != nil {
@@ -680,13 +747,32 @@ func (s *Server) Shutdown() error {
 		ioClose(s.apiListener)
 		s.apiListener = nil
 	}
-	// Stop config-driven tunnels first so their local listeners exit Accept().
+	// Snapshot all listeners and tunnels before stopping.
 	s.mu.RLock()
-	identity := make([]*tunnel, 0, len(s.identityTunnels))
-	for _, t := range s.identityTunnels {
-		identity = append(identity, t)
+	localL := s.localListener
+	listeners := make([]*identityListener, 0, len(s.identities))
+	for _, il := range s.identities {
+		listeners = append(listeners, il)
 	}
+	main := s.mainTunnel
+	identity := make([]*tunnel, len(s.identityTunnels))
+	copy(identity, s.identityTunnels)
 	s.mu.RUnlock()
+	// Close local listener so its Accept loop exits.
+	if localL != nil {
+		ioClose(localL)
+	}
+	// Stop identity listeners so their Accept loops exit.
+	for _, il := range listeners {
+		il.stop()
+	}
+	// Stop config-driven tunnels.
+	if main != nil {
+		if err := main.Stop(); err != nil {
+			tag := main.tagValue()
+			slog.Errorf("%s: %s", tag, formats.Error(err))
+		}
+	}
 	for _, t := range identity {
 		if err := t.Stop(); err != nil {
 			tag := t.tagValue()
@@ -736,7 +822,7 @@ func (s *Server) ReloadConfig(cfg *config.File) error {
 		errs = append(errs, err)
 	}
 	// 4. Sync config-driven tunnels.
-	if err := s.loadSessions(cfg); err != nil {
+	if err := s.loadTunnels(cfg); err != nil {
 		errs = append(errs, err)
 	}
 	// 5. Atomically swap config; retain old TLS config if reload failed.

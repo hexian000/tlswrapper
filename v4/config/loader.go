@@ -158,7 +158,7 @@ func (c *File) Validate() error {
 	// clamp timing fields
 	clampInt(&c.Mux.PingTimeout, 10, 86400)
 	clampInt(&c.Mux.KeepAlive, 10, 86400)
-	clampInt(&c.Mux.SendTimeout, 10, c.Mux.PingTimeout)
+	clampInt(&c.Mux.SendTimeout, 10, 86400)
 	clampInt(&c.Mux.ConnectTimeout, 10, 86400)
 	if c.Mux.IdleTimeout != 0 {
 		clampInt(&c.Mux.IdleTimeout, 10, 86400)

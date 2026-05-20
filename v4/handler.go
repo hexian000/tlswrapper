@@ -108,3 +108,21 @@ type EmptyHandler struct{}
 func (h *EmptyHandler) Serve(_ context.Context, accepted net.Conn) {
 	ioClose(accepted)
 }
+
+// identityListener owns a named local listener that routes inbound TCP
+// connections to the mux session identified by id.
+type identityListener struct {
+	id string
+	l  net.Listener
+}
+
+// start launches the accept loop for il in s's goroutine group.
+func (il *identityListener) start(s *Server) error {
+	h := &LocalHandler{s: s, id: il.id}
+	return s.g.Go(func() { s.Serve(il.l, h) })
+}
+
+// stop closes the listener.
+func (il *identityListener) stop() {
+	ioClose(il.l)
+}

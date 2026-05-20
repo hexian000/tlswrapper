@@ -72,7 +72,7 @@ func TestServerReloadConfigAddsAndRemovesTunnels(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
-		_, ok := s.identityTunnels["peer-a"]
+		_, ok := s.identities["peer-a"]
 		return ok
 	})
 	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
@@ -87,7 +87,7 @@ func TestServerReloadConfigAddsAndRemovesTunnels(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
-		return len(s.identityTunnels) == 0
+		return len(s.identities) == 0
 	})
 	conn, err = net.DialTimeout("tcp", listenAddr, 200*time.Millisecond)
 	if err == nil {
@@ -135,19 +135,19 @@ func TestLocalHandlerServe(t *testing.T) {
 	})
 
 	t.Run("forwards-stream", func(t *testing.T) {
+		// cli.PeerIdentity() == "peer-a"; LocalHandler{id: "peer-a"} finds it.
 		cli, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "peer-a"})
 		s := newTestServer(t, nil)
 		t.Cleanup(func() { _ = s.Shutdown() })
 		tn := newTunnel("", s)
-		tn.id = "peer-a"
-		tn.ss = srv
+		tn.ss = cli
 		s.mu.Lock()
-		s.identityTunnels[tn.id] = tn
+		s.identityTunnels = append(s.identityTunnels, tn)
 		s.mu.Unlock()
 
 		remoteCh := make(chan net.Conn, 1)
 		go func() {
-			conn, err := cli.Accept()
+			conn, err := srv.Accept()
 			if err != nil {
 				remoteCh <- nil
 				return
@@ -352,13 +352,12 @@ func TestServerStatsLatencyBranch(t *testing.T) {
 	t.Cleanup(func() { _ = s.Shutdown() })
 
 	// Inject a tunnel with recorded latency samples.
-	tn := newTunnel("", s)
-	tn.id = "latency-test"
+	tn := newTunnel("latency-test:0", s)
 	for i := 1; i <= 10; i++ {
 		tn.streamLatency.Record(time.Duration(i) * time.Millisecond)
 	}
 	s.mu.Lock()
-	s.identityTunnels[tn.id] = tn
+	s.identityTunnels = append(s.identityTunnels, tn)
 	s.mu.Unlock()
 
 	stats := s.Stats()

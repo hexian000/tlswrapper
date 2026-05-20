@@ -20,14 +20,12 @@ import (
 )
 
 // tunnel owns at most one active mux session.
-// Config-driven tunnels are tracked in Server.services and may also own a
-// listener plus a redial loop. Inbound tunnels are created for accepted
-// sessions and disappear with that session.
+// Config-driven outbound tunnels are tracked in Server.identityTunnels and own
+// a redial loop. Inbound tunnels are created for accepted sessions and
+// disappear with that session.
 type tunnel struct {
-	id       string // config key or remote identity; used for lookup and logging
 	dialAddr string // outbound dial target; empty for inbound accepted sessions
 	s        *Server
-	l        net.Listener // local TCP listener (only on config-driven tunnels with Listen)
 
 	mu            sync.RWMutex
 	tag           string
@@ -138,24 +136,8 @@ func (t *tunnel) tagValue() string {
 	return t.tag
 }
 
-// Start applies the current config to a config-driven tunnel.
-func (t *tunnel) Start(cfg *config.File) error {
-	if listenAddr := cfg.ServiceEntry(t.id).Listen; listenAddr != "" {
-		l, err := t.s.Listen(listenAddr)
-		if err != nil {
-			return err
-		}
-		tag := t.tagValue()
-		slog.Noticef("%s: listen %v", tag, l.Addr())
-		h := &LocalHandler{l: l, s: t.s, id: t.id}
-		if err := t.s.g.Go(func() {
-			t.s.Serve(l, h)
-		}); err != nil {
-			ioClose(l)
-			return err
-		}
-		t.l = l
-	}
+// Start launches the outbound redial loop for a config-driven tunnel.
+func (t *tunnel) Start() error {
 	if t.dialAddr != "" {
 		tag := t.tagValue()
 		slog.Debugf("%s: start outbound", tag)
@@ -164,16 +146,12 @@ func (t *tunnel) Start(cfg *config.File) error {
 	return nil
 }
 
-// Stop closes the listener and current session once.
+// Stop closes the current session once and signals the run loop to exit.
 func (t *tunnel) Stop() error {
 	t.stopOnce.Do(func() {
 		close(t.closeSig)
 		t.mu.Lock()
 		defer t.mu.Unlock()
-		if t.l != nil {
-			ioClose(t.l)
-			t.l = nil
-		}
 		if t.ss != nil {
 			ioClose(t.ss)
 			t.ss = nil
@@ -299,11 +277,6 @@ func (t *tunnel) run() {
 	defer func() {
 		t.mu.Lock()
 		defer t.mu.Unlock()
-		if t.l != nil {
-			slog.Infof("listener close: %v", t.l.Addr())
-			ioClose(t.l)
-			t.l = nil
-		}
 		if t.ss != nil {
 			ioClose(t.ss)
 			t.ss = nil
@@ -530,9 +503,9 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 
 // SessionStats snapshots the most recent session state for one tunnel key.
 type SessionStats struct {
-	Name        string
-	LastChanged time.Time
-	Active      bool
+	PeerIdentity string
+	LastChanged  time.Time
+	Active       bool
 	// gRPC transport statistics; zero when unavailable.
 	StreamsOpened      uint64
 	StreamsAccepted    uint64
@@ -546,40 +519,6 @@ type SessionStats struct {
 	// StreamLatency holds pre-computed percentiles of this tunnel's
 	// stream-open latency ring.
 	StreamLatency StreamLatencyStats
-}
-
-// getSessionName computes the display name; must be called with t.mu held.
-func (t *tunnel) getSessionName(active bool, peerIdentity string) string {
-	if active {
-		if peerIdentity != "" {
-			return peerIdentity
-		}
-		if a := t.ss.RemoteAddr(); a != nil {
-			if s := a.String(); s != "" {
-				return s
-			}
-		}
-		if a := t.ss.LocalAddr(); a != nil {
-			if s := a.String(); s != "" {
-				return s
-			}
-		}
-		panic("active session has no identity and no address")
-	}
-	if t.dialAddr != "" {
-		return t.dialAddr
-	}
-	if t.id != "" {
-		return t.id
-	}
-	if t.l != nil {
-		if a := t.l.Addr(); a != nil {
-			if s := a.String(); s != "" {
-				return s
-			}
-		}
-	}
-	panic("inactive tunnel has no dial address, id, or listener address")
 }
 
 // Stats snapshots the current session state.
@@ -604,10 +543,9 @@ func (t *tunnel) Stats() SessionStats {
 			wireLengthReceived = uint64(m.WireLengthReceived.Load())
 		}
 	}
-	name := t.getSessionName(active, peerIdentity)
 	p50, p90, p99, pmax, latOk := t.streamLatency.Percentiles()
 	return SessionStats{
-		Name:               name,
+		PeerIdentity:       peerIdentity,
 		LastChanged:        t.lastChanged,
 		Active:             active,
 		StreamsOpened:      streamsOpened,

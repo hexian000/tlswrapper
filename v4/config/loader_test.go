@@ -362,7 +362,7 @@ func TestDump(t *testing.T) {
 	}
 }
 
-func TestServiceEntry(t *testing.T) {
+func TestFindListen(t *testing.T) {
 	cfg := &File{
 		Listen:     "127.0.0.1:8000",
 		MuxConnect: "remote:7000",
@@ -377,26 +377,20 @@ func TestServiceEntry(t *testing.T) {
 	}
 
 	t.Run("default-entry", func(t *testing.T) {
-		e := cfg.ServiceEntry("")
-		if e.Listen != "127.0.0.1:8000" {
-			t.Fatalf("Listen = %q, want %q", e.Listen, "127.0.0.1:8000")
-		}
-		if e.Connect != "backend:9000" {
-			t.Fatalf("Connect = %q, want %q", e.Connect, "backend:9000")
+		if got := cfg.FindListen(""); got != "127.0.0.1:8000" {
+			t.Fatalf("FindListen(%q) = %q, want %q", "", got, "127.0.0.1:8000")
 		}
 	})
 
 	t.Run("named-peer-listen", func(t *testing.T) {
-		e := cfg.ServiceEntry("peer-a")
-		if e.Listen != "127.0.0.1:8001" {
-			t.Fatalf("Listen = %q, want %q", e.Listen, "127.0.0.1:8001")
+		if got := cfg.FindListen("peer-a"); got != "127.0.0.1:8001" {
+			t.Fatalf("FindListen(%q) = %q, want %q", "peer-a", got, "127.0.0.1:8001")
 		}
 	})
 
 	t.Run("unknown-peer", func(t *testing.T) {
-		e := cfg.ServiceEntry("unknown")
-		if e.Listen != "" {
-			t.Fatalf("Listen = %q, want empty", e.Listen)
+		if got := cfg.FindListen("unknown"); got != "" {
+			t.Fatalf("FindListen(%q) = %q, want empty", "unknown", got)
 		}
 	})
 }
