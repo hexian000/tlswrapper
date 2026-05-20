@@ -222,3 +222,62 @@ func TestForwarderCloseConns(t *testing.T) {
 		t.Fatal("expected error reading from peer after Close, got nil")
 	}
 }
+
+// closeWritePipe wraps a net.Conn and records CloseWrite invocations.
+type closeWritePipe struct {
+	net.Conn
+	mu         sync.Mutex
+	closeCount int
+}
+
+func (c *closeWritePipe) CloseWrite() error {
+	c.mu.Lock()
+	c.closeCount++
+	c.mu.Unlock()
+	return nil
+}
+
+// TestForwarderHalfCloseWrite verifies that when a copy direction finishes with
+// a clean EOF and the destination implements CloseWriter, CloseWrite is called
+// (rather than force-closing both connections).
+func TestForwarderHalfCloseWrite(t *testing.T) {
+	g := newTestGroup(t)
+	f := New(10, g)
+
+	rawAccepted, acceptedPeer := net.Pipe()
+	accepted := &closeWritePipe{Conn: rawAccepted}
+	dialed, dialedPeer := net.Pipe()
+
+	var closedWg sync.WaitGroup
+	closedWg.Add(1)
+	handler := HandlerFuncs{
+		Closed: func() { closedWg.Done() },
+	}
+
+	if err := f.Start(accepted, dialed, handler); err != nil {
+		t.Fatal("Start:", err)
+	}
+
+	// Closing dialedPeer causes dialed.Read() to return EOF.
+	// The run(accepted, dialed) goroutine copies dialed→accepted; the clean EOF
+	// should trigger accepted.CloseWrite() since accepted implements CloseWriter.
+	_ = dialedPeer.Close()
+
+	// Closing acceptedPeer ends the other copy direction.
+	_ = acceptedPeer.Close()
+
+	done := make(chan struct{})
+	go func() { closedWg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for forwarder OnClosed")
+	}
+
+	accepted.mu.Lock()
+	count := accepted.closeCount
+	accepted.mu.Unlock()
+	if count == 0 {
+		t.Fatal("CloseWrite was never called on the CloseWriter destination")
+	}
+}

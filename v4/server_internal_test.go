@@ -310,3 +310,61 @@ func TestServerReloadMuxListen(t *testing.T) {
 		return true
 	})
 }
+
+func TestMaxStreamsNonZero(t *testing.T) {
+	cfg := newTestConfig(t, map[string]any{
+		"mux": map[string]any{
+			"tcp":          map[string]any{"nodelay": true},
+			"max_streams":  42,
+			"timeout":      10,
+			"keepalive":    5,
+			"send_timeout": 8,
+		},
+	})
+	if got := maxStreams(cfg); got != 42 {
+		t.Fatalf("maxStreams() = %d, want 42", got)
+	}
+}
+
+func TestMaxStreamsDefault(t *testing.T) {
+	cfg := newTestConfig(t, nil)
+	if got := maxStreams(cfg); got != 1024 {
+		t.Fatalf("maxStreams() = %d, want 1024", got)
+	}
+}
+
+func TestServerReloadAPIListenInvalidAddr(t *testing.T) {
+	s := newTestServer(t, nil)
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	// Port 99999 is out of range; Listen must fail.
+	err := s.ReloadConfig(newTestConfig(t, map[string]any{
+		"api_listen": "127.0.0.1:99999",
+	}))
+	if err == nil {
+		t.Fatal("expected error for invalid api_listen address, got nil")
+	}
+}
+
+func TestServerStatsLatencyBranch(t *testing.T) {
+	s := newTestServer(t, nil)
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	// Inject a tunnel with recorded latency samples.
+	tn := newTunnel("", s)
+	tn.id = "latency-test"
+	for i := 1; i <= 10; i++ {
+		tn.streamLatency.Record(time.Duration(i) * time.Millisecond)
+	}
+	s.mu.Lock()
+	s.identityTunnels[tn.id] = tn
+	s.mu.Unlock()
+
+	stats := s.Stats()
+	if !stats.StreamLatency.Available {
+		t.Fatal("Stats().StreamLatency.Available = false, want true after recording latency samples")
+	}
+	if stats.StreamLatency.Max <= 0 {
+		t.Fatalf("Stats().StreamLatency.Max = %v, want > 0", stats.StreamLatency.Max)
+	}
+}

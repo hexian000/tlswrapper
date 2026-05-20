@@ -126,13 +126,16 @@ func makeKeyGenerator(keytype string, keysize int) (keyGenerator, error) {
 }
 
 func parsePEM(data []byte, blockType string) []byte {
-	var p *pem.Block
 	b := data
 	for {
-		p, b = pem.Decode(b)
-		if p == nil || p.Type == blockType {
+		p, rest := pem.Decode(b)
+		if p == nil {
+			return nil
+		}
+		if p.Type == blockType {
 			return p.Bytes
 		}
+		b = rest
 	}
 }
 

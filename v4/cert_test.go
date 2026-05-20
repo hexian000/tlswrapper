@@ -16,6 +16,7 @@ func TestMakeKeyGenerator(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "ecdsa-default", keytype: "ecdsa", keysize: 0},
+		{name: "ecdsa-p224", keytype: "ecdsa", keysize: 224},
 		{name: "ecdsa-p256", keytype: "ecdsa", keysize: 256},
 		{name: "ecdsa-p384", keytype: "ecdsa", keysize: 384},
 		{name: "ecdsa-p521", keytype: "ecdsa", keysize: 521},
@@ -61,6 +62,22 @@ func TestMakeKeyGeneratorRSA(t *testing.T) {
 	}
 	// We only verify that the generator is non-nil; actually generating a
 	// 4096-bit RSA key in a unit test is too slow.
+}
+
+// TestMakeKeyGeneratorRSASmall uses a 1024-bit key so the test finishes quickly
+// while still exercising the RSA generator function body.
+func TestMakeKeyGeneratorRSASmall(t *testing.T) {
+	gen, err := makeKeyGenerator("rsa", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubKey, key, err := gen()
+	if err != nil {
+		t.Fatal("rsa generator failed:", err)
+	}
+	if pubKey == nil || key == nil {
+		t.Fatal("rsa generator returned nil key material")
+	}
 }
 
 func TestNewCertificate(t *testing.T) {
@@ -202,4 +219,25 @@ func TestParsePEM(t *testing.T) {
 		}
 	})
 
+	t.Run("block-not-found", func(t *testing.T) {
+		der := parsePEM(certPEM, "NONEXISTENT")
+		if der != nil {
+			t.Fatal("expected nil DER when block type is absent")
+		}
+	})
+
+	t.Run("non-pem-data", func(t *testing.T) {
+		der := parsePEM([]byte("not pem data at all"), "CERTIFICATE")
+		if der != nil {
+			t.Fatal("expected nil DER for non-PEM input")
+		}
+	})
+
+	t.Run("skip-wrong-type", func(t *testing.T) {
+		// keyPEM contains only PRIVATE KEY blocks; querying for CERTIFICATE should return nil.
+		der := parsePEM(keyPEM, "CERTIFICATE")
+		if der != nil {
+			t.Fatal("expected nil DER when CERTIFICATE block not in key PEM")
+		}
+	})
 }

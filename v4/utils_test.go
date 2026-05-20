@@ -96,3 +96,80 @@ func TestSetTCPConnParamsLogsWarnings(t *testing.T) {
 		}
 	}
 }
+
+// errCloser is an io.Closer that always returns the stored error.
+type errCloser struct{ err error }
+
+func (c errCloser) Close() error { return c.err }
+
+func TestIoCloseError(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.Default()
+	logger.SetLevel(slog.LevelWarning)
+	logger.SetOutput(slog.OutputWriter, &buf)
+	defer logger.SetOutput(slog.OutputDiscard)
+
+	ioClose(errCloser{errors.New("disk full")})
+
+	if !bytes.Contains(buf.Bytes(), []byte("disk full")) {
+		t.Fatalf("log output %q does not contain %q", buf.String(), "disk full")
+	}
+}
+
+func TestIoCloseNoError(t *testing.T) {
+	// Closing without error must not panic or log anything.
+	ioClose(errCloser{nil})
+}
+
+func TestLatencyRingPercentilesEmpty(t *testing.T) {
+	var r latencyRing
+	_, _, _, _, ok := r.Percentiles()
+	if ok {
+		t.Fatal("Percentiles() ok = true on empty ring, want false")
+	}
+}
+
+func TestLatencyRingPercentiles(t *testing.T) {
+	var r latencyRing
+	// Record 100 samples: 1 ms … 100 ms.
+	for i := 1; i <= 100; i++ {
+		r.Record(time.Duration(i) * time.Millisecond)
+	}
+	p50, p90, p99, pmax, ok := r.Percentiles()
+	if !ok {
+		t.Fatal("Percentiles() ok = false, want true")
+	}
+	if p50 <= 0 {
+		t.Fatalf("p50 = %v, want > 0", p50)
+	}
+	if p90 < p50 {
+		t.Fatalf("p90 (%v) < p50 (%v)", p90, p50)
+	}
+	if p99 < p90 {
+		t.Fatalf("p99 (%v) < p90 (%v)", p99, p90)
+	}
+	if pmax < p99 {
+		t.Fatalf("pmax (%v) < p99 (%v)", pmax, p99)
+	}
+	if pmax != 100*time.Millisecond {
+		t.Fatalf("pmax = %v, want 100ms", pmax)
+	}
+}
+
+func TestLatencyRingSnapshot(t *testing.T) {
+	var r latencyRing
+	r.Record(1 * time.Millisecond)
+	r.Record(2 * time.Millisecond)
+	snap := r.Snapshot()
+	// At least one slot must be non-zero.
+	nonZero := false
+	for _, d := range snap {
+		if d != 0 {
+			nonZero = true
+			break
+		}
+	}
+	if !nonZero {
+		t.Fatal("Snapshot returned all zeros after recording samples")
+	}
+}
