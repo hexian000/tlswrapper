@@ -117,11 +117,11 @@ func formatStreamTag(outbound bool, identity, peerIdentity, peerID string, local
 
 func (t *tunnel) buildTunnelTag(ss mux.Session, conn net.Conn) string {
 	cfg, _ := t.getConfig()
-	peerID := t.id
+	peerID := t.dialAddr
 	var peerIdentity string
 	var localAddr, remoteAddr net.Addr
 	if ss != nil {
-		peerIdentity = ss.PeerID()
+		peerIdentity = ss.PeerIdentity()
 		localAddr = ss.LocalAddr()
 		remoteAddr = ss.RemoteAddr()
 	}
@@ -482,10 +482,10 @@ type SessionStats struct {
 }
 
 // getSessionName computes the display name; must be called with t.mu held.
-func (t *tunnel) getSessionName(active bool, peerID string) string {
+func (t *tunnel) getSessionName(active bool, peerIdentity string) string {
 	if active {
-		if peerID != "" {
-			return peerID
+		if peerIdentity != "" {
+			return peerIdentity
 		}
 		if a := t.ss.RemoteAddr(); a != nil {
 			if s := a.String(); s != "" {
@@ -499,13 +499,20 @@ func (t *tunnel) getSessionName(active bool, peerID string) string {
 		}
 		panic("active session has no identity and no address")
 	}
-	if t.id != "" {
-		return t.id
-	}
 	if t.dialAddr != "" {
 		return t.dialAddr
 	}
-	panic("inactive tunnel has no config key or dial address")
+	if t.id != "" {
+		return t.id
+	}
+	if t.l != nil {
+		if a := t.l.Addr(); a != nil {
+			if s := a.String(); s != "" {
+				return s
+			}
+		}
+	}
+	panic("inactive tunnel has no dial address, id, or listener address")
 }
 
 // Stats snapshots the current session state.
@@ -513,11 +520,11 @@ func (t *tunnel) Stats() SessionStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	active := t.ss != nil && !t.ss.IsClosed()
-	var peerID string
+	var peerIdentity string
 	var streamsOpened, streamsAccepted, streamsSucceeded, streamsFailed, bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
 	var numStreams uint32
 	if active {
-		peerID = t.ss.PeerID()
+		peerIdentity = t.ss.PeerIdentity()
 		if m := t.ss.Stats(); m != nil {
 			streamsOpened = uint64(m.StreamsOpened.Load())
 			streamsAccepted = uint64(m.StreamsAccepted.Load())
@@ -530,7 +537,7 @@ func (t *tunnel) Stats() SessionStats {
 			wireLengthReceived = uint64(m.WireLengthReceived.Load())
 		}
 	}
-	name := t.getSessionName(active, peerID)
+	name := t.getSessionName(active, peerIdentity)
 	p50, p90, p99, pmax, latOk := t.streamLatency.Percentiles()
 	return SessionStats{
 		Name:               name,

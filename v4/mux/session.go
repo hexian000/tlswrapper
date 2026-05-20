@@ -28,8 +28,8 @@ type Session interface {
 	// Stats returns the gRPC transport statistics for this session.
 	// Returns nil when stats collection is not available.
 	Stats() *SessionMetrics
-	// PeerID returns the remote identity claim.
-	PeerID() string
+	// PeerIdentity returns the remote identity claim.
+	PeerIdentity() string
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
 }
@@ -49,10 +49,10 @@ type session struct {
 
 	peerRejectsInbound bool
 
-	mu         sync.RWMutex
-	peerID     string
-	localAddr  net.Addr
-	remoteAddr net.Addr
+	mu           sync.RWMutex
+	peerIdentity string
+	localAddr    net.Addr
+	remoteAddr   net.Addr
 
 	openSeq   atomic.Uint64
 	closedCh  chan struct{}
@@ -135,11 +135,11 @@ func (ss *session) CloseChan() <-chan struct{} { return ss.closedCh }
 
 func (ss *session) Stats() *SessionMetrics { return ss.metrics }
 
-// PeerID returns the remote identity claim.
-func (ss *session) PeerID() string {
+// PeerIdentity returns the remote identity claim.
+func (ss *session) PeerIdentity() string {
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
-	return ss.peerID
+	return ss.peerIdentity
 }
 
 func (ss *session) LocalAddr() net.Addr { return ss.localAddr }
@@ -160,7 +160,7 @@ func newClientSession(
 	streamCtxCancel context.CancelFunc,
 	cleanup func(),
 	localAddr, remoteAddr net.Addr,
-	peerID string,
+	peerIdentity string,
 	peerRejectsInbound bool, metrics *SessionMetrics) *clientSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
@@ -174,7 +174,7 @@ func newClientSession(
 			pending:            make(map[string]chan net.Conn),
 			acceptCh:           make(chan net.Conn, 16),
 			peerRejectsInbound: peerRejectsInbound,
-			peerID:             peerID,
+			peerIdentity:       peerIdentity,
 			localAddr:          localAddr,
 			remoteAddr:         remoteAddr,
 			closedCh:           make(chan struct{}),
@@ -250,7 +250,7 @@ func newServerSession(
 	ctrl controlStream,
 	cleanup func(),
 	localAddr, remoteAddr net.Addr,
-	peerID string,
+	peerIdentity string,
 	peerRejectsInbound bool,
 	metrics *SessionMetrics,
 ) *serverSession {
@@ -266,7 +266,7 @@ func newServerSession(
 			pending:            make(map[string]chan net.Conn),
 			acceptCh:           make(chan net.Conn, 16),
 			peerRejectsInbound: peerRejectsInbound,
-			peerID:             peerID,
+			peerIdentity:       peerIdentity,
 			localAddr:          localAddr,
 			remoteAddr:         remoteAddr,
 			closedCh:           make(chan struct{}),

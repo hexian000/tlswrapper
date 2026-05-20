@@ -16,8 +16,8 @@ type controlStream interface {
 }
 
 // doClientHandshake sends ClientHello and waits for ServerHello on the control stream.
-// Returns peerID and peerRejectsInbound parsed from the ServerHello.
-func doClientHandshake(ctrl controlStream, localID string, rejectInbound bool) (peerID string, peerRejectsInbound bool, err error) {
+// Returns peerIdentity and peerRejectsInbound parsed from the ServerHello.
+func doClientHandshake(ctrl controlStream, localID string, rejectInbound bool) (peerIdentity string, peerRejectsInbound bool, err error) {
 	if err = ctrl.Send(&muxpb.ControlMessage{
 		Body: &muxpb.ControlMessage_ClientHello{
 			ClientHello: &muxpb.ClientHello{
@@ -38,14 +38,14 @@ func doClientHandshake(ctrl controlStream, localID string, rejectInbound bool) (
 		err = fmt.Errorf("%w: expected ServerHello, got %T", errUnexpectedMessage, msg.Body)
 		return
 	}
-	peerID = ack.ServerHello.GetIdentity()
+	peerIdentity = ack.ServerHello.GetIdentity()
 	peerRejectsInbound = ack.ServerHello.GetRejectInbound()
 	return
 }
 
 // doServerHandshake waits for ClientHello and replies with ServerHello on the control stream.
-// Returns peerID and peerRejectsInbound parsed from the ClientHello.
-func doServerHandshake(ctrl controlStream, localID string, rejectInbound bool) (peerID string, peerRejectsInbound bool, err error) {
+// Returns peerIdentity and peerRejectsInbound parsed from the ClientHello.
+func doServerHandshake(ctrl controlStream, localID string, rejectInbound bool) (peerIdentity string, peerRejectsInbound bool, err error) {
 	msg, err := ctrl.Recv()
 	if err != nil {
 		return
@@ -55,7 +55,7 @@ func doServerHandshake(ctrl controlStream, localID string, rejectInbound bool) (
 		err = fmt.Errorf("%w: expected ClientHello, got %T", errUnexpectedMessage, msg.Body)
 		return
 	}
-	peerID = hello.ClientHello.GetIdentity()
+	peerIdentity = hello.ClientHello.GetIdentity()
 	peerRejectsInbound = hello.ClientHello.GetRejectInbound()
 
 	err = ctrl.Send(&muxpb.ControlMessage{

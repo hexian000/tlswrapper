@@ -70,12 +70,12 @@ func TestDoClientHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{serverHelloMsg("srv", false)},
 		}
-		peerID, reject, err := doClientHandshake(ms, "cli", false)
+		peerIdentity, reject, err := doClientHandshake(ms, "cli", false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if peerID != "srv" {
-			t.Fatalf("peerID = %q, want %q", peerID, "srv")
+		if peerIdentity != "srv" {
+			t.Fatalf("peerIdentity = %q, want %q", peerIdentity, "srv")
 		}
 		if reject {
 			t.Fatal("rejectInbound should be false")
@@ -156,12 +156,12 @@ func TestDoServerHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{clientHelloMsg("cli", false)},
 		}
-		peerID, reject, err := doServerHandshake(ms, "srv", false)
+		peerIdentity, reject, err := doServerHandshake(ms, "srv", false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if peerID != "cli" {
-			t.Fatalf("peerID = %q, want %q", peerID, "cli")
+		if peerIdentity != "cli" {
+			t.Fatalf("peerIdentity = %q, want %q", peerIdentity, "cli")
 		}
 		if reject {
 			t.Fatal("rejectInbound should be false")

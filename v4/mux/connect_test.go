@@ -75,14 +75,14 @@ func transferAndVerify(t *testing.T, src, dst net.Conn, want []byte) {
 	}
 }
 
-func TestSessionPeerID(t *testing.T) {
+func TestSessionPeerIdentity(t *testing.T) {
 	cli, srv := pipeSession(t, &Config{LocalID: "client-id"}, &Config{LocalID: "server-id"})
 
-	if got := cli.PeerID(); got != "server-id" {
-		t.Fatalf("cli.PeerID() = %q, want %q", got, "server-id")
+	if got := cli.PeerIdentity(); got != "server-id" {
+		t.Fatalf("cli.PeerIdentity() = %q, want %q", got, "server-id")
 	}
-	if got := srv.PeerID(); got != "client-id" {
-		t.Fatalf("srv.PeerID() = %q, want %q", got, "client-id")
+	if got := srv.PeerIdentity(); got != "client-id" {
+		t.Fatalf("srv.PeerIdentity() = %q, want %q", got, "client-id")
 	}
 }
 

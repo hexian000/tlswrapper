@@ -72,12 +72,8 @@ func TestServerReloadConfigAddsAndRemovesTunnels(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
-		for _, t := range s.identityTunnels {
-			if t.id == "peer-a" {
-				return true
-			}
-		}
-		return false
+		_, ok := s.identityTunnels["peer-a"]
+		return ok
 	})
 	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
 	if err != nil {
@@ -146,7 +142,7 @@ func TestLocalHandlerServe(t *testing.T) {
 		tn.id = "peer-a"
 		tn.ss = srv
 		s.mu.Lock()
-		s.identityTunnels = append(s.identityTunnels, tn)
+		s.identityTunnels[tn.id] = tn
 		s.mu.Unlock()
 
 		remoteCh := make(chan net.Conn, 1)

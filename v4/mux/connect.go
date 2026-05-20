@@ -96,17 +96,17 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 
 	// Perform the client-side handshake in a goroutine so we can respect ctx's deadline.
 	type hsResult struct {
-		peerID             string
+		peerIdentity       string
 		peerRejectsInbound bool
 		err                error
 	}
 	hsCh := make(chan hsResult, 1)
 	go func() {
-		peerID, peerRejectsInbound, err := doClientHandshake(ctrlStream, cfg.LocalID, cfg.RejectInbound)
-		hsCh <- hsResult{peerID, peerRejectsInbound, err}
+		peerIdentity, peerRejectsInbound, err := doClientHandshake(ctrlStream, cfg.LocalID, cfg.RejectInbound)
+		hsCh <- hsResult{peerIdentity, peerRejectsInbound, err}
 	}()
 
-	var peerID string
+	var peerIdentity string
 	var peerRejectsInbound bool
 	select {
 	case res := <-hsCh:
@@ -115,7 +115,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 			_ = cc.Close()
 			return nil, fmt.Errorf("mux: handshake: %w", res.err)
 		}
-		peerID = res.peerID
+		peerIdentity = res.peerIdentity
 		peerRejectsInbound = res.peerRejectsInbound
 	case <-ctx.Done():
 		cancel()
@@ -135,7 +135,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
 		cancel,
 		cleanup,
 		conn.LocalAddr(), conn.RemoteAddr(),
-		peerID,
+		peerIdentity,
 		peerRejectsInbound,
 		&sh.metrics,
 	), nil
@@ -172,7 +172,7 @@ func newMuxServer(cfg *Config, localAddr, remoteAddr net.Addr, sh *muxStatsHandl
 // Control is the long-lived control stream handler. It performs the server-side
 // handshake, creates the Session, and then stays open until the session closes.
 func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
-	peerID, peerRejectsInbound, err := doServerHandshake(stream, svc.cfg.LocalID, svc.cfg.RejectInbound)
+	peerIdentity, peerRejectsInbound, err := doServerHandshake(stream, svc.cfg.LocalID, svc.cfg.RejectInbound)
 	if err != nil {
 		return err
 	}
@@ -181,7 +181,7 @@ func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
 		stream,
 		nil, // cleanup wired after grpcSrv reference is available in Server()
 		svc.localAddr, svc.remoteAddr,
-		peerID,
+		peerIdentity,
 		peerRejectsInbound,
 		&svc.sh.metrics,
 	)

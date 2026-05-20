@@ -73,7 +73,7 @@ func (h *LocalHandler) Serve(ctx context.Context, accepted net.Conn) {
 	tunnelTag := t.tagValue()
 	peerIdentity := ""
 	if sess := t.getSession(); sess != nil {
-		peerIdentity = sess.PeerID()
+		peerIdentity = sess.PeerIdentity()
 	}
 	dialed, err := t.OpenStream(ctx)
 	if err != nil {
