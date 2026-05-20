@@ -156,38 +156,38 @@
                     "default": 0
                 },
                 "connect_timeout": {
-                    "description": "Connection establishment timeout in seconds, covering TCP dial, TLS handshake, and mux protocol handshake. Clamped to [1, 86400]. Default: 15.",
+                    "description": "Connection establishment timeout in seconds, covering TCP dial, TLS handshake, and mux protocol handshake. Clamped to [10, 86400]. Default: 15.",
                     "type": "integer",
-                    "minimum": 1,
+                    "minimum": 10,
                     "maximum": 86400,
                     "default": 15
                 },
                 "timeout": {
-                    "description": "Session ping timeout in seconds. Clamped to [5, 86400]. Default: 15.",
+                    "description": "Session ping timeout in seconds. Clamped to [10, 86400]. Default: 15.",
                     "type": "integer",
-                    "minimum": 5,
+                    "minimum": 10,
                     "maximum": 86400,
                     "default": 15
                 },
                 "keepalive": {
-                    "description": "Keepalive probe interval in seconds. Clamped to [1, 86400]. Default: 25.",
+                    "description": "Keepalive probe interval in seconds. Clamped to [10, 86400]. Default: 300.",
                     "type": "integer",
-                    "minimum": 1,
+                    "minimum": 10,
                     "maximum": 86400,
-                    "default": 25
+                    "default": 300
                 },
                 "send_timeout": {
-                    "description": "Mux connection write timeout in seconds. Detects stalled links by timing out writes on the underlying mux connection. Clamped to [5, timeout]. Default: 15.",
+                    "description": "Mux connection write timeout in seconds. Detects stalled links by timing out writes on the underlying mux connection. Clamped to [10, timeout]. Default: 15.",
                     "type": "integer",
-                    "minimum": 5,
+                    "minimum": 10,
                     "maximum": 86400,
                     "default": 15
                 },
                 "idle_timeout": {
-                    "description": "Session idle timeout in seconds. 0 disables idle eviction; otherwise clamped to [5, 31557600]. Default: 0.",
+                    "description": "Session idle timeout in seconds. 0 disables idle eviction; otherwise clamped to [10, 86400]. Default: 0.",
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 31557600,
+                    "maximum": 86400,
                     "default": 0
                 }
             },

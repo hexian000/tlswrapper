@@ -37,11 +37,11 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 	h2cfg := &mux.Config{
 		TLSConfig:            tlscfg,
 		LocalID:              cfg.Identity.Claim,
-		WriteTimeout:         time.Duration(cfg.Mux.SendTimeout) * time.Second,
+		WriteTimeout:         cfg.SendTimeout(),
 		SessionWindow:        int32(cfg.Mux.SessionWindow),
 		StreamWindow:         int32(cfg.Mux.StreamWindow),
 		MaxConcurrentStreams: uint32(cfg.Mux.MaxHalfOpen),
-		IdleTimeout:          time.Duration(cfg.Mux.IdleTimeout) * time.Second,
+		IdleTimeout:          cfg.IdleTimeout(),
 	}
 	hsCtx, hsCancel := context.WithTimeout(ctx, cfg.ConnectTimeout())
 	defer hsCancel()

@@ -47,6 +47,27 @@ func (c *File) ConnectTimeout() time.Duration {
 	return time.Duration(c.Mux.ConnectTimeout) * time.Second
 }
 
+// PingTimeout returns the session ping timeout as a duration.
+func (c *File) PingTimeout() time.Duration {
+	return time.Duration(c.Mux.PingTimeout) * time.Second
+}
+
+// KeepAlive returns the keepalive probe interval as a duration.
+func (c *File) KeepAlive() time.Duration {
+	return time.Duration(c.Mux.KeepAlive) * time.Second
+}
+
+// SendTimeout returns the mux connection write timeout as a duration.
+func (c *File) SendTimeout() time.Duration {
+	return time.Duration(c.Mux.SendTimeout) * time.Second
+}
+
+// IdleTimeout returns the session idle eviction timeout as a duration.
+// A zero return means idle eviction is disabled.
+func (c *File) IdleTimeout() time.Duration {
+	return time.Duration(c.Mux.IdleTimeout) * time.Second
+}
+
 // NewTLSConfig creates a tls.Config from the TLS section.
 // Returns nil if TLS is not configured (plaintext mode).
 func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {

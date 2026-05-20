@@ -81,8 +81,8 @@ func TestValidate(t *testing.T) {
 		if err := c.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		if c.Mux.PingTimeout != 5 {
-			t.Fatalf("PingTimeout = %d, want 5", c.Mux.PingTimeout)
+		if c.Mux.PingTimeout != 10 {
+			t.Fatalf("PingTimeout = %d, want 10", c.Mux.PingTimeout)
 		}
 	})
 
@@ -104,8 +104,8 @@ func TestValidate(t *testing.T) {
 		if err := c.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		if c.Mux.SendTimeout != 5 {
-			t.Fatalf("SendTimeout = %d, want 5", c.Mux.SendTimeout)
+		if c.Mux.SendTimeout != 10 {
+			t.Fatalf("SendTimeout = %d, want 10", c.Mux.SendTimeout)
 		}
 	})
 
@@ -115,8 +115,8 @@ func TestValidate(t *testing.T) {
 		if err := c.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		if c.Mux.ConnectTimeout != 1 {
-			t.Fatalf("ConnectTimeout = %d, want 1", c.Mux.ConnectTimeout)
+		if c.Mux.ConnectTimeout != 10 {
+			t.Fatalf("ConnectTimeout = %d, want 10", c.Mux.ConnectTimeout)
 		}
 	})
 

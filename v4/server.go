@@ -574,6 +574,50 @@ func (s *Server) reloadAPIListen(cfg *config.File) error {
 	return nil
 }
 
+// timeoutAllSessions closes every active session without stopping the tunnels.
+// Config-driven tunnels will automatically redial; accepted tunnels are cleaned
+// up by their serveSession defer.
+func (s *Server) timeoutAllSessions() {
+	for _, t := range s.getAllTunnels() {
+		if ss := t.getSession(); ss != nil {
+			_ = ss.Close()
+		}
+	}
+}
+
+// maintenanceLoop runs server-level housekeeping on a 10-second ticker:
+//   - Drains one object from each sync.Pool to slowly return memory under low load.
+//   - Detects device sleep (wall-clock advancing far beyond the expected interval,
+//     as can happen on Android) and force-closes all sessions so they re-handshake
+//     with fresh state.
+func (s *Server) maintenanceLoop() {
+	const interval = 10 * time.Second
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	lastTick := time.Now()
+	for {
+		select {
+		case now := <-ticker.C:
+			elapsed := now.Sub(lastTick)
+			lastTick = now
+			// Slowly release pooled objects so the GC can reclaim idle memory.
+			mux.DrainPool()
+			forwarder.DrainPool()
+			// If the wall clock advanced more than the ping timeout the device
+			// almost certainly slept (common on Android). The peer would already
+			// have declared the session dead via keepalive, so force-close all
+			// sessions to trigger a clean re-handshake.
+			cfg, _ := s.getConfig()
+			if elapsed > cfg.PingTimeout() {
+				slog.Warningf("system sleep detected (elapsed: %v), closing all sessions", elapsed)
+				s.timeoutAllSessions()
+			}
+		case <-s.g.CloseC():
+			return
+		}
+	}
+}
+
 // Start brings up listeners, maintenance, and config-driven tunnels.
 func (s *Server) Start() error {
 	if s.cfg.MuxListen != "" {
@@ -619,6 +663,9 @@ func (s *Server) Start() error {
 	if err := s.loadSessions(s.cfg); err != nil {
 		return err
 	}
+	if err := s.g.Go(s.maintenanceLoop); err != nil {
+		return err
+	}
 	s.started = time.Now()
 	return nil
 }
@@ -656,7 +703,13 @@ func (s *Server) Shutdown() error {
 	}
 	s.f.Close()
 	slog.Info("waiting for unfinished connections")
-	s.g.Wait()
+	waitDone := make(chan struct{})
+	go func() { s.g.Wait(); close(waitDone) }()
+	select {
+	case <-waitDone:
+	case <-time.After(2 * time.Second):
+		slog.Warning("graceful shutdown timed out, forcing exit")
+	}
 	return nil
 }
 

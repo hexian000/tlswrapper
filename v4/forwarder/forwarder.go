@@ -27,6 +27,10 @@ var copyBufPool = sync.Pool{
 	},
 }
 
+// DrainPool discards one pooled buffer so the GC can reclaim it over time.
+// Intended for periodic background calls to slowly shrink the pool under low load.
+func DrainPool() { _ = copyBufPool.Get() }
+
 // CloseWriter is implemented by connections that support a half-close (write-side shutdown),
 // such as *net.TCPConn or mux client streams.
 type CloseWriter interface {

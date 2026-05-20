@@ -16,6 +16,10 @@ import (
 // chunkPool pools *muxpb.Chunk values to reduce per-write allocations.
 var chunkPool = sync.Pool{New: func() any { return &muxpb.Chunk{} }}
 
+// DrainPool discards one pooled object so the GC can reclaim it over time.
+// Intended for periodic background calls to slowly shrink the pool under low load.
+func DrainPool() { _ = chunkPool.Get() }
+
 // h2Addr is a simple net.Addr implementation used as a fallback.
 type h2Addr struct{ Addr string }
 

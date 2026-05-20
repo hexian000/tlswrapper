@@ -135,7 +135,7 @@ var Default = File{
 			Backlog:   16,
 		},
 		MaxHalfOpen:    256,
-		KeepAlive:      25,
+		KeepAlive:      300,
 		PingTimeout:    15,
 		SendTimeout:    15,
 		IdleTimeout:    0,

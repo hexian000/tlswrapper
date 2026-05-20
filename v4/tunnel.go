@@ -186,7 +186,7 @@ func (t *tunnel) Stop() error {
 
 func (t *tunnel) checkIdle() {
 	cfg, _ := t.getConfig()
-	idleTimeout := time.Duration(cfg.Mux.IdleTimeout) * time.Second
+	idleTimeout := cfg.IdleTimeout()
 	now := time.Now()
 
 	t.mu.Lock()
@@ -334,7 +334,7 @@ func (t *tunnel) watchIdleSession(ss mux.Session) {
 	groupCloseCh := t.s.g.CloseC()
 
 	cfg, _ := t.getConfig()
-	idleTimeout := time.Duration(cfg.Mux.IdleTimeout) * time.Second
+	idleTimeout := cfg.IdleTimeout()
 
 	// idle tracks whether we already know NumStreams==0 (idleCh just fired) so
 	// we can skip the outer wait and go straight to (re)starting the timer.
@@ -482,9 +482,9 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	h2cfg := &mux.Config{
 		TLSConfig:     tlscfg,
 		LocalID:       cfg.Identity.Claim,
-		KeepAlive:     time.Duration(cfg.Mux.KeepAlive) * time.Second,
-		PingTimeout:   time.Duration(cfg.Mux.PingTimeout) * time.Second,
-		WriteTimeout:  time.Duration(cfg.Mux.SendTimeout) * time.Second,
+		KeepAlive:     cfg.KeepAlive(),
+		PingTimeout:   cfg.PingTimeout(),
+		WriteTimeout:  cfg.SendTimeout(),
 		SessionWindow: int32(cfg.Mux.SessionWindow),
 		StreamWindow:  int32(cfg.Mux.StreamWindow),
 	}
