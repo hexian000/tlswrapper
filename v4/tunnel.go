@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
-	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/config"
 	"github.com/hexian000/tlswrapper/v4/mux"
@@ -42,17 +41,14 @@ type tunnel struct {
 	dialMu        sync.Mutex
 	lastChanged   time.Time
 	streamLatency latencyRing
-	muxStats      *snet.FlowStats // raw socket bytes for the current mux connection
 }
 
-func newTunnel(id, dialAddr string, s *Server) *tunnel {
+func newTunnel(dialAddr string, s *Server) *tunnel {
 	t := &tunnel{
-		id:        id,
 		dialAddr:  dialAddr,
 		s:         s,
 		closeSig:  make(chan struct{}),
 		redialSig: make(chan struct{}, 1),
-		muxStats:  &snet.FlowStats{},
 	}
 	t.tag = t.buildTunnelTag(nil, nil)
 	return t
@@ -416,8 +412,6 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
 	setTCPConnParams(cfg.Mux.TCP, rawConn)
-	t.muxStats = &snet.FlowStats{}
-	conn := snet.FlowMeter(rawConn, t.muxStats)
 	h2cfg := &mux.Config{
 		TLSConfig:     tlscfg,
 		LocalID:       cfg.Identity.Claim,
@@ -427,9 +421,9 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 		SessionWindow: int32(cfg.Mux.SessionWindow),
 		StreamWindow:  int32(cfg.Mux.StreamWindow),
 	}
-	ss, err := mux.Client(ctx, conn, h2cfg)
+	ss, err := mux.Client(ctx, rawConn, h2cfg)
 	if err != nil {
-		_ = conn.Close()
+		_ = rawConn.Close()
 		return nil, err
 	}
 
@@ -487,18 +481,43 @@ type SessionStats struct {
 	StreamLatency StreamLatencyStats
 }
 
+// getSessionName computes the display name; must be called with t.mu held.
+func (t *tunnel) getSessionName(active bool, peerID string) string {
+	if active {
+		if peerID != "" {
+			return peerID
+		}
+		if a := t.ss.RemoteAddr(); a != nil {
+			if s := a.String(); s != "" {
+				return s
+			}
+		}
+		if a := t.ss.LocalAddr(); a != nil {
+			if s := a.String(); s != "" {
+				return s
+			}
+		}
+		panic("active session has no identity and no address")
+	}
+	if t.id != "" {
+		return t.id
+	}
+	if t.dialAddr != "" {
+		return t.dialAddr
+	}
+	panic("inactive tunnel has no config key or dial address")
+}
+
 // Stats snapshots the current session state.
 func (t *tunnel) Stats() SessionStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	active := t.ss != nil && !t.ss.IsClosed()
-	name := t.id
+	var peerID string
 	var streamsOpened, streamsAccepted, streamsSucceeded, streamsFailed, bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
 	var numStreams uint32
 	if active {
-		if peerID := t.ss.PeerID(); peerID != "" {
-			name = peerID
-		}
+		peerID = t.ss.PeerID()
 		if m := t.ss.Stats(); m != nil {
 			streamsOpened = uint64(m.StreamsOpened.Load())
 			streamsAccepted = uint64(m.StreamsAccepted.Load())
@@ -511,6 +530,7 @@ func (t *tunnel) Stats() SessionStats {
 			wireLengthReceived = uint64(m.WireLengthReceived.Load())
 		}
 	}
+	name := t.getSessionName(active, peerID)
 	p50, p90, p99, pmax, latOk := t.streamLatency.Percentiles()
 	return SessionStats{
 		Name:               name,

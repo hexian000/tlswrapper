@@ -118,7 +118,7 @@ func TestAPIStatsHandler(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 		}
 		body := rec.Body.String()
-		for _, want := range []string{"Authorized", "Bandwidth"} {
+		for _, want := range []string{"Authorized", "Throughput"} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("body %q does not contain %q", body, want)
 			}

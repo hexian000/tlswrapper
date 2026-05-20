@@ -45,15 +45,14 @@ type Server struct {
 	apiListener net.Listener
 	f           forwarder.Forwarder
 
-	muxStats     *snet.FlowStats // cumulative mux socket bytes
-	wireStats    *snet.FlowStats // cumulative gRPC Stream wire bytes (Wire Traffic) from closed sessions
+	muxStats     *snet.FlowStats // cumulative mux wire bytes from closed sessions
 	payloadStats *snet.FlowStats // cumulative gRPC Stream payload bytes (TCP Traffic) from closed sessions
 	recentEvents eventlog.Recent
 
-	mu       sync.RWMutex
-	services map[string]*tunnel // config-driven tunnels keyed by config name, dial address, or ""
-	sessions []*tunnel          // all tunnels, including config-driven and inbound ephemeral
-	ctx      contextMgr
+	mu              sync.RWMutex
+	identityTunnels []*tunnel               // config-driven tunnels
+	acceptedTunnels map[mux.Session]*tunnel // inbound tunnels keyed by their mux session
+	ctx             contextMgr
 
 	dialer net.Dialer
 	g      routines.Group
@@ -75,14 +74,13 @@ type Server struct {
 func NewServer(cfg *config.File) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
-		cfg:      cfg,
-		services: make(map[string]*tunnel),
+		cfg:             cfg,
+		acceptedTunnels: make(map[mux.Session]*tunnel),
 		ctx: contextMgr{
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
 		f:            forwarder.New(maxStreams(cfg), g),
 		muxStats:     &snet.FlowStats{},
-		wireStats:    &snet.FlowStats{},
 		payloadStats: &snet.FlowStats{},
 		recentEvents: eventlog.NewRecent(100),
 		g:            g,
@@ -111,7 +109,7 @@ func maxStreams(cfg *config.File) int {
 func (s *Server) findSession(peerID string) *tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, ss := range s.sessions {
+	for _, ss := range s.identityTunnels {
 		if ss.id == peerID {
 			if ss.getSession() != nil {
 				return ss
@@ -125,11 +123,14 @@ func (s *Server) findSession(peerID string) *tunnel {
 	return nil
 }
 
-func (s *Server) getAllSessions() []*tunnel {
+func (s *Server) getAllTunnels() []*tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]*tunnel, len(s.sessions))
-	copy(result, s.sessions)
+	result := make([]*tunnel, 0, len(s.identityTunnels)+len(s.acceptedTunnels))
+	result = append(result, s.identityTunnels...)
+	for _, t := range s.acceptedTunnels {
+		result = append(result, t)
+	}
 	return result
 }
 
@@ -140,7 +141,7 @@ func (s *Server) maintenanceLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			for _, t := range s.getAllSessions() {
+			for _, t := range s.getAllTunnels() {
 				t.checkIdle()
 			}
 		case <-s.g.CloseC():
@@ -153,41 +154,22 @@ func (s *Server) maintenanceLoop() {
 // After a config reload, stale sessions are evicted by maintenanceLoop
 // as soon as they become idle (no active streams), behaving like idle_timeout=0.
 func (s *Server) markSessionsStale() {
-	for _, t := range s.getAllSessions() {
+	for _, t := range s.getAllTunnels() {
 		t.mu.Lock()
 		t.stale = true
 		t.mu.Unlock()
 	}
 }
 
-func (s *Server) addSession(ss *tunnel) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessions = append(s.sessions, ss)
-}
-
-func (s *Server) removeSession(target *tunnel) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i, ss := range s.sessions {
-		if ss == target {
-			s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
-			return
-		}
-	}
-}
-
 // flushSessionMetrics accumulates a closing session's gRPC byte counters into
-// the server-level totals so Wire/TCP Traffic survive session reconnects.
+// the server-level totals so Mux/TCP Traffic survive session reconnects.
 func (s *Server) flushSessionMetrics(t *tunnel, ss mux.Session) {
 	if m := ss.Stats(); m != nil {
 		s.payloadStats.Read.Add(m.BytesReceived.Load())
 		s.payloadStats.Written.Add(m.BytesSent.Load())
-		s.wireStats.Read.Add(m.WireLengthReceived.Load())
-		s.wireStats.Written.Add(m.WireLengthSent.Load())
+		s.muxStats.Read.Add(m.WireLengthReceived.Load())
+		s.muxStats.Written.Add(m.WireLengthSent.Load())
 	}
-	s.muxStats.Read.Add(t.muxStats.Read.Load())
-	s.muxStats.Written.Add(t.muxStats.Written.Load())
 }
 
 // StreamLatencyStats holds P50/P90/P99/MAX percentiles for stream open latency.
@@ -207,7 +189,6 @@ type ServerStats struct {
 	StreamOpenActive                   uint64
 	StreamOpenPassive                  uint64
 	StreamLatency                      StreamLatencyStats
-	Rx, Tx                             uint64
 	BytesReceived, BytesSent           uint64
 	WireLengthReceived, WireLengthSent uint64
 	Accepted                           uint64
@@ -223,14 +204,12 @@ func (s *Server) Stats() (stats ServerStats) {
 	if s.l != nil {
 		stats.Accepted, stats.Served = s.l.Stats()
 	}
-	allTunnels := s.getAllSessions()
+	allTunnels := s.getAllTunnels()
 	sessionMap := make(map[string]SessionStats)
 	for _, t := range allTunnels {
 		v := t.Stats()
 		if v.Active {
 			stats.NumSessions++
-			stats.Rx += t.muxStats.Read.Load()
-			stats.Tx += t.muxStats.Written.Load()
 		}
 		if prev, ok := sessionMap[v.Name]; !ok || v.LastChanged.After(prev.LastChanged) {
 			sessionMap[v.Name] = v
@@ -239,8 +218,6 @@ func (s *Server) Stats() (stats ServerStats) {
 	for _, sstats := range sessionMap {
 		stats.sessions = append(stats.sessions, sstats)
 	}
-	stats.Rx += s.muxStats.Read.Load()
-	stats.Tx += s.muxStats.Written.Load()
 	stats.Authorized = s.stats.authorized.Load()
 	stats.ReqTotal, stats.ReqSuccess = s.stats.request.Load(), s.stats.success.Load()
 	stats.NumHalfOpen = s.stats.numHalfOpen.Load()
@@ -277,8 +254,8 @@ func (s *Server) Stats() (stats ServerStats) {
 	}
 	stats.BytesReceived = s.payloadStats.Read.Load()
 	stats.BytesSent = s.payloadStats.Written.Load()
-	stats.WireLengthReceived = s.wireStats.Read.Load()
-	stats.WireLengthSent = s.wireStats.Written.Load()
+	stats.WireLengthReceived = s.muxStats.Read.Load()
+	stats.WireLengthSent = s.muxStats.Written.Load()
 	for _, ss := range stats.sessions {
 		stats.BytesReceived += ss.BytesReceived
 		stats.BytesSent += ss.BytesSent
@@ -341,7 +318,7 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 // serveSession handles one accepted mux session.
 // It creates an inbound ephemeral tunnel, keeps it registered for lookup, and
 // removes it when the underlying mux session closes.
-func (s *Server) serveSession(ss mux.Session, setupDur time.Duration, flowStats *snet.FlowStats) {
+func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
 	// When the group closes, close ss to unblock Accept().
 	if err := s.g.Go(func() {
 		select {
@@ -353,9 +330,9 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration, flowStats 
 		return
 	}
 	now := time.Now()
-	inbound := newTunnel(ss.PeerID(), "", s)
-	inbound.muxStats = flowStats
+	inbound := newTunnel("", s)
 	inbound.mu.Lock()
+	inbound.id = ss.PeerID()
 	inbound.ss = ss
 	inbound.updateTagLocked(ss, nil)
 	tag := inbound.tag
@@ -365,7 +342,9 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration, flowStats 
 	slog.Notice(msg)
 	s.recentEvents.Add(now, msg)
 	s.stats.authorized.Add(1)
-	s.addSession(inbound)
+	s.mu.Lock()
+	s.acceptedTunnels[ss] = inbound
+	s.mu.Unlock()
 	s.stats.numSessions.Add(1)
 	s.stats.numSessionsCreated.Add(1)
 	defer func() {
@@ -376,7 +355,9 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration, flowStats 
 		s.flushSessionMetrics(inbound, ss)
 		s.stats.numSessions.Add(^uint32(0))
 		s.stats.numSessionsFinalized.Add(1)
-		s.removeSession(inbound)
+		s.mu.Lock()
+		delete(s.acceptedTunnels, ss)
+		s.mu.Unlock()
 	}()
 	for {
 		stream, err := ss.Accept()
@@ -493,25 +474,20 @@ func (s *Server) loadSessions(cfg *config.File) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for name, ss := range s.services {
-		if _, ok := activePeers[name]; !ok {
-			if err := ss.Stop(); err != nil {
-				slog.Errorf("session %q: %s", name, formats.Error(err))
-				errs = append(errs, fmt.Errorf("stop session %q: %w", name, err))
+	kept := s.identityTunnels[:0:0]
+	for _, t := range s.identityTunnels {
+		if _, ok := activePeers[t.id]; ok {
+			kept = append(kept, t)
+			delete(activePeers, t.id)
+		} else {
+			if err := t.Stop(); err != nil {
+				slog.Errorf("session %q: %s", t.id, formats.Error(err))
+				errs = append(errs, fmt.Errorf("stop session %q: %w", t.id, err))
 			}
-			for i, t := range s.sessions {
-				if t == ss {
-					s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
-					break
-				}
-			}
-			delete(s.services, name)
 		}
 	}
+	s.identityTunnels = kept
 	for name := range activePeers {
-		if _, exists := s.services[name]; exists {
-			continue
-		}
 		// Listen-only entries have no dial target; outbound-only entries use the
 		// key itself because Identity.MuxConnect is keyed by address.
 		var dialAddr string
@@ -520,9 +496,10 @@ func (s *Server) loadSessions(cfg *config.File) error {
 		} else if _, isListen := cfg.Identity.Listen[name]; !isListen {
 			dialAddr = name
 		}
-		ss := newTunnel(name, dialAddr, s)
-		s.services[name] = ss
-		s.sessions = append(s.sessions, ss)
+		ss := newTunnel(dialAddr, s)
+		ss.id = name
+		ss.tag = ss.buildTunnelTag(nil, nil)
+		s.identityTunnels = append(s.identityTunnels, ss)
 		if err := ss.Start(cfg); err != nil {
 			tag := ss.tagValue()
 			slog.Errorf("%s: start: %s", tag, formats.Error(err))
@@ -671,21 +648,19 @@ func (s *Server) Shutdown() error {
 	}
 	// Stop config-driven tunnels first so their local listeners exit Accept().
 	s.mu.RLock()
-	services := make([]*tunnel, 0, len(s.services))
-	for _, ss := range s.services {
-		services = append(services, ss)
-	}
+	identity := make([]*tunnel, len(s.identityTunnels))
+	copy(identity, s.identityTunnels)
 	s.mu.RUnlock()
-	for _, ss := range services {
-		if err := ss.Stop(); err != nil {
-			tag := ss.tagValue()
+	for _, t := range identity {
+		if err := t.Stop(); err != nil {
+			tag := t.tagValue()
 			slog.Errorf("%s: %s", tag, formats.Error(err))
 		}
 	}
 	s.ctx.close()
 	s.g.Close()
 	// Closing sessions unblocks any remaining Accept loops.
-	for _, ss := range s.getAllSessions() {
+	for _, ss := range s.getAllTunnels() {
 		if ss := ss.getSession(); ss != nil {
 			_ = ss.Close()
 		}

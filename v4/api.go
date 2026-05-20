@@ -143,12 +143,13 @@ func printMemStats(w io.Writer) {
 }
 
 type apiStats struct {
-	Accepted   uint64
-	Served     uint64
-	ReqTotal   uint64
-	ReqSuccess uint64
-	Rx, Tx     uint64
-	Timestamp  time.Time
+	Accepted                           uint64
+	Served                             uint64
+	ReqTotal                           uint64
+	ReqSuccess                         uint64
+	WireLengthReceived, WireLengthSent uint64
+	BytesReceived, BytesSent           uint64
+	Timestamp                          time.Time
 }
 
 type apiStatsHandler struct {
@@ -233,10 +234,8 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fprintf(w, "%-20s: (never)\n", "Stream Latency")
 	}
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Mux Traffic",
-		formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
-	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Wire Traffic",
 		formats.IECBytes(float64(stats.WireLengthReceived)), formats.IECBytes(float64(stats.WireLengthSent)))
-	fprintf(w, "%-20s: Rx %s, Tx %s\n", "TCP Traffic",
+	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Stream Traffic",
 		formats.IECBytes(float64(stats.BytesReceived)), formats.IECBytes(float64(stats.BytesSent)))
 	rejected := stats.Accepted - stats.Served
 	fprintf(w, "%-20s: %d (%+d rejected)\n", "Listener Accepts",
@@ -255,13 +254,17 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fprintf(w, "%-20s: %.1f/s (%+.1f/s)\n", "Request Rate",
 			float64(stats.ReqSuccess-h.last.ReqSuccess)/dt,
 			float64((stats.ReqTotal-h.last.ReqTotal)-(stats.ReqSuccess-h.last.ReqSuccess))/dt)
-		fprintf(w, "%-20s: Rx %s/s, Tx %s/s\n", "Bandwidth",
-			formats.IECBytes(float64(stats.Rx-h.last.Rx)/dt),
-			formats.IECBytes(float64(stats.Tx-h.last.Tx)/dt))
+		fprintf(w, "%-20s: Rx %s/s, Tx %s/s\n", "Mux Throughput",
+			formats.IECBytes(float64(stats.WireLengthReceived-h.last.WireLengthReceived)/dt),
+			formats.IECBytes(float64(stats.WireLengthSent-h.last.WireLengthSent)/dt))
+		fprintf(w, "%-20s: Rx %s/s, Tx %s/s\n", "Stream Throughput",
+			formats.IECBytes(float64(stats.BytesReceived-h.last.BytesReceived)/dt),
+			formats.IECBytes(float64(stats.BytesSent-h.last.BytesSent)/dt))
 
 		h.last.Accepted, h.last.Served = stats.Accepted, stats.Served
 		h.last.ReqTotal, h.last.ReqSuccess = stats.ReqTotal, stats.ReqSuccess
-		h.last.Rx, h.last.Tx = stats.Rx, stats.Tx
+		h.last.WireLengthReceived, h.last.WireLengthSent = stats.WireLengthReceived, stats.WireLengthSent
+		h.last.BytesReceived, h.last.BytesSent = stats.BytesReceived, stats.BytesSent
 		h.last.Timestamp = now
 	}
 
@@ -273,10 +276,7 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if (ss.LastChanged != time.Time{}) {
 			status := "offline"
 			if ss.Active {
-				status = fmt.Sprintf("Rx %s, Tx %s; %d streams",
-					formats.IECBytes(float64(ss.BytesReceived)),
-					formats.IECBytes(float64(ss.BytesSent)),
-					ss.NumStreams)
+				status = fmt.Sprintf("%d streams", ss.NumStreams)
 			}
 			fprintf(w, "%-20s: %s %s\n", ss.Name, ss.LastChanged.Format(slog.TimeLayout), status)
 		} else {
@@ -298,8 +298,6 @@ type serverMetricsCollector struct {
 	uptimeDesc          *prometheus.Desc
 	sessionsDesc        *prometheus.Desc
 	streamsDesc         *prometheus.Desc
-	rxBytesDesc         *prometheus.Desc
-	txBytesDesc         *prometheus.Desc
 	acceptedDesc        *prometheus.Desc
 	servedDesc          *prometheus.Desc
 	authorizedDesc      *prometheus.Desc
@@ -332,14 +330,6 @@ func newServerMetricsCollector(s *Server) prometheus.Collector {
 		streamsDesc: prometheus.NewDesc(
 			"tlswrapper_streams",
 			"Number of active streams.",
-			nil, nil),
-		rxBytesDesc: prometheus.NewDesc(
-			"tlswrapper_rx_bytes_total",
-			"Total bytes received.",
-			nil, nil),
-		txBytesDesc: prometheus.NewDesc(
-			"tlswrapper_tx_bytes_total",
-			"Total bytes transmitted.",
 			nil, nil),
 		acceptedDesc: prometheus.NewDesc(
 			"tlswrapper_accepted_total",
@@ -408,8 +398,6 @@ func (c *serverMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.uptimeDesc
 	ch <- c.sessionsDesc
 	ch <- c.streamsDesc
-	ch <- c.rxBytesDesc
-	ch <- c.txBytesDesc
 	ch <- c.acceptedDesc
 	ch <- c.servedDesc
 	ch <- c.authorizedDesc
@@ -435,10 +423,6 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		now.Sub(c.s.started).Seconds())
 	ch <- prometheus.MustNewConstMetric(c.sessionsDesc, prometheus.GaugeValue,
 		float64(stats.NumSessions))
-	ch <- prometheus.MustNewConstMetric(c.rxBytesDesc, prometheus.CounterValue,
-		float64(stats.Rx))
-	ch <- prometheus.MustNewConstMetric(c.txBytesDesc, prometheus.CounterValue,
-		float64(stats.Tx))
 	ch <- prometheus.MustNewConstMetric(c.acceptedDesc, prometheus.CounterValue,
 		float64(stats.Accepted))
 	ch <- prometheus.MustNewConstMetric(c.servedDesc, prometheus.CounterValue,

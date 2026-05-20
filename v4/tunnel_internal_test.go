@@ -13,7 +13,7 @@ func TestTunnelCheckIdle(t *testing.T) {
 	t.Run("clears-closed-session", func(t *testing.T) {
 		_, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "server"})
 		_ = srv.Close()
-		tn := newTunnel("peer-a", "", newTestServer(t, nil))
+		tn := newTunnel("", newTestServer(t, nil))
 		tn.ss = srv
 		tn.idleSince = time.Now()
 		tn.checkIdle()
@@ -27,7 +27,7 @@ func TestTunnelCheckIdle(t *testing.T) {
 
 	t.Run("evicts-idle-session", func(t *testing.T) {
 		_, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "server"})
-		tn := newTunnel("peer-a", "", newTestServer(t, map[string]any{"mux": map[string]any{"idle_timeout": 5}}))
+		tn := newTunnel("", newTestServer(t, map[string]any{"mux": map[string]any{"idle_timeout": 5}}))
 		tn.ss = srv
 		tn.idleSince = time.Now().Add(-6 * time.Second)
 		tn.checkIdle()
@@ -41,7 +41,7 @@ func TestTunnelCheckIdle(t *testing.T) {
 }
 
 func TestTunnelSchedule(t *testing.T) {
-	tn := newTunnel("peer-a", "", newTestServer(t, nil))
+	tn := newTunnel("", newTestServer(t, nil))
 	if ch := tn.schedule(); ch == nil {
 		t.Fatal("expected schedule channel")
 	}
@@ -54,7 +54,7 @@ func TestTunnelSchedule(t *testing.T) {
 
 func TestTunnelRedialFailureIncrementsCount(t *testing.T) {
 	addr := freePort(t)
-	tn := newTunnel("peer-a", addr, newTestServer(t, map[string]any{"identity": map[string]any{"claim": "local"}}))
+	tn := newTunnel(addr, newTestServer(t, map[string]any{"identity": map[string]any{"claim": "local"}}))
 	tn.redial()
 	if tn.redialCount != 1 {
 		t.Fatalf("redialCount = %d, want 1", tn.redialCount)
@@ -87,7 +87,7 @@ func TestTunnelRedialSuccessAndDelSession(t *testing.T) {
 
 	s := newTestServer(t, map[string]any{"identity": map[string]any{"claim": "local"}})
 	t.Cleanup(func() { _ = s.Shutdown() })
-	tn := newTunnel("peer-a", l.Addr().String(), s)
+	tn := newTunnel(l.Addr().String(), s)
 	tn.redialCount = 2
 	tn.redial()
 	if tn.redialCount != 0 {
@@ -111,4 +111,51 @@ func TestTunnelRedialSuccessAndDelSession(t *testing.T) {
 		t.Fatal("expected redial signal")
 	}
 	_ = remote.Close()
+}
+
+func TestRenderSessionName(t *testing.T) {
+	s := newTestServer(t, nil)
+
+	t.Run("prefers-active-peer-id", func(t *testing.T) {
+		tn := newTunnel("", s)
+		tn.id = "cfg-key"
+		if got := tn.getSessionName(true, "peer-a"); got != "peer-a" {
+			t.Fatalf("renderSessionName() = %q, want %q", got, "peer-a")
+		}
+	})
+
+	t.Run("uses-id-when-inactive", func(t *testing.T) {
+		tn := newTunnel("", s)
+		tn.id = "cfg-key"
+		if got := tn.getSessionName(false, "peer-a"); got != "cfg-key" {
+			t.Fatalf("renderSessionName() = %q, want %q", got, "cfg-key")
+		}
+	})
+
+	t.Run("falls-back-to-remote-addr", func(t *testing.T) {
+		cli, _ := newMuxSessionPair(t, &mux.Config{}, &mux.Config{})
+		tn := newTunnel("", s)
+		tn.ss = cli
+		got := tn.getSessionName(true, "")
+		if got == "" || got == "session" {
+			t.Fatalf("expected address-based name, got %q", got)
+		}
+	})
+
+	t.Run("falls-back-to-dial-addr", func(t *testing.T) {
+		tn := newTunnel("127.0.0.1:8443", s)
+		if got := tn.getSessionName(false, ""); got != "127.0.0.1:8443" {
+			t.Fatalf("getSessionName() = %q, want %q", got, "127.0.0.1:8443")
+		}
+	})
+
+	t.Run("panics-when-inactive-and-no-config-key", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic when no config key")
+			}
+		}()
+		tn := newTunnel("", s)
+		_ = tn.getSessionName(false, "")
+	})
 }

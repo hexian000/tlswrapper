@@ -72,8 +72,12 @@ func TestServerReloadConfigAddsAndRemovesTunnels(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
-		_, ok := s.services["peer-a"]
-		return ok
+		for _, t := range s.identityTunnels {
+			if t.id == "peer-a" {
+				return true
+			}
+		}
+		return false
 	})
 	conn, err := net.DialTimeout("tcp", listenAddr, 2*time.Second)
 	if err != nil {
@@ -87,7 +91,7 @@ func TestServerReloadConfigAddsAndRemovesTunnels(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
-		return len(s.services) == 0
+		return len(s.identityTunnels) == 0
 	})
 	conn, err = net.DialTimeout("tcp", listenAddr, 200*time.Millisecond)
 	if err == nil {
@@ -138,9 +142,12 @@ func TestLocalHandlerServe(t *testing.T) {
 		cli, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "peer-a"})
 		s := newTestServer(t, nil)
 		t.Cleanup(func() { _ = s.Shutdown() })
-		tn := newTunnel("peer-a", "", s)
+		tn := newTunnel("", s)
+		tn.id = "peer-a"
 		tn.ss = srv
-		s.addSession(tn)
+		s.mu.Lock()
+		s.identityTunnels = append(s.identityTunnels, tn)
+		s.mu.Unlock()
 
 		remoteCh := make(chan net.Conn, 1)
 		go func() {
@@ -199,10 +206,12 @@ func TestServerStaleSessionsAfterReload(t *testing.T) {
 		_ = cli.Close()
 		_ = srv.Close()
 	})
-	tn := newTunnel("peer-a", "", s)
+	tn := newTunnel("", s)
 	tn.ss = srv
 	tn.lastChanged = time.Now()
-	s.addSession(tn)
+	s.mu.Lock()
+	s.acceptedTunnels[srv] = tn
+	s.mu.Unlock()
 
 	// Trigger reload — this marks tn as stale.
 	if err := s.ReloadConfig(newTestConfig(t, nil)); err != nil {

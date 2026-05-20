@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
-	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/forwarder"
 	"github.com/hexian000/tlswrapper/v4/mux"
@@ -32,8 +31,6 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 	cfg, tlscfg := h.s.getConfig()
 	tag := formatTunnelTag(false, cfg.Identity.Claim, "", "", conn.LocalAddr(), conn.RemoteAddr(), conn)
 	setTCPConnParams(cfg.Mux.TCP, conn)
-	flowStats := &snet.FlowStats{}
-	conn = snet.FlowMeter(conn, flowStats)
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
@@ -53,7 +50,7 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
 	}
-	h.s.serveSession(ss, time.Since(start), flowStats)
+	h.s.serveSession(ss, time.Since(start))
 }
 
 // LocalHandler forwards accepted local connections over a matching mux session.
