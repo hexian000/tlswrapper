@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
-	snet "github.com/hexian000/gosnippets/net"
 	"github.com/hexian000/gosnippets/net/hlistener"
 	"github.com/hexian000/gosnippets/routines"
 	"github.com/hexian000/gosnippets/slog"
@@ -45,8 +44,6 @@ type Server struct {
 	apiListener net.Listener
 	f           forwarder.Forwarder
 
-	muxStats     *snet.FlowStats // cumulative mux wire bytes from closed sessions
-	payloadStats *snet.FlowStats // cumulative gRPC Stream payload bytes (TCP Traffic) from closed sessions
 	recentEvents eventlog.Recent
 
 	mu              sync.RWMutex
@@ -67,6 +64,10 @@ type Server struct {
 		authorized           atomic.Uint64
 		request              atomic.Uint64
 		success              atomic.Uint64
+		muxBytesReceived     atomic.Uint64 // cumulative mux wire bytes received from closed sessions
+		muxBytesSent         atomic.Uint64 // cumulative mux wire bytes sent from closed sessions
+		payloadBytesReceived atomic.Uint64 // cumulative gRPC Stream payload bytes received (TCP Traffic) from closed sessions
+		payloadBytesSent     atomic.Uint64 // cumulative gRPC Stream payload bytes sent (TCP Traffic) from closed sessions
 	}
 }
 
@@ -81,8 +82,6 @@ func NewServer(cfg *config.File) (*Server, error) {
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
 		f:            forwarder.New(maxStreams(cfg), g),
-		muxStats:     &snet.FlowStats{},
-		payloadStats: &snet.FlowStats{},
 		recentEvents: eventlog.NewRecent(100),
 		g:            g,
 	}
@@ -157,10 +156,10 @@ func (s *Server) markSessionsStale() {
 // the server-level totals so Mux/TCP Traffic survive session reconnects.
 func (s *Server) flushSessionMetrics(t *tunnel, ss mux.Session) {
 	if m := ss.Stats(); m != nil {
-		s.payloadStats.Read.Add(m.BytesReceived.Load())
-		s.payloadStats.Written.Add(m.BytesSent.Load())
-		s.muxStats.Read.Add(m.WireLengthReceived.Load())
-		s.muxStats.Written.Add(m.WireLengthSent.Load())
+		s.stats.payloadBytesReceived.Add(m.BytesReceived.Load())
+		s.stats.payloadBytesSent.Add(m.BytesSent.Load())
+		s.stats.muxBytesReceived.Add(m.WireLengthReceived.Load())
+		s.stats.muxBytesSent.Add(m.WireLengthSent.Load())
 	}
 }
 
@@ -244,10 +243,10 @@ func (s *Server) Stats() (stats ServerStats) {
 			Max: latSamples[n-1], Available: true,
 		}
 	}
-	stats.BytesReceived = s.payloadStats.Read.Load()
-	stats.BytesSent = s.payloadStats.Written.Load()
-	stats.WireLengthReceived = s.muxStats.Read.Load()
-	stats.WireLengthSent = s.muxStats.Written.Load()
+	stats.BytesReceived = s.stats.payloadBytesReceived.Load()
+	stats.BytesSent = s.stats.payloadBytesSent.Load()
+	stats.WireLengthReceived = s.stats.muxBytesReceived.Load()
+	stats.WireLengthSent = s.stats.muxBytesSent.Load()
 	for _, ss := range stats.sessions {
 		stats.BytesReceived += ss.BytesReceived
 		stats.BytesSent += ss.BytesSent
