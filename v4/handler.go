@@ -32,7 +32,8 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 	cfg, tlscfg := h.s.getConfig()
 	tag := formatTunnelTag(false, cfg.Identity.Claim, "", "", conn.LocalAddr(), conn.RemoteAddr(), conn)
 	setTCPConnParams(cfg.Mux.TCP, conn)
-	conn = snet.FlowMeter(conn, h.s.flowStats)
+	flowStats := &snet.FlowStats{}
+	conn = snet.FlowMeter(conn, flowStats)
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
@@ -52,7 +53,7 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
 	}
-	h.s.serveSession(ss, time.Since(start))
+	h.s.serveSession(ss, time.Since(start), flowStats)
 }
 
 // LocalHandler forwards accepted local connections over a matching mux session.

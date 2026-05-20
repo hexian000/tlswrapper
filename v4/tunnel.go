@@ -42,6 +42,7 @@ type tunnel struct {
 	dialMu        sync.Mutex
 	lastChanged   time.Time
 	streamLatency latencyRing
+	muxStats      *snet.FlowStats // raw socket bytes for the current mux connection
 }
 
 func newTunnel(id, dialAddr string, s *Server) *tunnel {
@@ -51,6 +52,7 @@ func newTunnel(id, dialAddr string, s *Server) *tunnel {
 		s:         s,
 		closeSig:  make(chan struct{}),
 		redialSig: make(chan struct{}, 1),
+		muxStats:  &snet.FlowStats{},
 	}
 	t.tag = t.buildTunnelTag(nil, nil)
 	return t
@@ -350,6 +352,7 @@ func (t *tunnel) delSession(ss mux.Session) {
 	}
 	tag := t.tag
 	msg := fmt.Sprintf("%s: session closed", tag)
+	t.s.flushSessionMetrics(t, ss)
 	t.ss = nil
 	t.idleSince = time.Time{}
 	t.s.stats.numSessions.Add(^uint32(0))
@@ -413,7 +416,8 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
 	setTCPConnParams(cfg.Mux.TCP, rawConn)
-	conn := snet.FlowMeter(rawConn, t.s.flowStats)
+	t.muxStats = &snet.FlowStats{}
+	conn := snet.FlowMeter(rawConn, t.muxStats)
 	h2cfg := &mux.Config{
 		TLSConfig:     tlscfg,
 		LocalID:       cfg.Identity.Claim,

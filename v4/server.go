@@ -45,7 +45,9 @@ type Server struct {
 	apiListener net.Listener
 	f           forwarder.Forwarder
 
-	flowStats    *snet.FlowStats
+	muxStats     *snet.FlowStats // cumulative mux socket bytes
+	wireStats    *snet.FlowStats // cumulative gRPC Stream wire bytes (Wire Traffic) from closed sessions
+	payloadStats *snet.FlowStats // cumulative gRPC Stream payload bytes (TCP Traffic) from closed sessions
 	recentEvents eventlog.Recent
 
 	mu       sync.RWMutex
@@ -79,7 +81,9 @@ func NewServer(cfg *config.File) (*Server, error) {
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
 		f:            forwarder.New(maxStreams(cfg), g),
-		flowStats:    &snet.FlowStats{},
+		muxStats:     &snet.FlowStats{},
+		wireStats:    &snet.FlowStats{},
+		payloadStats: &snet.FlowStats{},
 		recentEvents: eventlog.NewRecent(100),
 		g:            g,
 	}
@@ -173,6 +177,19 @@ func (s *Server) removeSession(target *tunnel) {
 	}
 }
 
+// flushSessionMetrics accumulates a closing session's gRPC byte counters into
+// the server-level totals so Wire/TCP Traffic survive session reconnects.
+func (s *Server) flushSessionMetrics(t *tunnel, ss mux.Session) {
+	if m := ss.Stats(); m != nil {
+		s.payloadStats.Read.Add(m.BytesReceived.Load())
+		s.payloadStats.Written.Add(m.BytesSent.Load())
+		s.wireStats.Read.Add(m.WireLengthReceived.Load())
+		s.wireStats.Written.Add(m.WireLengthSent.Load())
+	}
+	s.muxStats.Read.Add(t.muxStats.Read.Load())
+	s.muxStats.Written.Add(t.muxStats.Written.Load())
+}
+
 // StreamLatencyStats holds P50/P90/P99/MAX percentiles for stream open latency.
 // Available is false when no samples have been recorded yet.
 type StreamLatencyStats struct {
@@ -182,21 +199,23 @@ type StreamLatencyStats struct {
 
 // ServerStats is the snapshot returned by Server.Stats.
 type ServerStats struct {
-	NumSessions          uint32
-	NumSessionsCreated   uint64
-	NumSessionsFinalized uint64
-	NumHalfOpen          uint32
-	NumStreamsHalfOpen   uint32
-	StreamOpenActive     uint64
-	StreamOpenPassive    uint64
-	StreamLatency        StreamLatencyStats
-	Rx, Tx               uint64
-	Accepted             uint64
-	Served               uint64
-	Authorized           uint64
-	ReqTotal             uint64
-	ReqSuccess           uint64
-	sessions             []SessionStats
+	NumSessions                        uint32
+	NumSessionsCreated                 uint64
+	NumSessionsFinalized               uint64
+	NumHalfOpen                        uint32
+	NumStreamsHalfOpen                 uint32
+	StreamOpenActive                   uint64
+	StreamOpenPassive                  uint64
+	StreamLatency                      StreamLatencyStats
+	Rx, Tx                             uint64
+	BytesReceived, BytesSent           uint64
+	WireLengthReceived, WireLengthSent uint64
+	Accepted                           uint64
+	Served                             uint64
+	Authorized                         uint64
+	ReqTotal                           uint64
+	ReqSuccess                         uint64
+	sessions                           []SessionStats
 }
 
 // Stats snapshots listener, traffic, and per-session metrics.
@@ -210,6 +229,8 @@ func (s *Server) Stats() (stats ServerStats) {
 		v := t.Stats()
 		if v.Active {
 			stats.NumSessions++
+			stats.Rx += t.muxStats.Read.Load()
+			stats.Tx += t.muxStats.Written.Load()
 		}
 		if prev, ok := sessionMap[v.Name]; !ok || v.LastChanged.After(prev.LastChanged) {
 			sessionMap[v.Name] = v
@@ -218,7 +239,8 @@ func (s *Server) Stats() (stats ServerStats) {
 	for _, sstats := range sessionMap {
 		stats.sessions = append(stats.sessions, sstats)
 	}
-	stats.Rx, stats.Tx = s.flowStats.Read.Load(), s.flowStats.Written.Load()
+	stats.Rx += s.muxStats.Read.Load()
+	stats.Tx += s.muxStats.Written.Load()
 	stats.Authorized = s.stats.authorized.Load()
 	stats.ReqTotal, stats.ReqSuccess = s.stats.request.Load(), s.stats.success.Load()
 	stats.NumHalfOpen = s.stats.numHalfOpen.Load()
@@ -252,6 +274,16 @@ func (s *Server) Stats() (stats ServerStats) {
 			P50: at(0.50), P90: at(0.90), P99: at(0.99),
 			Max: latSamples[n-1], Available: true,
 		}
+	}
+	stats.BytesReceived = s.payloadStats.Read.Load()
+	stats.BytesSent = s.payloadStats.Written.Load()
+	stats.WireLengthReceived = s.wireStats.Read.Load()
+	stats.WireLengthSent = s.wireStats.Written.Load()
+	for _, ss := range stats.sessions {
+		stats.BytesReceived += ss.BytesReceived
+		stats.BytesSent += ss.BytesSent
+		stats.WireLengthReceived += ss.WireLengthReceived
+		stats.WireLengthSent += ss.WireLengthSent
 	}
 	return
 }
@@ -309,7 +341,7 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 // serveSession handles one accepted mux session.
 // It creates an inbound ephemeral tunnel, keeps it registered for lookup, and
 // removes it when the underlying mux session closes.
-func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
+func (s *Server) serveSession(ss mux.Session, setupDur time.Duration, flowStats *snet.FlowStats) {
 	// When the group closes, close ss to unblock Accept().
 	if err := s.g.Go(func() {
 		select {
@@ -322,6 +354,7 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
 	}
 	now := time.Now()
 	inbound := newTunnel(ss.PeerID(), "", s)
+	inbound.muxStats = flowStats
 	inbound.mu.Lock()
 	inbound.ss = ss
 	inbound.updateTagLocked(ss, nil)
@@ -340,6 +373,7 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
 		msg := fmt.Sprintf("%s: session closed", tag)
 		slog.Notice(msg)
 		s.recentEvents.Add(now, msg)
+		s.flushSessionMetrics(inbound, ss)
 		s.stats.numSessions.Add(^uint32(0))
 		s.stats.numSessionsFinalized.Add(1)
 		s.removeSession(inbound)

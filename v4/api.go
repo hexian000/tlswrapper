@@ -215,13 +215,8 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	stats := h.s.Stats()
 	var numStreams uint32
-	var bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
 	for _, ss := range stats.sessions {
 		numStreams += ss.NumStreams
-		bytesSent += ss.BytesSent
-		bytesReceived += ss.BytesReceived
-		wireLengthSent += ss.WireLengthSent
-		wireLengthReceived += ss.WireLengthReceived
 	}
 	fprintf(w, "%-20s: %d / %d (+%d)\n", "Sessions",
 		stats.NumSessions, int64(stats.NumSessionsCreated)-int64(stats.NumSessionsFinalized), stats.NumHalfOpen)
@@ -240,9 +235,9 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Mux Traffic",
 		formats.IECBytes(float64(stats.Rx)), formats.IECBytes(float64(stats.Tx)))
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Wire Traffic",
-		formats.IECBytes(float64(wireLengthReceived)), formats.IECBytes(float64(wireLengthSent)))
+		formats.IECBytes(float64(stats.WireLengthReceived)), formats.IECBytes(float64(stats.WireLengthSent)))
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "TCP Traffic",
-		formats.IECBytes(float64(bytesReceived)), formats.IECBytes(float64(bytesSent)))
+		formats.IECBytes(float64(stats.BytesReceived)), formats.IECBytes(float64(stats.BytesSent)))
 	rejected := stats.Accepted - stats.Served
 	fprintf(w, "%-20s: %d (%+d rejected)\n", "Listener Accepts",
 		stats.Served, rejected)
