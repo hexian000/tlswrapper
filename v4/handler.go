@@ -6,51 +6,15 @@ package tlswrapper
 import (
 	"context"
 	"net"
-	"time"
 
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/forwarder"
-	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
 )
 
 // Handler serves one accepted connection.
 type Handler interface {
 	Serve(context.Context, net.Conn)
-}
-
-// MuxHandler upgrades accepted mux sockets into server-side sessions.
-type MuxHandler struct {
-	s *Server
-}
-
-func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
-	h.s.stats.numHalfOpen.Add(1)
-	defer h.s.stats.numHalfOpen.Add(^uint32(0))
-	start := time.Now()
-	cfg, tlscfg := h.s.getConfig()
-	tag := formatTunnelTag(false, cfg.Identity.Claim, "", "", conn.LocalAddr(), conn.RemoteAddr(), conn)
-	setTCPConnParams(cfg.Mux.TCP, conn)
-	if tlscfg == nil {
-		slog.Warningf("%s: connection is not encrypted", tag)
-	}
-	h2cfg := &h2mux.Config{
-		TLSConfig:            tlscfg,
-		LocalID:              cfg.Identity.Claim,
-		WriteTimeout:         cfg.SendTimeout(),
-		SessionWindow:        int32(cfg.Mux.SessionWindow),
-		StreamWindow:         int32(cfg.Mux.StreamWindow),
-		MaxConcurrentStreams: uint32(cfg.Mux.MaxHalfOpen),
-		IdleTimeout:          cfg.IdleTimeout(),
-	}
-	hsCtx, hsCancel := context.WithTimeout(ctx, cfg.ConnectTimeout())
-	defer hsCancel()
-	ss, err := h2mux.Server(hsCtx, conn, h2cfg)
-	if err != nil {
-		slog.Errorf("%s: %s", tag, formats.Error(err))
-		return
-	}
-	h.s.serveSession(ss, time.Since(start))
 }
 
 // LocalHandler forwards accepted local connections over a matching mux session.

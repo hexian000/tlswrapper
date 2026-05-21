@@ -17,7 +17,6 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/config"
 	"github.com/hexian000/tlswrapper/v4/mux"
-	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
 )
 
 // tunnel owns at most one active mux session.
@@ -432,7 +431,7 @@ func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
 
 // dial establishes a new outbound mux session.
 func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
-	cfg, tlscfg := t.getConfig()
+	_, tlscfg := t.getConfig()
 	if t.dialAddr == "" {
 		return nil, ErrNoDialAddress
 	}
@@ -440,33 +439,17 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 		return nil, ErrDialInProgress
 	}
 	defer t.dialMu.Unlock()
+	if tlscfg == nil {
+		slog.Warningf("%s: connection is not encrypted", t.tagValue())
+	}
 	start := time.Now()
-	rawConn, err := t.s.dialer.DialContext(ctx, network, t.dialAddr)
+	ss, err := t.s.getMuxDialer().Dial(ctx, t.dialAddr)
 	if err != nil {
 		return nil, err
 	}
 	t.mu.Lock()
-	t.updateTagLocked(nil, rawConn)
-	tag := t.tag
+	t.updateTagLocked(ss, nil)
 	t.mu.Unlock()
-	if tlscfg == nil {
-		slog.Warningf("%s: connection is not encrypted", tag)
-	}
-	setTCPConnParams(cfg.Mux.TCP, rawConn)
-	h2cfg := &h2mux.Config{
-		TLSConfig:     tlscfg,
-		LocalID:       cfg.Identity.Claim,
-		KeepAlive:     cfg.KeepAlive(),
-		PingTimeout:   cfg.PingTimeout(),
-		WriteTimeout:  cfg.SendTimeout(),
-		SessionWindow: int32(cfg.Mux.SessionWindow),
-		StreamWindow:  int32(cfg.Mux.StreamWindow),
-	}
-	ss, err := h2mux.Client(ctx, rawConn, h2cfg)
-	if err != nil {
-		_ = rawConn.Close()
-		return nil, err
-	}
 
 	t.addSession(ss, time.Since(start))
 	// When the session closes, trigger a redial.

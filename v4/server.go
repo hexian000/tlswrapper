@@ -56,8 +56,9 @@ type Server struct {
 	acceptedTunnels map[mux.Session]*tunnel      // inbound tunnels keyed by their mux session
 	ctx             contextMgr
 
-	dialer net.Dialer
-	g      routines.Group
+	dialer    net.Dialer
+	muxDialer mux.Dialer
+	g         routines.Group
 
 	started time.Time
 
@@ -100,6 +101,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 		return nil, err
 	}
 	s.tlscfg = tlscfg
+	s.muxDialer = s.buildH2MuxDialer(cfg, tlscfg)
 	return s, nil
 }
 
@@ -272,6 +274,83 @@ func (s *Server) dialDirect(ctx context.Context, addr string) (net.Conn, error) 
 	cfg, _ := s.getConfig()
 	setTCPConnParams(cfg.TCP, dialed)
 	return dialed, nil
+}
+
+// getMuxDialer returns the current mux.Dialer, safe for concurrent use.
+func (s *Server) getMuxDialer() mux.Dialer {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.muxDialer
+}
+
+// buildH2MuxDialer constructs a new H2Mux dialer from cfg and tlscfg.
+func (s *Server) buildH2MuxDialer(cfg *config.File, tlscfg *tls.Config) *h2mux.H2Mux {
+	return h2mux.New(&h2mux.Config{
+		TLSConfig:     tlscfg,
+		LocalID:       cfg.Identity.Claim,
+		KeepAlive:     cfg.KeepAlive(),
+		PingTimeout:   cfg.PingTimeout(),
+		WriteTimeout:  cfg.SendTimeout(),
+		SessionWindow: int32(cfg.Mux.SessionWindow),
+		StreamWindow:  int32(cfg.Mux.StreamWindow),
+		Dialer:        s.dialer,
+		ConnSetup:     func(c net.Conn) { setTCPConnParams(cfg.Mux.TCP, c) },
+	})
+}
+
+// buildH2MuxListener wraps l as a mux.Listener using the h2mux server-side
+// handshake.  TLS config is fetched per-connection via TLSConfigProvider so
+// that certificate rotation takes effect without restarting the listener.
+func (s *Server) buildH2MuxListener(l net.Listener, cfg *config.File) *h2mux.H2Listener {
+	return h2mux.NewListener(l, &h2mux.Config{
+		TLSConfigProvider:    func() *tls.Config { _, tlscfg := s.getConfig(); return tlscfg },
+		LocalID:              cfg.Identity.Claim,
+		WriteTimeout:         cfg.SendTimeout(),
+		SessionWindow:        int32(cfg.Mux.SessionWindow),
+		StreamWindow:         int32(cfg.Mux.StreamWindow),
+		MaxConcurrentStreams: uint32(cfg.Mux.MaxHalfOpen),
+		IdleTimeout:          cfg.IdleTimeout(),
+		ConnSetup: func(c net.Conn) {
+			cur, _ := s.getConfig()
+			setTCPConnParams(cur.Mux.TCP, c)
+		},
+	})
+}
+
+// serveMuxListener runs the accept loop for a mux.Listener.
+// It respects hlistener rate-limiting counters and calls serveSession for
+// each successfully accepted session.
+func (s *Server) serveMuxListener(l mux.Listener) {
+	for {
+		s.stats.numHalfOpen.Add(1)
+		start := time.Now()
+		ctx := s.ctx.withTimeout()
+		if ctx == nil {
+			s.stats.numHalfOpen.Add(^uint32(0))
+			return
+		}
+		ss, err := l.AcceptSession(ctx)
+		s.ctx.cancel(ctx)
+		s.stats.numHalfOpen.Add(^uint32(0))
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+				return
+			}
+			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
+				slog.Warningf("accept session: %s", formats.Error(err))
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			slog.Errorf("accept session: %s", formats.Error(err))
+			return
+		}
+		setupDur := time.Since(start)
+		if err := s.g.Go(func() {
+			s.serveSession(ss, setupDur)
+		}); err != nil {
+			slog.Errorf("accept session: %s", formats.Error(err))
+		}
+	}
 }
 
 func (s *Server) serveOne(accepted net.Conn, handler Handler) {
@@ -589,7 +668,6 @@ func (s *Server) reloadMuxListen(cfg *config.File) error {
 		return fmt.Errorf("reload mux listen %s: %w", cfg.MuxListen, err)
 	}
 	slog.Noticef("mux listen: %v", l.Addr())
-	h := &MuxHandler{s: s}
 	startupStart, startupRate, startupFull := cfg.ParsedMaxStartups()
 	s.l = hlistener.Wrap(l, &hlistener.Config{
 		Start:       uint32(startupStart),
@@ -598,8 +676,9 @@ func (s *Server) reloadMuxListen(cfg *config.File) error {
 		MaxSessions: uint32(cfg.MaxSessions),
 		Stats:       s.ListenerStats,
 	})
+	ml := s.buildH2MuxListener(s.l, cfg)
 	if err := s.g.Go(func() {
-		s.Serve(s.l, h)
+		s.serveMuxListener(ml)
 	}); err != nil {
 		slog.Errorf("reload: mux listen goroutine: %s", formats.Error(err))
 		ioClose(s.l)
@@ -694,7 +773,6 @@ func (s *Server) Start() error {
 			return err
 		}
 		slog.Noticef("mux listen: %v", l.Addr())
-		h := &MuxHandler{s: s}
 		c, _ := s.getConfig()
 		startupStart, startupRate, startupFull := c.ParsedMaxStartups()
 		s.l = hlistener.Wrap(l, &hlistener.Config{
@@ -704,8 +782,9 @@ func (s *Server) Start() error {
 			MaxSessions: uint32(c.MaxSessions),
 			Stats:       s.ListenerStats,
 		})
+		ml := s.buildH2MuxListener(s.l, c)
 		if err := s.g.Go(func() {
-			s.Serve(s.l, h)
+			s.serveMuxListener(ml)
 		}); err != nil {
 			ioClose(s.l)
 			s.l = nil
@@ -832,6 +911,7 @@ func (s *Server) ReloadConfig(cfg *config.File) error {
 	if newTLSCfg != nil {
 		s.tlscfg = newTLSCfg
 	}
+	s.muxDialer = s.buildH2MuxDialer(cfg, s.tlscfg)
 	s.cfgMu.Unlock()
 	s.recentEvents.Add(time.Now(), "config loaded")
 	slog.Notice("config loaded")

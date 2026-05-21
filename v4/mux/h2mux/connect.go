@@ -31,15 +31,65 @@ func New(cfg *Config) *H2Mux {
 	return &H2Mux{cfg: cfg}
 }
 
-// Client implements mux.Dialer.
-func (h *H2Mux) Client(ctx context.Context, conn net.Conn) (mux.Session, error) {
-	return Client(ctx, conn, h.cfg)
+// Dial implements mux.Dialer by dialing addr over TCP and running the h2mux
+// client-side handshake.
+func (h *H2Mux) Dial(ctx context.Context, addr string) (mux.Session, error) {
+	conn, err := h.cfg.Dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	if h.cfg.ConnSetup != nil {
+		h.cfg.ConnSetup(conn)
+	}
+	ss, err := Client(ctx, conn, h.cfg)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return ss, nil
 }
 
-// Server implements mux.Dialer.
-func (h *H2Mux) Server(ctx context.Context, conn net.Conn) (mux.Session, error) {
-	return Server(ctx, conn, h.cfg)
+// H2Listener accepts inbound mux sessions over TCP.
+// It wraps a net.Listener and upgrades each accepted connection with the
+// h2mux server-side handshake.
+type H2Listener struct {
+	l   net.Listener
+	cfg *Config
 }
+
+// NewListener wraps l as a mux.Listener that upgrades each accepted TCP
+// connection using the h2mux server-side handshake with cfg.
+func NewListener(l net.Listener, cfg *Config) *H2Listener {
+	return &H2Listener{l: l, cfg: cfg}
+}
+
+// compile-time check that H2Listener implements mux.Listener.
+var _ mux.Listener = (*H2Listener)(nil)
+
+// AcceptSession accepts one TCP connection, applies optional socket setup,
+// runs the h2mux server-side handshake, and returns the resulting Session.
+// It blocks until a connection is accepted and the handshake completes.
+func (l *H2Listener) AcceptSession(ctx context.Context) (mux.Session, error) {
+	conn, err := l.l.Accept()
+	if err != nil {
+		return nil, err
+	}
+	if l.cfg.ConnSetup != nil {
+		l.cfg.ConnSetup(conn)
+	}
+	ss, err := Server(ctx, conn, l.cfg)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return ss, nil
+}
+
+// Addr returns the listener's local network address.
+func (l *H2Listener) Addr() net.Addr { return l.l.Addr() }
+
+// Close closes the underlying listener.
+func (l *H2Listener) Close() error { return l.l.Close() }
 
 // oneConnListener is a net.Listener that serves exactly one pre-established connection.
 type oneConnListener struct {
@@ -78,8 +128,9 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 		}
 	}
 
-	if cfg.TLSConfig != nil {
-		conn = tls.Client(conn, cfg.TLSConfig)
+	tlscfg := cfg.tlsConfig()
+	if tlscfg != nil {
+		conn = tls.Client(conn, tlscfg)
 	}
 	if cfg.WriteTimeout > 0 {
 		conn = &writeTimeoutConn{Conn: conn, timeout: cfg.WriteTimeout}
@@ -272,8 +323,9 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 		}
 	}
 
-	if cfg.TLSConfig != nil {
-		conn = tls.Server(conn, cfg.TLSConfig)
+	tlscfg := cfg.tlsConfig()
+	if tlscfg != nil {
+		conn = tls.Server(conn, tlscfg)
 	}
 	if cfg.WriteTimeout > 0 {
 		conn = &writeTimeoutConn{Conn: conn, timeout: cfg.WriteTimeout}

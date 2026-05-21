@@ -26,9 +26,16 @@ type Session interface {
 	RemoteAddr() net.Addr
 }
 
-// Dialer creates mux sessions over existing network connections.
+// Dialer creates outbound mux sessions by dialing a remote address.
 // Implementations must be safe for concurrent use.
 type Dialer interface {
-	Client(ctx context.Context, conn net.Conn) (Session, error)
-	Server(ctx context.Context, conn net.Conn) (Session, error)
+	Dial(ctx context.Context, addr string) (Session, error)
+}
+
+// Listener accepts inbound mux sessions.
+// Implementations must be safe for concurrent use.
+type Listener interface {
+	AcceptSession(ctx context.Context) (Session, error)
+	Addr() net.Addr
+	Close() error
 }
