@@ -68,7 +68,7 @@ At runtime, tlswrapper maintains two tunnel lifecycles: config-driven tunnels lo
 +-------------------------------+
 |    QUIC stream multiplexing   |
 +-------------------------------+
-|        mutual TLS 1.3         |
+| mutual TLS 1.3 (QUIC-native)  |
 +-------------------------------+
 |  UDP/IP (untrusted network)   |
 +-------------------------------+
