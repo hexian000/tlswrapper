@@ -365,27 +365,27 @@ func newServerMetricsCollector(s *Server) prometheus.Collector {
 			"Total streams passively accepted by this session.",
 			[]string{"identity"}, nil),
 		sessionStreamsSucceededDesc: prometheus.NewDesc(
-			"tlswrapper_session_grpc_streams_succeeded_total",
-			"Total gRPC streams that ended successfully in the session.",
+			"tlswrapper_session_streams_succeeded_total",
+			"Total streams that ended successfully in the session.",
 			[]string{"identity"}, nil),
 		sessionStreamsFailedDesc: prometheus.NewDesc(
-			"tlswrapper_session_grpc_streams_failed_total",
-			"Total gRPC streams that ended with an error in the session.",
+			"tlswrapper_session_streams_failed_total",
+			"Total streams that ended with an error in the session.",
 			[]string{"identity"}, nil),
 		sessionBytesSentDesc: prometheus.NewDesc(
-			"tlswrapper_session_grpc_bytes_sent_total",
+			"tlswrapper_session_bytes_sent_total",
 			"Total payload bytes sent in the session.",
 			[]string{"identity"}, nil),
 		sessionBytesReceivedDesc: prometheus.NewDesc(
-			"tlswrapper_session_grpc_bytes_received_total",
+			"tlswrapper_session_bytes_received_total",
 			"Total payload bytes received in the session.",
 			[]string{"identity"}, nil),
 		sessionWireLengthSentDesc: prometheus.NewDesc(
-			"tlswrapper_session_grpc_wire_bytes_sent_total",
+			"tlswrapper_session_wire_bytes_sent_total",
 			"Total wire bytes sent in the session.",
 			[]string{"identity"}, nil),
 		sessionWireLengthReceivedDesc: prometheus.NewDesc(
-			"tlswrapper_session_grpc_wire_bytes_received_total",
+			"tlswrapper_session_wire_bytes_received_total",
 			"Total wire bytes received in the session.",
 			[]string{"identity"}, nil),
 	}

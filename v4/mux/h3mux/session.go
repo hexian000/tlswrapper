@@ -88,7 +88,6 @@ func (s *h3Session) wrapStream(qs quic.Stream) net.Conn {
 	return &countingConn{
 		Conn:    inner,
 		metrics: &s.metrics,
-		idleCh:  nil, // idle signalling is handled in onStreamClose; countingConn.Close won't double-fire
 	}
 }
 

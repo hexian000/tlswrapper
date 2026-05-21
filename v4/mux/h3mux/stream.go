@@ -4,6 +4,7 @@
 package h3mux
 
 import (
+	"io"
 	"net"
 	"sync/atomic"
 
@@ -52,20 +53,25 @@ func newQuicConn(s quic.Stream, localAddr, remoteAddr net.Addr, onClose func(err
 	}
 }
 
-// countingConn wraps a net.Conn and updates SessionMetrics on Close.
-// Bytes are tracked directly via the embedded net.Conn's Read/Write by
-// countingConn wrapping those calls.
+// countingConn wraps a net.Conn and updates SessionMetrics on Read/Write/Close.
+// BytesSent/BytesReceived track application-layer bytes.
+// WireLengthSent/WireLengthReceived are left at zero: QUIC framing and
+// encryption overhead are not accessible at this level.
+// StreamsSucceeded/StreamsFailed are updated on Close based on whether any
+// Read or Write returned a non-EOF error during the stream's lifetime.
 type countingConn struct {
 	net.Conn
 	metrics *mux.SessionMetrics
-	idleCh  chan<- struct{}
+	errored atomic.Bool
 }
 
 func (c *countingConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
 	if n > 0 && c.metrics != nil {
 		c.metrics.BytesReceived.Add(uint64(n))
-		c.metrics.WireLengthReceived.Add(uint64(n))
+	}
+	if err != nil && err != io.EOF {
+		c.errored.Store(true)
 	}
 	return n, err
 }
@@ -74,23 +80,23 @@ func (c *countingConn) Write(b []byte) (int, error) {
 	n, err := c.Conn.Write(b)
 	if n > 0 && c.metrics != nil {
 		c.metrics.BytesSent.Add(uint64(n))
-		c.metrics.WireLengthSent.Add(uint64(n))
+	}
+	if err != nil {
+		c.errored.Store(true)
 	}
 	return n, err
 }
 
 func (c *countingConn) Close() error {
 	err := c.Conn.Close()
+	// NumStreams decrement and idle signalling are handled by the onStreamClose
+	// callback attached to the underlying quicConn; do not repeat them here.
 	if c.metrics != nil {
-		if c.metrics.NumStreams.Add(-1) == 0 && c.idleCh != nil {
-			select {
-			case c.idleCh <- struct{}{}:
-			default:
-			}
+		if c.errored.Load() {
+			c.metrics.StreamsFailed.Add(1)
+		} else {
+			c.metrics.StreamsSucceeded.Add(1)
 		}
-		// For QUIC, we can't distinguish success from failure on Close easily.
-		// Treat all closes as successful.
-		c.metrics.StreamsSucceeded.Add(1)
 	}
 	return err
 }
