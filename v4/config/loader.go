@@ -150,6 +150,9 @@ func (c *File) Validate() error {
 	if err := checkType(c.Type); err != nil {
 		return err
 	}
+	if c.MuxProtocol == "h3mux" && c.TLS == nil {
+		return fmt.Errorf("h3mux requires TLS to be configured")
+	}
 	if c.MaxStartups != "" {
 		if _, _, _, err := parseMaxStartups(c.MaxStartups); err != nil {
 			return fmt.Errorf("max_startups: %w", err)

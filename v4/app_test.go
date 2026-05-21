@@ -4,8 +4,15 @@
 package tlswrapper_test
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net"
 	"testing"
 	"time"
@@ -258,5 +265,140 @@ func TestShutdownClosesServiceListeners(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("server shutdown blocked with service listener active")
+	}
+}
+
+// freeUDPPort returns an available UDP address on localhost by briefly
+// binding to :0 and immediately closing the listener.
+func freeUDPPort(t *testing.T) string {
+	t.Helper()
+	l, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.LocalAddr().String()
+	_ = l.Close()
+	return addr
+}
+
+// newH3TLSPair generates a self-signed ECDSA P256 certificate for each side
+// (server and client), both with IP SAN 127.0.0.1.
+// Returns the PEM-encoded cert and key for each side.
+func newH3TLSPair(t *testing.T) (serverCertPEM, serverKeyPEM, clientCertPEM, clientKeyPEM string) {
+	t.Helper()
+	makeCert := func(cn string) (certPEM, keyPEM string) {
+		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatalf("ecdsa.GenerateKey: %v", err)
+		}
+		tmpl := &x509.Certificate{
+			SerialNumber: big.NewInt(1),
+			Subject:      pkix.Name{CommonName: cn},
+			NotBefore:    time.Now().Add(-time.Hour),
+			NotAfter:     time.Now().Add(time.Hour),
+			KeyUsage:     x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+			IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		}
+		certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+		if err != nil {
+			t.Fatalf("x509.CreateCertificate: %v", err)
+		}
+		privDER, err := x509.MarshalECPrivateKey(priv)
+		if err != nil {
+			t.Fatalf("x509.MarshalECPrivateKey: %v", err)
+		}
+		certPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}))
+		keyPEM = string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privDER}))
+		return
+	}
+	serverCertPEM, serverKeyPEM = makeCert("h3mux-server")
+	clientCertPEM, clientKeyPEM = makeCert("h3mux-client")
+	return
+}
+
+// TestForwardH3MuxBidirectional verifies end-to-end bidirectional TCP
+// forwarding through an h3mux (QUIC+TLS) session using self-signed certificates:
+//
+//	[test conn] → [client Listen] ──h3mux/QUIC──> [server MuxListen] → [echo server]
+func TestForwardH3MuxBidirectional(t *testing.T) {
+	echoAddr := startEchoServer(t)
+	muxAddr := freeUDPPort(t)
+	clientListenAddr := freePort(t)
+	serverCertPEM, serverKeyPEM, clientCertPEM, clientKeyPEM := newH3TLSPair(t)
+
+	// Session server: accepts h3mux sessions, forwards streams to the echo server.
+	srvCfg := newPlaintextConfig(t, map[string]any{
+		"mux_protocol": "h3mux",
+		"mux_listen":   muxAddr,
+		"connect":      echoAddr,
+		"tls": map[string]any{
+			"cert":      serverCertPEM,
+			"key":       serverKeyPEM,
+			"authcerts": []string{clientCertPEM},
+		},
+	})
+	srv, err := tlswrapper.NewServer(srvCfg, "")
+	if err != nil {
+		t.Fatal("server create:", err)
+	}
+	if err := srv.Start(); err != nil {
+		t.Fatal("server start:", err)
+	}
+	t.Cleanup(func() { _ = srv.Shutdown() })
+
+	// Session client: dials the h3mux server, exposes a local TCP listener.
+	cliCfg := newPlaintextConfig(t, map[string]any{
+		"mux_protocol": "h3mux",
+		"mux_connect":  muxAddr,
+		"listen":       clientListenAddr,
+		"identity":     map[string]any{"claim": "test-client"},
+		"tls": map[string]any{
+			"cert":      clientCertPEM,
+			"key":       clientKeyPEM,
+			"authcerts": []string{serverCertPEM},
+		},
+	})
+	cli, err := tlswrapper.NewServer(cliCfg, "")
+	if err != nil {
+		t.Fatal("client create:", err)
+	}
+	if err := cli.Start(); err != nil {
+		t.Fatal("client start:", err)
+	}
+	t.Cleanup(func() { _ = cli.Shutdown() })
+
+	// Wait for the outbound h3mux session to be established (up to 5 s).
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cli.Stats().NumSessions > 0 {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if cli.Stats().NumSessions == 0 {
+		t.Fatal("h3mux session not established within 5 s")
+	}
+
+	// Connect through the session and verify bidirectional forwarding.
+	conn, err := net.DialTimeout("tcp", clientListenAddr, 3*time.Second)
+	if err != nil {
+		t.Fatal("dial:", err)
+	}
+	defer conn.Close()
+
+	want := []byte("hello h3mux bidirectional forwarding")
+	if _, err := conn.Write(want); err != nil {
+		t.Fatal("write:", err)
+	}
+	got := make([]byte, len(want))
+	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatal("read:", err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("echo mismatch: got %q, want %q", got, want)
 	}
 }

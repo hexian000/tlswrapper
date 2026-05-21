@@ -183,6 +183,24 @@ func TestValidate(t *testing.T) {
 			t.Fatal("expected error for wrong type")
 		}
 	})
+
+	t.Run("h3mux-without-tls-fails", func(t *testing.T) {
+		c := Default
+		c.MuxProtocol = "h3mux"
+		// TLS is nil — must be rejected
+		if err := c.Validate(); err == nil {
+			t.Fatal("expected error: h3mux without TLS should be rejected")
+		}
+	})
+
+	t.Run("h3mux-with-tls-passes", func(t *testing.T) {
+		c := Default
+		c.MuxProtocol = "h3mux"
+		c.TLS = &TLS{} // non-nil pointer is all Validate checks
+		if err := c.Validate(); err != nil {
+			t.Fatalf("unexpected error for h3mux with TLS: %v", err)
+		}
+	})
 }
 
 func TestLoad(t *testing.T) {
