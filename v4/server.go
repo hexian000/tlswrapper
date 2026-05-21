@@ -25,6 +25,7 @@ import (
 	"github.com/hexian000/tlswrapper/v4/forwarder"
 	"github.com/hexian000/tlswrapper/v4/mux"
 	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
+	"github.com/hexian000/tlswrapper/v4/mux/h3mux"
 )
 
 const network = "tcp"
@@ -59,6 +60,8 @@ type Server struct {
 	dialer    net.Dialer
 	muxDialer mux.Dialer
 	g         routines.Group
+
+	muxListener mux.Listener // active mux listener (h2mux or h3mux)
 
 	started time.Time
 
@@ -101,7 +104,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 		return nil, err
 	}
 	s.tlscfg = tlscfg
-	s.muxDialer = s.buildH2MuxDialer(cfg, tlscfg)
+	s.muxDialer = s.buildMuxDialer(cfg, tlscfg)
 	return s, nil
 }
 
@@ -281,6 +284,69 @@ func (s *Server) getMuxDialer() mux.Dialer {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
 	return s.muxDialer
+}
+
+// buildH3MuxDialer constructs a new H3Mux dialer from cfg and tlscfg.
+func (s *Server) buildH3MuxDialer(cfg *config.File, tlscfg *tls.Config) *h3mux.H3Mux {
+	return h3mux.New(&h3mux.Config{
+		TLSConfig:          tlscfg,
+		LocalID:            cfg.Identity.Claim,
+		KeepAlivePeriod:    cfg.KeepAlive(),
+		HandshakeTimeout:   cfg.ConnectTimeout(),
+		MaxIdleTimeout:     cfg.IdleTimeout(),
+		MaxIncomingStreams: int64(cfg.Mux.MaxHalfOpen),
+	})
+}
+
+// buildMuxDialer constructs the appropriate mux.Dialer for cfg.MuxProtocol.
+func (s *Server) buildMuxDialer(cfg *config.File, tlscfg *tls.Config) mux.Dialer {
+	if cfg.MuxProtocol == "h3mux" {
+		return s.buildH3MuxDialer(cfg, tlscfg)
+	}
+	return s.buildH2MuxDialer(cfg, tlscfg)
+}
+
+// startMuxListen creates and starts a mux listener for addr based on
+// cfg.MuxProtocol. It sets s.l (h2mux only) and s.muxListener, then
+// launches the accept goroutine.
+func (s *Server) startMuxListen(cfg *config.File, addr string) error {
+	if cfg.MuxProtocol == "h3mux" {
+		_, tlscfg := s.getConfig()
+		ml, err := h3mux.ListenMux(addr, &h3mux.Config{
+			TLSConfig:          tlscfg,
+			LocalID:            cfg.Identity.Claim,
+			KeepAlivePeriod:    cfg.KeepAlive(),
+			HandshakeTimeout:   cfg.ConnectTimeout(),
+			MaxIdleTimeout:     cfg.IdleTimeout(),
+			MaxIncomingStreams: int64(cfg.Mux.MaxHalfOpen),
+		})
+		if err != nil {
+			return err
+		}
+		s.muxListener = ml
+	} else {
+		l, err := s.Listen(addr)
+		if err != nil {
+			return err
+		}
+		startupStart, startupRate, startupFull := cfg.ParsedMaxStartups()
+		s.l = hlistener.Wrap(l, &hlistener.Config{
+			Start:       uint32(startupStart),
+			Full:        uint32(startupFull),
+			Rate:        float64(startupRate) / 100.0,
+			MaxSessions: uint32(cfg.MaxSessions),
+			Stats:       s.ListenerStats,
+		})
+		s.muxListener = s.buildH2MuxListener(s.l, cfg)
+	}
+	slog.Noticef("mux listen: %v", s.muxListener.Addr())
+	if err := s.g.Go(func() { s.serveMuxListener(s.muxListener) }); err != nil {
+		ioClose(s.muxListener)
+		s.muxListener = nil
+		s.l = nil
+		return err
+	}
+	return nil
 }
 
 // buildH2MuxDialer constructs a new H2Mux dialer from cfg and tlscfg.
@@ -651,39 +717,22 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 func (s *Server) reloadMuxListen(cfg *config.File) error {
 	old, _ := s.getConfig()
 	if cfg.MuxListen == old.MuxListen &&
+		cfg.MuxProtocol == old.MuxProtocol &&
 		cfg.MaxSessions == old.MaxSessions &&
 		cfg.MaxStartups == old.MaxStartups {
 		return nil
 	}
-	if s.l != nil {
-		ioClose(s.l)
+	if s.muxListener != nil {
+		ioClose(s.muxListener)
+		s.muxListener = nil
 		s.l = nil
 	}
 	if cfg.MuxListen == "" {
 		return nil
 	}
-	l, err := s.Listen(cfg.MuxListen)
-	if err != nil {
+	if err := s.startMuxListen(cfg, cfg.MuxListen); err != nil {
 		slog.Errorf("reload: mux listen %s: %s", cfg.MuxListen, formats.Error(err))
-		return fmt.Errorf("reload mux listen %s: %w", cfg.MuxListen, err)
-	}
-	slog.Noticef("mux listen: %v", l.Addr())
-	startupStart, startupRate, startupFull := cfg.ParsedMaxStartups()
-	s.l = hlistener.Wrap(l, &hlistener.Config{
-		Start:       uint32(startupStart),
-		Full:        uint32(startupFull),
-		Rate:        float64(startupRate) / 100.0,
-		MaxSessions: uint32(cfg.MaxSessions),
-		Stats:       s.ListenerStats,
-	})
-	ml := s.buildH2MuxListener(s.l, cfg)
-	if err := s.g.Go(func() {
-		s.serveMuxListener(ml)
-	}); err != nil {
-		slog.Errorf("reload: mux listen goroutine: %s", formats.Error(err))
-		ioClose(s.l)
-		s.l = nil
-		return fmt.Errorf("reload mux listen goroutine: %w", err)
+		return fmt.Errorf("reload mux listen: %w", err)
 	}
 	return nil
 }
@@ -768,26 +817,8 @@ func (s *Server) maintenanceLoop() {
 // Start brings up listeners, maintenance, and config-driven tunnels.
 func (s *Server) Start() error {
 	if s.cfg.MuxListen != "" {
-		l, err := s.Listen(s.cfg.MuxListen)
-		if err != nil {
-			return err
-		}
-		slog.Noticef("mux listen: %v", l.Addr())
 		c, _ := s.getConfig()
-		startupStart, startupRate, startupFull := c.ParsedMaxStartups()
-		s.l = hlistener.Wrap(l, &hlistener.Config{
-			Start:       uint32(startupStart),
-			Full:        uint32(startupFull),
-			Rate:        float64(startupRate) / 100.0,
-			MaxSessions: uint32(c.MaxSessions),
-			Stats:       s.ListenerStats,
-		})
-		ml := s.buildH2MuxListener(s.l, c)
-		if err := s.g.Go(func() {
-			s.serveMuxListener(ml)
-		}); err != nil {
-			ioClose(s.l)
-			s.l = nil
+		if err := s.startMuxListen(c, s.cfg.MuxListen); err != nil {
 			return err
 		}
 	}
@@ -819,8 +850,9 @@ func (s *Server) Start() error {
 
 // Shutdown stops listeners, tunnels, sessions, and forwarders in that order.
 func (s *Server) Shutdown() error {
-	if s.l != nil {
-		ioClose(s.l)
+	if s.muxListener != nil {
+		ioClose(s.muxListener)
+		s.muxListener = nil
 		s.l = nil
 	}
 	if s.apiListener != nil {
@@ -911,7 +943,7 @@ func (s *Server) ReloadConfig(cfg *config.File) error {
 	if newTLSCfg != nil {
 		s.tlscfg = newTLSCfg
 	}
-	s.muxDialer = s.buildH2MuxDialer(cfg, s.tlscfg)
+	s.muxDialer = s.buildMuxDialer(cfg, s.tlscfg)
 	s.cfgMu.Unlock()
 	s.recentEvents.Add(time.Now(), "config loaded")
 	slog.Notice("config loaded")

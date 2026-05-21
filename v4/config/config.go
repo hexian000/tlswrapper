@@ -87,6 +87,9 @@ type File struct {
 	MuxListen string `json:"mux_listen,omitempty"`
 	// Address for the default config-driven tunnel to dial
 	MuxConnect string `json:"mux_connect,omitempty"`
+	// Mux protocol to use: "h2mux" (default, gRPC over TCP+TLS) or "h3mux" (QUIC+TLS).
+	// h3mux requires TLS to be configured.
+	MuxProtocol string `json:"mux_protocol,omitempty"`
 	// Local TCP address to accept application traffic on
 	Listen string `json:"listen,omitempty"`
 	// Forwarding target for streams arriving from inbound ephemeral tunnels

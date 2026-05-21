@@ -33,6 +33,12 @@
             "description": "Address for the default config-driven tunnel to dial.",
             "type": "string"
         },
+        "mux_protocol": {
+            "description": "Mux protocol: \"h2mux\" (default, gRPC over TCP+TLS) or \"h3mux\" (QUIC+TLS). h3mux requires TLS to be configured.",
+            "type": "string",
+            "enum": ["h2mux", "h3mux"],
+            "default": "h2mux"
+        },
         "listen": {
             "description": "Local TCP address to accept application traffic on.",
             "type": "string"

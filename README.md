@@ -6,7 +6,7 @@
 [![Downloads](https://img.shields.io/github/downloads/hexian000/tlswrapper/total.svg)](https://github.com/hexian000/tlswrapper/releases)
 [![Release](https://img.shields.io/github/release/hexian000/tlswrapper.svg?style=flat)](https://github.com/hexian000/tlswrapper/releases)
 
-Wrap TCP-based services with multiplexed mutual TLS tunnels.
+Wrap TCP-based services with multiplexed mutual TLS tunnels over TCP or QUIC.
 
 - [Features](#features)
 - [Protocol Stack](#protocol-stack)
@@ -22,7 +22,8 @@ Wrap TCP-based services with multiplexed mutual TLS tunnels.
 
 - **Multiplexed**: Multiple TCP streams share a single long-lived transport connection.
 - **Bidirectional Forwarding**: Each peer can expose local services and reach remote services over the same underlying connection.
-- **mTLS 1.3 Security**: Protect traffic with [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS), or run in plaintext on trusted links.
+- **Pluggable Transport**: Choose between `h2mux` (gRPC over TCP+TLS, default) and `h3mux` (QUIC+TLS) via the `mux_protocol` config key.
+- **mTLS 1.3 Security**: Protect traffic with [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS), or run in plaintext on trusted links (h2mux only).
 - **Built-in Certificate Tool**: Generate RSA, ECDSA, or Ed25519 key pairs, either self-signed or signed by an existing key pair.
 - **Certificate Allowlist**: Authorize exact peer certificates or any certificates signed by an authorized issuer. System CAs are never consulted.
 - **Named Peer Routing**: Map peer identities to config-driven mux dial targets and local listen addresses.
@@ -47,6 +48,7 @@ At runtime, tlswrapper maintains two tunnel lifecycles: config-driven tunnels lo
 
 ## Protocol Stack
 
+**h2mux** (default, `"mux_protocol": "h2mux"`):
 ```
 +-------------------------------+
 |          TCP streams          |
@@ -58,6 +60,21 @@ At runtime, tlswrapper maintains two tunnel lifecycles: config-driven tunnels lo
 |  TCP/IP (untrusted network)   |
 +-------------------------------+
 ```
+
+**h3mux** (`"mux_protocol": "h3mux"`):
+```
++-------------------------------+
+|          TCP streams          |
++-------------------------------+
+|    QUIC stream multiplexing   |
++-------------------------------+
+|        mutual TLS 1.3         |
++-------------------------------+
+|  UDP/IP (untrusted network)   |
++-------------------------------+
+```
+
+h3mux requires TLS to be configured and uses UDP on the untrusted side. It may perform better on high-latency or lossy links.
 
 ## Authentication Model
 
@@ -144,6 +161,8 @@ Adding `ca-cert.pem` to `"authcerts"` allows peer certificates signed by that CA
 }
 ```
 
+To use QUIC instead of TCP, add `"mux_protocol": "h3mux"` to both config files and update `mux_listen` / `mux_connect` to the UDP port.
+
 For complex cases, see the [full example](https://github.com/hexian000/tlswrapper/wiki/Configuration-Example).
 
 For field descriptions, defaults, and the complete configuration format, see [schema.json](v4/config/schema.json).
@@ -176,3 +195,4 @@ go install github.com/hexian000/tlswrapper/v4/cmd/tlswrapper@master
 - [Prometheus client_golang](https://github.com/prometheus/client_golang)
 - [grpc-go](https://github.com/grpc/grpc-go)
 - [protobuf-go](https://github.com/protocolbuffers/protobuf-go)
+- [quic-go](https://github.com/quic-go/quic-go)
