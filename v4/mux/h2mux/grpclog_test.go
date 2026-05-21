@@ -1,7 +1,7 @@
 // tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
 // This code is licensed under MIT license (see LICENSE for details)
 
-package tlswrapper
+package h2mux
 
 import (
 	"bytes"
