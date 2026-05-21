@@ -1,4 +1,4 @@
-package mux
+package h2mux
 
 import "testing"
 

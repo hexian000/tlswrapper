@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hexian000/tlswrapper/v4/mux"
+	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
 )
 
 func TestServerHandleInboundStream(t *testing.T) {
@@ -136,7 +136,7 @@ func TestLocalHandlerServe(t *testing.T) {
 
 	t.Run("forwards-stream", func(t *testing.T) {
 		// cli.PeerIdentity() == "peer-a"; LocalHandler{id: "peer-a"} finds it.
-		cli, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "peer-a"})
+		cli, srv := newMuxSessionPair(t, &h2mux.Config{LocalID: "client"}, &h2mux.Config{LocalID: "peer-a"})
 		s := newTestServer(t, nil)
 		t.Cleanup(func() { _ = s.Shutdown() })
 		tn := newTunnel("", s)
@@ -197,7 +197,7 @@ func TestServerStaleSessionsAfterReload(t *testing.T) {
 	t.Cleanup(func() { _ = s.Shutdown() })
 
 	// Inject a synthetic inbound session (no active streams).
-	cli, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "server"})
+	cli, srv := newMuxSessionPair(t, &h2mux.Config{LocalID: "client"}, &h2mux.Config{LocalID: "server"})
 	t.Cleanup(func() {
 		_ = cli.Close()
 		_ = srv.Close()

@@ -1,7 +1,7 @@
 // tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
 // This code is licensed under MIT license (see LICENSE for details)
 
-package mux
+package h2mux
 
 import (
 	"crypto/tls"
@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
-// Config holds options for creating a mux session.
+// Config holds options for creating an h2mux session.
 // Zero values for numeric/duration fields use built-in defaults.
 type Config struct {
 	// LocalID is the local identity claim sent in the handshake.

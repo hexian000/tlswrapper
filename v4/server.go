@@ -24,6 +24,7 @@ import (
 	"github.com/hexian000/tlswrapper/v4/eventlog"
 	"github.com/hexian000/tlswrapper/v4/forwarder"
 	"github.com/hexian000/tlswrapper/v4/mux"
+	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
 )
 
 const network = "tcp"
@@ -668,7 +669,7 @@ func (s *Server) maintenanceLoop() {
 			elapsed := now.Sub(lastTick)
 			lastTick = now
 			// Slowly release pooled objects so the GC can reclaim idle memory.
-			mux.DrainPool()
+			h2mux.DrainPool()
 			forwarder.DrainPool()
 			// If the wall clock advanced more than the ping timeout the device
 			// almost certainly slept (common on Android). The peer would already

@@ -5,7 +5,7 @@ syntax = "proto3";
 
 package tlswrapper.mux.v1;
 
-option go_package = "github.com/hexian000/tlswrapper/v4/mux/proto";
+option go_package = "github.com/hexian000/tlswrapper/v4/mux/h2mux/proto";
 
 // Chunk carries payload bytes for a logical stream (one gRPC Stream RPC).
 message Chunk {

@@ -1,12 +1,12 @@
 // tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
 // This code is licensed under MIT license (see LICENSE for details)
 
-package mux
+package h2mux
 
 import (
 	"fmt"
 
-	muxpb "github.com/hexian000/tlswrapper/v4/mux/proto"
+	muxpb "github.com/hexian000/tlswrapper/v4/mux/h2mux/proto"
 )
 
 // controlStream abstracts both client-side and server-side Control bidi streams.

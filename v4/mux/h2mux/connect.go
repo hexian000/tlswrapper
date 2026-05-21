@@ -1,7 +1,7 @@
 // tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
 // This code is licensed under MIT license (see LICENSE for details)
 
-package mux
+package h2mux
 
 import (
 	"context"
@@ -14,8 +14,32 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	muxpb "github.com/hexian000/tlswrapper/v4/mux/proto"
+	mux "github.com/hexian000/tlswrapper/v4/mux"
+	muxpb "github.com/hexian000/tlswrapper/v4/mux/h2mux/proto"
 )
+
+// compile-time check that H2Mux implements mux.Dialer.
+var _ mux.Dialer = (*H2Mux)(nil)
+
+// H2Mux implements mux.Dialer backed by gRPC over HTTP/2.
+type H2Mux struct {
+	cfg *Config
+}
+
+// New returns an H2Mux that creates sessions using cfg.
+func New(cfg *Config) *H2Mux {
+	return &H2Mux{cfg: cfg}
+}
+
+// Client implements mux.Dialer.
+func (h *H2Mux) Client(ctx context.Context, conn net.Conn) (mux.Session, error) {
+	return Client(ctx, conn, h.cfg)
+}
+
+// Server implements mux.Dialer.
+func (h *H2Mux) Server(ctx context.Context, conn net.Conn) (mux.Session, error) {
+	return Server(ctx, conn, h.cfg)
+}
 
 // oneConnListener is a net.Listener that serves exactly one pre-established connection.
 type oneConnListener struct {
@@ -47,7 +71,7 @@ func (l *oneConnListener) Addr() net.Addr { return l.addr }
 
 // Client performs the TLS handshake (if cfg.TLSConfig is non-nil) and the mux
 // protocol handshake over conn, returning a client-mode Session on success.
-func Client(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
+func Client(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error) {
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
 			return nil, err
@@ -241,7 +265,7 @@ func (svc *muxServer) Stream(stream muxpb.Mux_StreamServer) error {
 // Server performs the TLS handshake (if cfg.TLSConfig is non-nil) and waits for
 // the mux protocol handshake from the client, returning a server-mode Session
 // on success.
-func Server(ctx context.Context, conn net.Conn, cfg *Config) (Session, error) {
+func Server(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error) {
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
 			return nil, err

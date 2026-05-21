@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/hexian000/tlswrapper/v4/mux"
+	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
 )
 
 func TestTunnelCheckIdle(t *testing.T) {
 	t.Run("clears-closed-session", func(t *testing.T) {
-		_, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "server"})
+		_, srv := newMuxSessionPair(t, &h2mux.Config{LocalID: "client"}, &h2mux.Config{LocalID: "server"})
 		_ = srv.Close()
 		tn := newTunnel("", newTestServer(t, nil))
 		tn.ss = srv
@@ -26,7 +27,7 @@ func TestTunnelCheckIdle(t *testing.T) {
 	})
 
 	t.Run("evicts-idle-session", func(t *testing.T) {
-		_, srv := newMuxSessionPair(t, &mux.Config{LocalID: "client"}, &mux.Config{LocalID: "server"})
+		_, srv := newMuxSessionPair(t, &h2mux.Config{LocalID: "client"}, &h2mux.Config{LocalID: "server"})
 		tn := newTunnel("", newTestServer(t, map[string]any{"mux": map[string]any{"idle_timeout": 10}}))
 		tn.ss = srv
 		tn.idleSince = time.Now().Add(-11 * time.Second)
@@ -77,7 +78,7 @@ func TestTunnelRedialSuccessAndDelSession(t *testing.T) {
 			remoteCh <- nil
 			return
 		}
-		sess, err := mux.Server(serverCtx, conn, &mux.Config{LocalID: "remote"})
+		sess, err := h2mux.Server(serverCtx, conn, &h2mux.Config{LocalID: "remote"})
 		if err != nil {
 			remoteCh <- nil
 			return

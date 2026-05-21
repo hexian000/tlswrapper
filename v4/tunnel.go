@@ -17,6 +17,7 @@ import (
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/config"
 	"github.com/hexian000/tlswrapper/v4/mux"
+	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
 )
 
 // tunnel owns at most one active mux session.
@@ -452,7 +453,7 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
 	setTCPConnParams(cfg.Mux.TCP, rawConn)
-	h2cfg := &mux.Config{
+	h2cfg := &h2mux.Config{
 		TLSConfig:     tlscfg,
 		LocalID:       cfg.Identity.Claim,
 		KeepAlive:     cfg.KeepAlive(),
@@ -461,7 +462,7 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 		SessionWindow: int32(cfg.Mux.SessionWindow),
 		StreamWindow:  int32(cfg.Mux.StreamWindow),
 	}
-	ss, err := mux.Client(ctx, rawConn, h2cfg)
+	ss, err := h2mux.Client(ctx, rawConn, h2cfg)
 	if err != nil {
 		_ = rawConn.Close()
 		return nil, err

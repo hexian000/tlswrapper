@@ -1,7 +1,7 @@
 // tlswrapper (c) 2021-2026 He Xian <hexian000@outlook.com>
 // This code is licensed under MIT license (see LICENSE for details)
 
-package mux
+package h2mux
 
 import (
 	"context"
@@ -10,11 +10,13 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	mux "github.com/hexian000/tlswrapper/v4/mux"
 )
 
 // pipeSession creates a pair of connected mux Sessions over an in-memory net.Pipe().
 // Both sessions are closed via t.Cleanup when the test ends.
-func pipeSession(t *testing.T, clientCfg, serverCfg *Config) (cli, srv Session) {
+func pipeSession(t *testing.T, clientCfg, serverCfg *Config) (cli, srv mux.Session) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 
@@ -22,7 +24,7 @@ func pipeSession(t *testing.T, clientCfg, serverCfg *Config) (cli, srv Session) 
 	t.Cleanup(cancel)
 
 	type result struct {
-		sess Session
+		sess mux.Session
 		err  error
 	}
 	srvCh := make(chan result, 1)
@@ -58,13 +60,13 @@ func transferAndVerify(t *testing.T, src, dst net.Conn, want []byte) {
 		errCh <- err
 	}()
 	got := make([]byte, len(want))
-	if err := dst.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil && !errors.Is(err, ErrNoDeadline) {
+	if err := dst.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil && !errors.Is(err, mux.ErrNoDeadline) {
 		t.Fatal(err)
 	}
 	if _, err := io.ReadFull(dst, got); err != nil {
 		t.Fatal("read:", err)
 	}
-	if err := dst.SetReadDeadline(time.Time{}); err != nil && !errors.Is(err, ErrNoDeadline) {
+	if err := dst.SetReadDeadline(time.Time{}); err != nil && !errors.Is(err, mux.ErrNoDeadline) {
 		t.Fatal(err)
 	}
 	if err := <-errCh; err != nil {
@@ -160,13 +162,13 @@ func TestSessionClose(t *testing.T) {
 	// Subsequent Open should return ErrSessionClosed immediately.
 	ctx := context.Background()
 	_, err := cli.Open(ctx)
-	if !errors.Is(err, ErrSessionClosed) {
+	if !errors.Is(err, mux.ErrSessionClosed) {
 		t.Fatalf("cli.Open after close: got %v, want ErrSessionClosed", err)
 	}
 
 	// Subsequent Accept should return ErrSessionClosed immediately.
 	_, err = srv.Accept()
-	if !errors.Is(err, ErrSessionClosed) {
+	if !errors.Is(err, mux.ErrSessionClosed) {
 		t.Fatalf("srv.Accept after close: got %v, want ErrSessionClosed", err)
 	}
 }

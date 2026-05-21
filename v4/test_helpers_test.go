@@ -11,6 +11,7 @@ import (
 
 	"github.com/hexian000/tlswrapper/v4/config"
 	"github.com/hexian000/tlswrapper/v4/mux"
+	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
 )
 
 func freePort(t *testing.T) string {
@@ -139,7 +140,7 @@ func startEchoServer(t *testing.T) string {
 	return l.Addr().String()
 }
 
-func newMuxSessionPair(t *testing.T, clientCfg, serverCfg *mux.Config) (mux.Session, mux.Session) {
+func newMuxSessionPair(t *testing.T, clientCfg, serverCfg *h2mux.Config) (mux.Session, mux.Session) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -151,11 +152,11 @@ func newMuxSessionPair(t *testing.T, clientCfg, serverCfg *mux.Config) (mux.Sess
 	}
 	serverCh := make(chan result, 1)
 	go func() {
-		sess, err := mux.Server(ctx, serverConn, serverCfg)
+		sess, err := h2mux.Server(ctx, serverConn, serverCfg)
 		serverCh <- result{sess: sess, err: err}
 	}()
 
-	clientSess, err := mux.Client(ctx, clientConn, clientCfg)
+	clientSess, err := h2mux.Client(ctx, clientConn, clientCfg)
 	if err != nil {
 		t.Fatalf("mux.Client: %v", err)
 	}

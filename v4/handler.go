@@ -11,7 +11,7 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/forwarder"
-	"github.com/hexian000/tlswrapper/v4/mux"
+	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
 )
 
 // Handler serves one accepted connection.
@@ -34,7 +34,7 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 	if tlscfg == nil {
 		slog.Warningf("%s: connection is not encrypted", tag)
 	}
-	h2cfg := &mux.Config{
+	h2cfg := &h2mux.Config{
 		TLSConfig:            tlscfg,
 		LocalID:              cfg.Identity.Claim,
 		WriteTimeout:         cfg.SendTimeout(),
@@ -45,7 +45,7 @@ func (h *MuxHandler) Serve(ctx context.Context, conn net.Conn) {
 	}
 	hsCtx, hsCancel := context.WithTimeout(ctx, cfg.ConnectTimeout())
 	defer hsCancel()
-	ss, err := mux.Server(hsCtx, conn, h2cfg)
+	ss, err := h2mux.Server(hsCtx, conn, h2cfg)
 	if err != nil {
 		slog.Errorf("%s: %s", tag, formats.Error(err))
 		return
