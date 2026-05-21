@@ -66,8 +66,6 @@ func (f *AppFlags) Validate() error {
 	return nil
 }
 
-var appFlags AppFlags
-
 func dumpConfig(f *AppFlags) int {
 	var cfg *config.File
 	if f.Config == "" {
@@ -115,7 +113,6 @@ func AppMain(f *AppFlags) int {
 	if f.DumpConfig {
 		return dumpConfig(f)
 	}
-	appFlags = *f
 	cfg, err := config.LoadFile(f.Config)
 	if err != nil {
 		slog.Fatal("load config: ", formats.Error(err))
@@ -125,7 +122,7 @@ func AppMain(f *AppFlags) int {
 		slog.Default().SetLevel(cfg.LogLevel)
 	}
 	slog.Debugf("runtime: %s", runtime.Version())
-	server, err := NewServer(cfg)
+	server, err := NewServer(cfg, f.ServerName)
 	if err != nil {
 		slog.Fatal("server init: ", formats.Error(err))
 		os.Exit(1)

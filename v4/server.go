@@ -38,9 +38,10 @@ var (
 
 // Server owns listeners, config-driven tunnels, and active mux sessions.
 type Server struct {
-	cfg    *config.File
-	tlscfg *tls.Config
-	cfgMu  sync.RWMutex
+	cfg        *config.File
+	tlscfg     *tls.Config
+	serverName string // TLS SNI override from CLI --server-name flag
+	cfgMu      sync.RWMutex
 
 	l           hlistener.Listener
 	apiListener net.Listener
@@ -81,10 +82,13 @@ type Server struct {
 }
 
 // NewServer builds a Server from the initial config snapshot.
-func NewServer(cfg *config.File) (*Server, error) {
+// serverName is the TLS SNI override passed via the --server-name CLI flag;
+// pass an empty string when constructing from tests or when no override is needed.
+func NewServer(cfg *config.File, serverName string) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
 		cfg:             cfg,
+		serverName:      serverName,
 		identityTunnels: make([]*tunnel, 0),
 		identities:      make(map[string]*identityListener),
 		acceptedTunnels: make(map[mux.Session]*tunnel),
@@ -99,7 +103,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 		cfg, _ := s.getConfig()
 		return cfg.ConnectTimeout()
 	}
-	tlscfg, err := cfg.NewTLSConfig(appFlags.ServerName)
+	tlscfg, err := cfg.NewTLSConfig(serverName)
 	if err != nil {
 		return nil, err
 	}
@@ -892,13 +896,15 @@ func (s *Server) Shutdown() error {
 		}
 	}
 	s.ctx.close()
-	s.g.Close()
-	// Closing sessions unblocks any remaining Accept loops.
+	// Close sessions before closing the group: this lets Accept loops return
+	// naturally so serveSession goroutines can finish their own cleanup before
+	// the group signals them to stop.
 	for _, ss := range s.getAllTunnels() {
 		if ss := ss.getSession(); ss != nil {
 			_ = ss.Close()
 		}
 	}
+	s.g.Close()
 	s.f.Close()
 	slog.Info("waiting for unfinished connections")
 	waitDone := make(chan struct{})
@@ -918,7 +924,7 @@ func (s *Server) Shutdown() error {
 func (s *Server) ReloadConfig(cfg *config.File) error {
 	var errs []error
 	// 1. Build new TLS config; retain old one on failure.
-	newTLSCfg, err := cfg.NewTLSConfig(appFlags.ServerName)
+	newTLSCfg, err := cfg.NewTLSConfig(s.serverName)
 	if err != nil {
 		slog.Errorf("reload: TLS config: %s", formats.Error(err))
 		newTLSCfg = nil

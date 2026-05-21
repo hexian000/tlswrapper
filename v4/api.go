@@ -39,10 +39,7 @@ func setRespHeader(h http.Header, mimeType string, nocache bool) {
 }
 
 func fprintf(w io.Writer, format string, v ...any) {
-	_, err := fmt.Fprintf(w, format, v...)
-	if err != nil {
-		panic(err)
-	}
+	_, _ = fmt.Fprintf(w, format, v...)
 }
 
 type apiConfigHandler struct {

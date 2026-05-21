@@ -103,7 +103,7 @@ func (f *forwarder) addConn(accepted net.Conn, dialed net.Conn) {
 	f.conn[dialed] = struct{}{}
 }
 
-func (f *forwarder) delConn(accepted net.Conn, dialed net.Conn) {
+func (f *forwarder) cleanupConn(accepted net.Conn, dialed net.Conn) {
 	if err := accepted.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 		slog.Warningf("close: %s", formats.Error(err))
 	}
@@ -145,7 +145,7 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 	}
 	f.addConn(accepted, dialed)
 	cleanup := func() {
-		f.delConn(accepted, dialed)
+		f.cleanupConn(accepted, dialed)
 		<-f.counter
 	}
 	var remaining atomic.Int32
