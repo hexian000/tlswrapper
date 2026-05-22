@@ -16,10 +16,10 @@ import (
 // compile-time check that quicConn implements net.Conn.
 var _ net.Conn = (*quicConn)(nil)
 
-// quicConn wraps quic.Stream (interface), adding the LocalAddr and RemoteAddr
+// quicConn wraps *quic.Stream (struct pointer), adding the LocalAddr and RemoteAddr
 // methods required by net.Conn (which quic.Stream itself does not provide).
 type quicConn struct {
-	quic.Stream
+	*quic.Stream
 	localAddr  net.Addr
 	remoteAddr net.Addr
 
@@ -44,7 +44,7 @@ func (c *quicConn) Close() error {
 
 // newQuicConn wraps a QUIC stream as a net.Conn.
 // onClose is called (exactly once) when Close() is first called; it may be nil.
-func newQuicConn(s quic.Stream, localAddr, remoteAddr net.Addr, onClose func(err error)) *quicConn {
+func newQuicConn(s *quic.Stream, localAddr, remoteAddr net.Addr, onClose func(err error)) *quicConn {
 	return &quicConn{
 		Stream:     s,
 		localAddr:  localAddr,

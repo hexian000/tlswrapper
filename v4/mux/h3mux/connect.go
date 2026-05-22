@@ -30,13 +30,13 @@ func Dial(ctx context.Context, addr string, cfg *Config) (mux.Session, error) {
 // performs the h3mux server-side handshake.  The returned Session is ready to use.
 //
 // conn is typically obtained from quic.Listener.Accept.
-func NewSession(ctx context.Context, conn quic.Connection, cfg *Config) (mux.Session, error) {
+func NewSession(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Session, error) {
 	return serverHandshake(ctx, conn, cfg)
 }
 
 // clientHandshake opens the control stream, runs the client handshake, and
 // returns an h3Session.
-func clientHandshake(ctx context.Context, conn quic.Connection, cfg *Config) (mux.Session, error) {
+func clientHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Session, error) {
 	ctrl, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		_ = conn.CloseWithError(0, "handshake failed")
@@ -52,7 +52,7 @@ func clientHandshake(ctx context.Context, conn quic.Connection, cfg *Config) (mu
 
 // serverHandshake accepts the control stream, runs the server handshake, and
 // returns an h3Session.
-func serverHandshake(ctx context.Context, conn quic.Connection, cfg *Config) (mux.Session, error) {
+func serverHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Session, error) {
 	ctrl, err := conn.AcceptStream(ctx)
 	if err != nil {
 		_ = conn.CloseWithError(0, "handshake failed")
@@ -91,7 +91,7 @@ func (h *H3Mux) Dial(ctx context.Context, addr string) (mux.Session, error) {
 }
 
 // NewSession is equivalent to the package-level NewSession function.
-func (h *H3Mux) NewSession(ctx context.Context, conn quic.Connection) (mux.Session, error) {
+func (h *H3Mux) NewSession(ctx context.Context, conn *quic.Conn) (mux.Session, error) {
 	return NewSession(ctx, conn, h.cfg)
 }
 

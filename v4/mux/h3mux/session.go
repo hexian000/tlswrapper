@@ -21,8 +21,8 @@ var _ mux.Session = (*h3Session)(nil)
 // Because QUIC is symmetric (both endpoints can open streams), there is no
 // distinction between client and server sessions.
 type h3Session struct {
-	conn            quic.Connection
-	ctrlStream      quic.Stream
+	conn            *quic.Conn
+	ctrlStream      *quic.Stream
 	cfg             *Config
 	peerIdentity    string
 	peerRejectsOpen bool // peer advertised RejectInbound → we must not Open()
@@ -35,7 +35,7 @@ type h3Session struct {
 
 // newH3Session creates an h3Session and starts its lifecycle goroutine.
 // conn and ctrl must both be alive. ctrl is the control stream (stream 0).
-func newH3Session(conn quic.Connection, ctrl quic.Stream, peerIdentity string, peerRejectsOpen bool, cfg *Config) *h3Session {
+func newH3Session(conn *quic.Conn, ctrl *quic.Stream, peerIdentity string, peerRejectsOpen bool, cfg *Config) *h3Session {
 	s := &h3Session{
 		conn:            conn,
 		ctrlStream:      ctrl,
@@ -81,7 +81,7 @@ func (s *h3Session) onStreamClose(_ error) {
 }
 
 // wrapStream wraps a raw quic.Stream into a net.Conn-compatible countingConn.
-func (s *h3Session) wrapStream(qs quic.Stream) net.Conn {
+func (s *h3Session) wrapStream(qs *quic.Stream) net.Conn {
 	local := s.conn.LocalAddr()
 	remote := s.conn.RemoteAddr()
 	inner := newQuicConn(qs, local, remote, s.onStreamClose)
