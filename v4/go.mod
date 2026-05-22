@@ -3,7 +3,7 @@ module github.com/hexian000/tlswrapper/v4
 go 1.25.0
 
 require (
-	github.com/hexian000/gosnippets v0.0.0-20260304071627-ed5e9caed94c
+	github.com/hexian000/gosnippets v0.0.0-20260521124012-6e1862e56058
 	github.com/prometheus/client_golang v1.23.2
 	github.com/quic-go/quic-go v0.59.1
 	google.golang.org/grpc v1.81.1
@@ -23,7 +23,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260519071638-aa98bba5eb94 // indirect
 )
