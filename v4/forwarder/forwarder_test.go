@@ -4,6 +4,7 @@
 package forwarder
 
 import (
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -228,12 +229,16 @@ type closeWritePipe struct {
 	net.Conn
 	mu         sync.Mutex
 	closeCount int
+	called     chan struct{} // closed (once) when CloseWrite is first invoked
 }
 
 func (c *closeWritePipe) CloseWrite() error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closeCount == 0 {
+		close(c.called)
+	}
 	c.closeCount++
-	c.mu.Unlock()
 	return nil
 }
 
@@ -245,7 +250,7 @@ func TestForwarderHalfCloseWrite(t *testing.T) {
 	f := New(10, g)
 
 	rawAccepted, acceptedPeer := net.Pipe()
-	accepted := &closeWritePipe{Conn: rawAccepted}
+	accepted := &closeWritePipe{Conn: rawAccepted, called: make(chan struct{})}
 	dialed, dialedPeer := net.Pipe()
 
 	var closedWg sync.WaitGroup
@@ -263,6 +268,16 @@ func TestForwarderHalfCloseWrite(t *testing.T) {
 	// should trigger accepted.CloseWrite() since accepted implements CloseWriter.
 	_ = dialedPeer.Close()
 
+	// Wait until CloseWrite has been called before closing acceptedPeer.
+	// Without this barrier the closeOnce.Do in the other goroutine can close
+	// both connections first, causing connCopy to see an error instead of a
+	// clean EOF and skipping the CloseWrite call — a pre-existing race.
+	select {
+	case <-accepted.called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("CloseWrite not called within timeout after dialedPeer.Close()")
+	}
+
 	// Closing acceptedPeer ends the other copy direction.
 	_ = acceptedPeer.Close()
 
@@ -279,5 +294,73 @@ func TestForwarderHalfCloseWrite(t *testing.T) {
 	accepted.mu.Unlock()
 	if count == 0 {
 		t.Fatal("CloseWrite was never called on the CloseWriter destination")
+	}
+}
+
+func TestDrainPool(t *testing.T) {
+	DrainPool() // must not panic or block
+}
+
+// failAfterFirstGroup wraps a real routines.Group but returns an error from Go()
+// for every call after the first, simulating a group that closes between the two
+// goroutine launches inside forwarder.Start.
+type failAfterFirstGroup struct {
+	routines.Group
+	count atomic.Int32
+}
+
+func (g *failAfterFirstGroup) Go(f func()) error {
+	if g.count.Add(1) > 1 {
+		return errors.New("group: closed")
+	}
+	return g.Group.Go(f)
+}
+
+// TestForwarderSecondGoFails verifies the error path in Start where the first
+// goroutine launches successfully but the second fails.  The handler must
+// receive exactly two OnWriteClosed calls and one OnClosed call.
+func TestForwarderSecondGoFails(t *testing.T) {
+	realG := newTestGroup(t)
+	fg := &failAfterFirstGroup{Group: realG}
+	f := New(10, fg)
+
+	a, b := net.Pipe()
+	t.Cleanup(func() {
+		_ = a.Close()
+		_ = b.Close()
+	})
+
+	var wcCount atomic.Int32
+	var closedCount atomic.Int32
+	var closedWg sync.WaitGroup
+	closedWg.Add(1)
+	handler := HandlerFuncs{
+		WriteClosed: func(_ net.Conn, _ error) {
+			wcCount.Add(1)
+		},
+		Closed: func() {
+			closedCount.Add(1)
+			closedWg.Done()
+		},
+	}
+
+	err := f.Start(a, b, handler)
+	if err == nil {
+		t.Fatal("Start: expected error when second goroutine fails, got nil")
+	}
+
+	done := make(chan struct{})
+	go func() { closedWg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for OnClosed callback")
+	}
+
+	if got := wcCount.Load(); got != 2 {
+		t.Fatalf("OnWriteClosed count = %d, want 2", got)
+	}
+	if got := closedCount.Load(); got != 1 {
+		t.Fatalf("OnClosed count = %d, want 1", got)
 	}
 }

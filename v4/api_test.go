@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hexian000/tlswrapper/v4/config"
+	"github.com/hexian000/tlswrapper/v4/mux/h2mux"
 )
 
 func TestAPIConfigHandler(t *testing.T) {
@@ -222,5 +223,93 @@ func TestRunHTTPServer(t *testing.T) {
 	body = assertStatus(t, http.MethodGet, "/stack", http.StatusOK)
 	if !strings.Contains(body, "goroutine") {
 		t.Fatalf("body %q does not contain %q", body, "goroutine")
+	}
+}
+
+// TestPrometheusCollectWithSession verifies that the prometheus collector emits
+// per-session metrics with an identity label when a session is active.
+func TestPrometheusCollectWithSession(t *testing.T) {
+	cli, srv := newMuxSessionPair(t, &h2mux.Config{LocalID: "client"}, &h2mux.Config{LocalID: "peer-z"})
+	_ = srv
+	s := newTestServer(t, nil)
+	t.Cleanup(func() { _ = s.Shutdown() })
+	s.started = time.Now().Add(-1 * time.Minute)
+
+	tn := newTunnel("peer-z:1", s)
+	tn.ss = cli
+	tn.lastChanged = time.Now()
+	s.mu.Lock()
+	s.identityTunnels = append(s.identityTunnels, tn)
+	s.mu.Unlock()
+
+	h := newAPIMetricsHandler(s)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `identity="peer-z"`) {
+		t.Fatalf("session metrics missing: body does not contain identity=\"peer-z\"\n%s", body)
+	}
+}
+
+// TestAPIStatsHandlerBanner verifies that the banner ("tlswrapper") is included
+// when nobanner is not set.
+func TestAPIStatsHandlerBanner(t *testing.T) {
+	s := newTestServer(t, nil)
+	h := &apiStatsHandler{s: s}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stats", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "tlswrapper") {
+		t.Fatalf("banner missing: body %q does not contain %q", body, "tlswrapper")
+	}
+}
+
+// TestAPIStatsHandlerRuntime verifies that runtime info is included when runtime=true.
+func TestAPIStatsHandlerRuntime(t *testing.T) {
+	s := newTestServer(t, nil)
+	h := &apiStatsHandler{s: s}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stats?nobanner=true&runtime=true", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"Max Procs", "Num Goroutines"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("runtime section missing: body %q does not contain %q", body, want)
+		}
+	}
+}
+
+// TestAPIStatsHandlerWithSessions verifies that the sessions section lists
+// injected tunnels that have a PeerIdentity.
+func TestAPIStatsHandlerWithSessions(t *testing.T) {
+	cli, srv := newMuxSessionPair(t, &h2mux.Config{LocalID: "client"}, &h2mux.Config{LocalID: "peer-y"})
+	_ = srv
+	s := newTestServer(t, nil)
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	tn := newTunnel("peer-y:1", s)
+	tn.ss = cli
+	tn.lastChanged = time.Now()
+	s.mu.Lock()
+	s.identityTunnels = append(s.identityTunnels, tn)
+	s.mu.Unlock()
+
+	h := &apiStatsHandler{s: s}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stats?nobanner=true", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "peer-y") {
+		t.Fatalf("sessions section missing: body does not contain %q\n%s", "peer-y", body)
 	}
 }

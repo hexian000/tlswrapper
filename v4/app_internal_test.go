@@ -176,3 +176,42 @@ func TestAppMainReloadOnSIGHUP(t *testing.T) {
 	}
 	cmd.Process = nil
 }
+
+// TestAppMainValidationFailure verifies that AppMain returns 1 when no config
+// file is specified and validation fails.
+func TestAppMainValidationFailure(t *testing.T) {
+	var code int
+	captureStdout(t, func() {
+		code = AppMain(&AppFlags{})
+	})
+	if code != 1 {
+		t.Fatalf("AppMain(empty flags) = %d, want 1", code)
+	}
+}
+
+// TestAppMainColor verifies that AppMain processes the Color flag before
+// validation, and still returns 1 when no config is set.
+func TestAppMainColor(t *testing.T) {
+	var code int
+	captureStdout(t, func() {
+		code = AppMain(&AppFlags{Color: true})
+	})
+	// Restore slog to a safe writer: AppMain(Color=true) set it to OutputTerminal
+	// pointing at the now-closed captured pipe.
+	slog.Default().SetOutput(slog.OutputWriter, os.Stdout)
+	if code != 1 {
+		t.Fatalf("AppMain(Color=true, no config) = %d, want 1", code)
+	}
+}
+
+// TestAppMainDumpConfigDefault verifies that AppMain outputs the default config
+// and returns 0 when DumpConfig is true and no Config path is supplied.
+func TestAppMainDumpConfigDefault(t *testing.T) {
+	var code int
+	captureStdout(t, func() {
+		code = AppMain(&AppFlags{DumpConfig: true})
+	})
+	if code != 0 {
+		t.Fatalf("AppMain(DumpConfig=true, no config path) = %d, want 0", code)
+	}
+}

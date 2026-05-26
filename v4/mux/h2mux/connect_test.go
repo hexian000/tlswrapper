@@ -230,3 +230,183 @@ func TestSessionMultipleStreams(t *testing.T) {
 		_ = p.srv.Close()
 	}
 }
+
+// TestH2MuxDialAndListener exercises New/Dial and NewListener/AcceptSession over real TCP.
+func TestH2MuxDialAndListener(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+
+	ml := NewListener(l, &Config{LocalID: "server"})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+
+	type srvResult struct {
+		sess mux.Session
+		err  error
+	}
+	srvCh := make(chan srvResult, 1)
+	go func() {
+		sess, err := ml.AcceptSession(ctx)
+		srvCh <- srvResult{sess, err}
+	}()
+
+	dialer := New(&Config{LocalID: "client"})
+	cliSess, err := dialer.Dial(ctx, l.Addr().String())
+	if err != nil {
+		t.Fatal("Dial:", err)
+	}
+	t.Cleanup(func() { _ = cliSess.Close() })
+
+	res := <-srvCh
+	if res.err != nil {
+		_ = cliSess.Close()
+		t.Fatal("AcceptSession:", res.err)
+	}
+	t.Cleanup(func() { _ = res.sess.Close() })
+
+	if got := cliSess.PeerIdentity(); got != "server" {
+		t.Fatalf("cli.PeerIdentity() = %q, want %q", got, "server")
+	}
+	if got := res.sess.PeerIdentity(); got != "client" {
+		t.Fatalf("srv.PeerIdentity() = %q, want %q", got, "client")
+	}
+	if ml.Addr() == nil {
+		t.Fatal("ml.Addr() = nil, want non-nil")
+	}
+}
+
+// TestH2ListenerClose verifies that Close() causes a blocking AcceptSession to return.
+func TestH2ListenerClose(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ml := NewListener(l, &Config{LocalID: "server"})
+	ctx := context.Background()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := ml.AcceptSession(ctx)
+		errCh <- err
+	}()
+
+	_ = ml.Close()
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("AcceptSession: expected error after Close(), got nil")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("AcceptSession did not return after Close()")
+	}
+}
+
+// TestSessionAccessors verifies LocalAddr, RemoteAddr, Stats, and IdleChan on both sessions.
+func TestSessionAccessors(t *testing.T) {
+	cli, srv := pipeSession(t, &Config{LocalID: "cli"}, &Config{LocalID: "srv"})
+
+	if cli.LocalAddr() == nil {
+		t.Fatal("cli.LocalAddr() = nil")
+	}
+	if cli.RemoteAddr() == nil {
+		t.Fatal("cli.RemoteAddr() = nil")
+	}
+	if srv.LocalAddr() == nil {
+		t.Fatal("srv.LocalAddr() = nil")
+	}
+	if srv.RemoteAddr() == nil {
+		t.Fatal("srv.RemoteAddr() = nil")
+	}
+	if cli.Stats() == nil {
+		t.Fatal("cli.Stats() = nil")
+	}
+	if srv.Stats() == nil {
+		t.Fatal("srv.Stats() = nil")
+	}
+
+	// Open one stream and close it; IdleChan should fire when NumStreams → 0.
+	ctx := context.Background()
+	acceptCh := make(chan net.Conn, 1)
+	go func() {
+		conn, err := srv.Accept()
+		if err != nil {
+			acceptCh <- nil
+			return
+		}
+		acceptCh <- conn
+	}()
+
+	cliConn, err := cli.Open(ctx)
+	if err != nil {
+		t.Fatal("cli.Open:", err)
+	}
+
+	srvConn := <-acceptCh
+	if srvConn == nil {
+		t.Fatal("srv.Accept returned nil")
+	}
+
+	_ = cliConn.Close()
+	_ = srvConn.Close()
+
+	select {
+	case <-cli.IdleChan():
+		// NumStreams dropped to 0; idle signal received.
+	case <-time.After(5 * time.Second):
+		t.Fatal("IdleChan did not fire within timeout after closing last stream")
+	}
+}
+
+// TestH2MuxDialWithConnSetup verifies that the ConnSetup callback in Config is
+// invoked on the dialed connection before the mux handshake.
+func TestH2MuxDialWithConnSetup(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverCfg := &Config{LocalID: "server"}
+	ml := NewListener(l, serverCfg)
+	t.Cleanup(func() { _ = ml.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+
+	type srvResult struct {
+		sess mux.Session
+		err  error
+	}
+	srvCh := make(chan srvResult, 1)
+	go func() {
+		sess, err := ml.AcceptSession(ctx)
+		srvCh <- srvResult{sess, err}
+	}()
+
+	setupCalled := false
+	clientCfg := &Config{
+		LocalID: "client",
+		ConnSetup: func(_ net.Conn) {
+			setupCalled = true
+		},
+	}
+	cliSess, err := New(clientCfg).Dial(ctx, l.Addr().String())
+	if err != nil {
+		t.Fatal("Dial:", err)
+	}
+	t.Cleanup(func() { _ = cliSess.Close() })
+
+	res := <-srvCh
+	if res.err != nil {
+		t.Fatal("AcceptSession:", res.err)
+	}
+	t.Cleanup(func() { _ = res.sess.Close() })
+
+	if !setupCalled {
+		t.Fatal("ConnSetup was not called")
+	}
+}

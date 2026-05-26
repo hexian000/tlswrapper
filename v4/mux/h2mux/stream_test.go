@@ -243,3 +243,6 @@ func TestGrpcStreamWriteTimeout(t *testing.T) {
 		t.Fatal("abortWrite was not called")
 	}
 }
+func TestStreamDrainPool(t *testing.T) {
+	DrainPool() // must not panic or block
+}

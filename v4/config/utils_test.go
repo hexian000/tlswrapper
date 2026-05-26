@@ -202,6 +202,7 @@ func TestSetLogger(t *testing.T) {
 		{name: "stdout", log: "stdout"},
 		{name: "stderr", log: "stderr"},
 		{name: "discard", log: "discard"},
+		{name: "syslog", log: "syslog"},
 		{name: "unknown", log: "somewhere", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -287,5 +288,32 @@ func TestNewTLSConfigInvalidAuthCert(t *testing.T) {
 	_, err := cfg.NewTLSConfig("example.com")
 	if err == nil {
 		t.Fatal("expected error for invalid auth cert")
+	}
+}
+
+func TestDurationAccessors(t *testing.T) {
+	cfg := &File{}
+	cfg.Mux.PingTimeout = 15
+	cfg.Mux.KeepAlive = 25
+	cfg.Mux.SendTimeout = 8
+	cfg.Mux.IdleTimeout = 60
+
+	if got := cfg.PingTimeout(); got != 15*time.Second {
+		t.Fatalf("PingTimeout() = %v, want %v", got, 15*time.Second)
+	}
+	if got := cfg.KeepAlive(); got != 25*time.Second {
+		t.Fatalf("KeepAlive() = %v, want %v", got, 25*time.Second)
+	}
+	if got := cfg.SendTimeout(); got != 8*time.Second {
+		t.Fatalf("SendTimeout() = %v, want %v", got, 8*time.Second)
+	}
+	if got := cfg.IdleTimeout(); got != 60*time.Second {
+		t.Fatalf("IdleTimeout() = %v, want %v", got, 60*time.Second)
+	}
+
+	// Zero value should return zero duration.
+	cfg2 := &File{}
+	if got := cfg2.IdleTimeout(); got != 0 {
+		t.Fatalf("IdleTimeout() zero = %v, want 0", got)
 	}
 }

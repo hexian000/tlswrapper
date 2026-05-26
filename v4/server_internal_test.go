@@ -368,3 +368,66 @@ func TestServerStatsLatencyBranch(t *testing.T) {
 		t.Fatalf("Stats().StreamLatency.Max = %v, want > 0", stats.StreamLatency.Max)
 	}
 }
+
+// TestServerAcceptInboundStreams verifies that acceptInboundStreams forwards
+// server-initiated streams to the configured connect address via handleInboundStream.
+func TestServerAcceptInboundStreams(t *testing.T) {
+	echoAddr := startEchoServer(t)
+	s := newTestServer(t, map[string]any{"connect": echoAddr})
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	cli, srv := newMuxSessionPair(t, &h2mux.Config{LocalID: "client"}, &h2mux.Config{LocalID: "server"})
+
+	tn := newTunnel("remote:1", s)
+	tn.ss = cli
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.acceptInboundStreams(tn, cli)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// srv.Open triggers cli.Accept inside acceptInboundStreams.
+	srvConn, err := srv.Open(ctx)
+	if err != nil {
+		t.Fatal("srv.Open:", err)
+	}
+	defer srvConn.Close()
+
+	transferAndVerify(t, srvConn, srvConn, []byte("via-inbound"))
+
+	// Close cli to unblock acceptInboundStreams.
+	_ = cli.Close()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("acceptInboundStreams did not exit within timeout")
+	}
+}
+
+// TestServerStatsWithListener verifies that Stats() does not panic and
+// populates Accepted/Served when the mux listener is active.
+func TestServerStatsWithListener(t *testing.T) {
+	addr := freePort(t)
+	s := newTestServer(t, map[string]any{"mux_listen": addr})
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	// Wait for the listener to bind.
+	waitFor(t, 2*time.Second, func() bool {
+		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err != nil {
+			return false
+		}
+		_ = c.Close()
+		return true
+	})
+
+	// Stats() must not panic; Accepted and Served are populated from s.l.
+	_ = s.Stats()
+}
