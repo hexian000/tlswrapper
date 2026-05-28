@@ -234,7 +234,10 @@ def classify_scope(source_rel: str) -> str:
     parts = Path(source_rel).parts
     if len(parts) <= 1:
         return "root"
-    return parts[0]
+    parent = str(Path(*parts[:-1]))
+    if not parent:
+        return "root"
+    return parent
 
 
 def build_summary_rows(rows: Sequence[Tuple[str, FileCoverage]]) -> List[Tuple[str, int, int, int, int]]:
