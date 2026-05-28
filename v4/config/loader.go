@@ -6,6 +6,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"mime"
 	"os"
@@ -87,6 +88,15 @@ func Load(b []byte) (*File, error) {
 // LoadFile reads path and delegates to Load.
 func LoadFile(path string) (*File, error) {
 	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return Load(b)
+}
+
+// LoadReader reads all bytes from r and delegates to Load.
+func LoadReader(r io.Reader) (*File, error) {
+	b, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}

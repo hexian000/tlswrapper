@@ -71,6 +71,13 @@ func dumpConfig(f *AppFlags) int {
 	if f.Config == "" {
 		def := config.Default
 		cfg = &def
+	} else if f.Config == "-" {
+		var err error
+		cfg, err = config.LoadReader(os.Stdin)
+		if err != nil {
+			slog.Fatal("dumpconfig: ", formats.Error(err))
+			return 1
+		}
 	} else {
 		var err error
 		cfg, err = config.LoadFile(f.Config)
@@ -113,7 +120,13 @@ func AppMain(f *AppFlags) int {
 	if f.DumpConfig {
 		return dumpConfig(f)
 	}
-	cfg, err := config.LoadFile(f.Config)
+	var cfg *config.File
+	var err error
+	if f.Config == "-" {
+		cfg, err = config.LoadReader(os.Stdin)
+	} else {
+		cfg, err = config.LoadFile(f.Config)
+	}
 	if err != nil {
 		slog.Fatal("load config: ", formats.Error(err))
 		os.Exit(1)
@@ -142,6 +155,10 @@ func AppMain(f *AppFlags) int {
 		if sig != syscall.SIGHUP {
 			_, _ = sd.Notify(sd.Stopping)
 			break
+		}
+		if f.Config == "-" {
+			slog.Error("SIGHUP reload is not supported when config is read from stdin")
+			continue
 		}
 		_, _ = sd.Notify(sd.Reloading)
 		cfg, err := config.LoadFile(f.Config)
