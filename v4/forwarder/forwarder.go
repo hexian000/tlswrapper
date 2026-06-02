@@ -19,10 +19,10 @@ import (
 // ErrConnLimit is returned when the maximum number of concurrent connections is exceeded
 var ErrConnLimit = errors.New("connection limit is exceeded")
 
-// copyBufPool pools 32 KiB buffers reused across io.CopyBuffer calls.
+// copyBufPool pools 16 KiB buffers reused across io.CopyBuffer calls.
 var copyBufPool = sync.Pool{
 	New: func() any {
-		b := make([]byte, 32*1024)
+		b := make([]byte, 16384)
 		return &b
 	},
 }

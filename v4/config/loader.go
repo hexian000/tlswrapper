@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"mime"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -155,6 +156,25 @@ func (c *File) ParsedMaxStartups() (start, rate, full int) {
 	return
 }
 
+// isLoopbackHost reports whether host (a bare hostname or IP, no port) resolves
+// exclusively to loopback addresses. IP literals are checked directly; hostnames
+// are resolved via DNS and every returned address must be loopback.
+func isLoopbackHost(host string) bool {
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	for _, ip := range ips {
+		if !ip.IsLoopback() {
+			return false
+		}
+	}
+	return true
+}
+
 // Validate checks declared values and clamps tunables into supported ranges.
 func (c *File) Validate() error {
 	if err := checkType(c.Type); err != nil {
@@ -196,6 +216,15 @@ func (c *File) Validate() error {
 		clampInt(&c.TCP.WriteBuffer, 1, math.MaxInt32)
 	}
 	clampInt(&c.TCP.Backlog, 1, 4096)
+	// Warn when APIListen is bound to a non-loopback address; the API has no
+	// authentication and exposes config reload, GC triggers, and goroutine stacks.
+	if c.APIListen != "" {
+		if host, _, err := net.SplitHostPort(c.APIListen); err == nil {
+			if !isLoopbackHost(host) {
+				slog.Warningf("api_listen %q is not a loopback address; the API endpoint has no authentication", c.APIListen)
+			}
+		}
+	}
 	return nil
 }
 

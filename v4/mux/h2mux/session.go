@@ -138,6 +138,9 @@ func (ss *session) LocalAddr() net.Addr { return ss.localAddr }
 
 func (ss *session) RemoteAddr() net.Addr { return ss.remoteAddr }
 
+// Handshake is a no-op: clientSession and serverSession are already established.
+func (ss *session) Handshake(_ context.Context) error { return nil }
+
 type clientSession struct {
 	session
 	grpcClient      muxpb.MuxClient

@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
+	"sync/atomic"
 
 	"github.com/quic-go/quic-go"
 
@@ -125,14 +127,143 @@ var (
 	_ mux.Listener = (*H3Listener)(nil)
 )
 
-// AcceptSession accepts one QUIC connection and runs the h3mux server-side
-// handshake, returning the resulting Session.
-func (l *H3Listener) AcceptSession(ctx context.Context) (mux.Session, error) {
-	conn, err := l.l.Accept(ctx)
+// h3InboundSession holds an accepted QUIC connection (QUIC/TLS established)
+// before the h3mux application-level handshake has been completed.
+// It implements mux.Session: Handshake(ctx) runs the h3mux control-stream
+// setup; all other stream-level methods call Handshake implicitly using
+// context.Background() when called before an explicit Handshake, matching
+// the crypto/tls.Conn behaviour.
+type h3InboundSession struct {
+	conn *quic.Conn
+	cfg  *Config
+
+	mu            sync.Mutex
+	handshakeDone atomic.Bool // set true AFTER ss/handshakeErr are stored
+	ss            mux.Session
+	handshakeErr  error
+}
+
+// compile-time check that h3InboundSession implements mux.Session.
+var _ mux.Session = (*h3InboundSession)(nil)
+
+// doHandshake performs the h3mux server-side handshake exactly once.
+// The mutex is held for the entire handshake duration, matching crypto/tls.Conn.
+func (s *h3InboundSession) doHandshake(ctx context.Context) error {
+	if s.handshakeDone.Load() {
+		return s.handshakeErr
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.handshakeDone.Load() {
+		return s.handshakeErr
+	}
+	ss, err := serverHandshake(ctx, s.conn, s.cfg)
+	if err != nil {
+		s.handshakeErr = err
+		s.handshakeDone.Store(true)
+		return err
+	}
+	s.ss = ss
+	s.handshakeDone.Store(true)
+	return nil
+}
+
+func (s *h3InboundSession) Handshake(ctx context.Context) error {
+	return s.doHandshake(ctx)
+}
+
+// delegate returns the ready session, running an implicit handshake if needed.
+func (s *h3InboundSession) delegate() (mux.Session, error) {
+	if err := s.doHandshake(context.Background()); err != nil {
+		return nil, err
+	}
+	return s.ss, nil // safe: ss is stored before handshakeDone is set
+}
+
+func (s *h3InboundSession) Open(ctx context.Context) (net.Conn, error) {
+	ss, err := s.delegate()
 	if err != nil {
 		return nil, err
 	}
-	return NewSession(ctx, conn, l.cfg)
+	return ss.Open(ctx)
+}
+
+func (s *h3InboundSession) Accept() (net.Conn, error) {
+	ss, err := s.delegate()
+	if err != nil {
+		return nil, err
+	}
+	return ss.Accept()
+}
+
+func (s *h3InboundSession) Close() error {
+	if s.handshakeDone.Load() {
+		if s.ss != nil {
+			return s.ss.Close()
+		}
+		return nil // handshake already failed; conn was closed in serverHandshake
+	}
+	return s.conn.CloseWithError(0, "handshake cancelled")
+}
+
+func (s *h3InboundSession) IsClosed() bool {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.IsClosed()
+	}
+	return false
+}
+
+func (s *h3InboundSession) CloseChan() <-chan struct{} {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.CloseChan()
+	}
+	return nil
+}
+
+func (s *h3InboundSession) IdleChan() <-chan struct{} {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.IdleChan()
+	}
+	return nil
+}
+
+func (s *h3InboundSession) Stats() *mux.SessionMetrics {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.Stats()
+	}
+	return nil
+}
+
+func (s *h3InboundSession) PeerIdentity() string {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.PeerIdentity()
+	}
+	return ""
+}
+
+func (s *h3InboundSession) LocalAddr() net.Addr {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.LocalAddr()
+	}
+	return s.conn.LocalAddr()
+}
+
+func (s *h3InboundSession) RemoteAddr() net.Addr {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.RemoteAddr()
+	}
+	return s.conn.RemoteAddr()
+}
+
+// Accept waits for a new QUIC connection (including QUIC/TLS negotiation) and
+// returns a Session whose Handshake performs the h3mux control-stream setup.
+// Accept blocks until a connection arrives or the listener is closed.
+func (l *H3Listener) Accept() (mux.Session, error) {
+	conn, err := l.l.Accept(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return &h3InboundSession{conn: conn, cfg: l.cfg}, nil
 }
 
 // Addr returns the listener's local network address.

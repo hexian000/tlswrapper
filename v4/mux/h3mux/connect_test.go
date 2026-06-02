@@ -297,7 +297,7 @@ func TestSessionMultipleStreams(t *testing.T) {
 }
 
 // TestH3MuxWrapperDialAndListen exercises the H3Mux and H3Listener wrapper
-// types end-to-end using real UDP: New/Dial, ListenMux/NewListener/AcceptSession/Addr/Close.
+// types end-to-end using real UDP: New/Dial, ListenMux/NewListener/Accept/Handshake/Addr/Close.
 func TestH3MuxWrapperDialAndListen(t *testing.T) {
 	serverTLS, clientTLS := generateSelfSignedTLS(t)
 
@@ -323,8 +323,13 @@ func TestH3MuxWrapperDialAndListen(t *testing.T) {
 	}
 	srvCh := make(chan srvResult, 1)
 	go func() {
-		sess, err := ml.AcceptSession(ctx)
-		srvCh <- srvResult{sess, err}
+		ss, err := ml.Accept()
+		if err != nil {
+			srvCh <- srvResult{nil, err}
+			return
+		}
+		err = ss.Handshake(ctx)
+		srvCh <- srvResult{ss, err}
 	}()
 
 	h := New(clientCfg)
@@ -336,7 +341,7 @@ func TestH3MuxWrapperDialAndListen(t *testing.T) {
 
 	res := <-srvCh
 	if res.err != nil {
-		t.Fatal("H3Listener.AcceptSession:", res.err)
+		t.Fatal("H3Listener.Accept+Handshake:", res.err)
 	}
 	t.Cleanup(func() { _ = res.sess.Close() })
 
@@ -398,7 +403,7 @@ func TestH3MuxNewSession(t *testing.T) {
 	}
 }
 
-// TestH3ListenerClose verifies that Close() causes a blocking AcceptSession to return an error.
+// TestH3ListenerClose verifies that Close() causes a blocking Accept to return an error.
 func TestH3ListenerClose(t *testing.T) {
 	serverTLS, _ := generateSelfSignedTLS(t)
 	ml, err := ListenMux("127.0.0.1:0", &Config{TLSConfig: serverTLS})
@@ -406,10 +411,9 @@ func TestH3ListenerClose(t *testing.T) {
 		t.Fatal("ListenMux:", err)
 	}
 
-	ctx := context.Background()
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := ml.AcceptSession(ctx)
+		_, err := ml.Accept()
 		errCh <- err
 	}()
 
@@ -418,7 +422,7 @@ func TestH3ListenerClose(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err == nil {
-			t.Fatal("AcceptSession after Close() returned nil error, want error")
+			t.Fatal("Accept after Close() returned nil error, want error")
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("AcceptSession did not return after Close()")

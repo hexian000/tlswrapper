@@ -249,8 +249,13 @@ func TestH2MuxDialAndListener(t *testing.T) {
 	}
 	srvCh := make(chan srvResult, 1)
 	go func() {
-		sess, err := ml.AcceptSession(ctx)
-		srvCh <- srvResult{sess, err}
+		ss, err := ml.Accept()
+		if err != nil {
+			srvCh <- srvResult{nil, err}
+			return
+		}
+		err = ss.Handshake(ctx)
+		srvCh <- srvResult{ss, err}
 	}()
 
 	dialer := New(&Config{LocalID: "client"})
@@ -278,7 +283,7 @@ func TestH2MuxDialAndListener(t *testing.T) {
 	}
 }
 
-// TestH2ListenerClose verifies that Close() causes a blocking AcceptSession to return.
+// TestH2ListenerClose verifies that Close() causes a blocking Accept to return.
 func TestH2ListenerClose(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -286,11 +291,10 @@ func TestH2ListenerClose(t *testing.T) {
 	}
 
 	ml := NewListener(l, &Config{LocalID: "server"})
-	ctx := context.Background()
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := ml.AcceptSession(ctx)
+		_, err := ml.Accept()
 		errCh <- err
 	}()
 
@@ -383,8 +387,13 @@ func TestH2MuxDialWithConnSetup(t *testing.T) {
 	}
 	srvCh := make(chan srvResult, 1)
 	go func() {
-		sess, err := ml.AcceptSession(ctx)
-		srvCh <- srvResult{sess, err}
+		ss, err := ml.Accept()
+		if err != nil {
+			srvCh <- srvResult{nil, err}
+			return
+		}
+		err = ss.Handshake(ctx)
+		srvCh <- srvResult{ss, err}
 	}()
 
 	setupCalled := false

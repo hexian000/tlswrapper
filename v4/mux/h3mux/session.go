@@ -180,3 +180,6 @@ func (s *h3Session) LocalAddr() net.Addr { return s.conn.LocalAddr() }
 
 // RemoteAddr returns the remote QUIC address.
 func (s *h3Session) RemoteAddr() net.Addr { return s.conn.RemoteAddr() }
+
+// Handshake is a no-op: h3Session is already established.
+func (s *h3Session) Handshake(_ context.Context) error { return nil }

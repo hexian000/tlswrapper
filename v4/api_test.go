@@ -36,6 +36,32 @@ func TestAPIConfigHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("chunked-transfer-encoding", func(t *testing.T) {
+		// ContentLength == -1 (chunked) must not panic; should succeed.
+		h := &apiConfigHandler{s: newTestServer(t, nil)}
+		body := `{"type":"` + config.Type + `"}`
+		req := httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(body))
+		req.ContentLength = -1 // simulate chunked transfer
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+		}
+	})
+
+	t.Run("chunked-transfer-too-large", func(t *testing.T) {
+		// Chunked body exceeding maxContentLength must return 413.
+		h := &apiConfigHandler{s: newTestServer(t, nil)}
+		bigBody := strings.NewReader(strings.Repeat("x", maxContentLength+1))
+		req := httptest.NewRequest(http.MethodPost, "/config", bigBody)
+		req.ContentLength = -1
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+		}
+	})
+
 	t.Run("invalid-body", func(t *testing.T) {
 		h := &apiConfigHandler{s: newTestServer(t, nil)}
 		rec := httptest.NewRecorder()

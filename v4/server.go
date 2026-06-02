@@ -4,8 +4,10 @@
 package tlswrapper
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -64,6 +66,9 @@ type Server struct {
 
 	muxListener mux.Listener // active mux listener (h2mux or h3mux)
 
+	reloadMu       sync.Mutex
+	lastConfigJSON []byte
+
 	started time.Time
 
 	stats struct {
@@ -71,6 +76,8 @@ type Server struct {
 		numSessionsCreated   atomic.Uint64
 		numSessionsFinalized atomic.Uint64
 		numHalfOpen          atomic.Uint32
+		accepted             atomic.Uint64 // mux sessions accepted (after handshake)
+		served               atomic.Uint64 // mux sessions handed to serveSession
 		authorized           atomic.Uint64
 		request              atomic.Uint64
 		success              atomic.Uint64
@@ -208,6 +215,10 @@ type ServerStats struct {
 func (s *Server) Stats() (stats ServerStats) {
 	if s.l != nil {
 		stats.Accepted, stats.Served = s.l.Stats()
+	} else {
+		// h3mux path: hlistener is not used; read from unified atomic counters.
+		stats.Accepted = s.stats.accepted.Load()
+		stats.Served = s.stats.served.Load()
 	}
 	allTunnels := s.getAllTunnels()
 	sessionMap := make(map[string]SessionStats)
@@ -389,19 +400,12 @@ func (s *Server) buildH2MuxListener(l net.Listener, cfg *config.File) *h2mux.H2L
 
 // serveMuxListener runs the accept loop for a mux.Listener.
 // It respects hlistener rate-limiting counters and calls serveSession for
-// each successfully accepted session.
+// each successfully accepted session.  The protocol handshake is run
+// concurrently in a goroutine so that slow clients cannot block new accepts.
 func (s *Server) serveMuxListener(l mux.Listener) {
 	for {
-		s.stats.numHalfOpen.Add(1)
 		start := time.Now()
-		ctx := s.ctx.withTimeout()
-		if ctx == nil {
-			s.stats.numHalfOpen.Add(^uint32(0))
-			return
-		}
-		ss, err := l.AcceptSession(ctx)
-		s.ctx.cancel(ctx)
-		s.stats.numHalfOpen.Add(^uint32(0))
+		ss, err := l.Accept()
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				return
@@ -414,10 +418,25 @@ func (s *Server) serveMuxListener(l mux.Listener) {
 			slog.Errorf("accept session: %s", formats.Error(err))
 			return
 		}
-		setupDur := time.Since(start)
+		s.stats.accepted.Add(1)
 		if err := s.g.Go(func() {
-			s.serveSession(ss, setupDur)
+			ctx := s.ctx.withTimeout()
+			if ctx == nil {
+				_ = ss.Close()
+				return
+			}
+			s.stats.numHalfOpen.Add(1)
+			err := ss.Handshake(ctx)
+			s.ctx.cancel(ctx)
+			s.stats.numHalfOpen.Add(^uint32(0))
+			if err != nil {
+				slog.Warningf("handshake: %s", formats.Error(err))
+				return
+			}
+			s.stats.served.Add(1)
+			s.serveSession(ss, time.Since(start))
 		}); err != nil {
+			_ = ss.Close()
 			slog.Errorf("accept session: %s", formats.Error(err))
 		}
 	}
@@ -922,6 +941,15 @@ func (s *Server) Shutdown() error {
 // logged but do not abort the reload. Any failures are joined in the returned
 // error after the best-effort reload completes.
 func (s *Server) ReloadConfig(cfg *config.File) error {
+	s.reloadMu.Lock()
+	defer s.reloadMu.Unlock()
+	// Skip reload when config is identical to the last applied snapshot.
+	if b, err := json.Marshal(cfg); err == nil {
+		if bytes.Equal(s.lastConfigJSON, b) {
+			return nil
+		}
+		s.lastConfigJSON = b
+	}
 	var errs []error
 	// 1. Build new TLS config; retain old one on failure.
 	newTLSCfg, err := cfg.NewTLSConfig(s.serverName)

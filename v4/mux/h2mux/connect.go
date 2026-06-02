@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -66,10 +67,137 @@ func NewListener(l net.Listener, cfg *Config) *H2Listener {
 // compile-time check that H2Listener implements mux.Listener.
 var _ mux.Listener = (*H2Listener)(nil)
 
-// AcceptSession accepts one TCP connection, applies optional socket setup,
-// runs the h2mux server-side handshake, and returns the resulting Session.
-// It blocks until a connection is accepted and the handshake completes.
-func (l *H2Listener) AcceptSession(ctx context.Context) (mux.Session, error) {
+// h2InboundSession holds an accepted TCP connection in a pre-handshake state.
+// It implements mux.Session: Handshake(ctx) runs the h2mux server-side setup;
+// all other stream-level methods call Handshake implicitly using
+// context.Background() when called before an explicit Handshake, matching
+// the crypto/tls.Conn behaviour.
+type h2InboundSession struct {
+	conn net.Conn
+	cfg  *Config
+
+	mu            sync.Mutex
+	handshakeDone atomic.Bool // set true AFTER ss/handshakeErr are stored
+	ss            mux.Session
+	handshakeErr  error
+}
+
+// compile-time check that h2InboundSession implements mux.Session.
+var _ mux.Session = (*h2InboundSession)(nil)
+
+// doHandshake performs the h2mux server-side handshake exactly once.
+// The mutex is held for the entire handshake duration, matching crypto/tls.Conn.
+func (s *h2InboundSession) doHandshake(ctx context.Context) error {
+	if s.handshakeDone.Load() {
+		return s.handshakeErr
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.handshakeDone.Load() {
+		return s.handshakeErr
+	}
+	ss, err := Server(ctx, s.conn, s.cfg)
+	if err != nil {
+		_ = s.conn.Close()
+		s.handshakeErr = err
+		s.handshakeDone.Store(true)
+		return err
+	}
+	s.ss = ss
+	s.handshakeDone.Store(true)
+	return nil
+}
+
+func (s *h2InboundSession) Handshake(ctx context.Context) error {
+	return s.doHandshake(ctx)
+}
+
+// delegate returns the ready session, running an implicit handshake if needed.
+func (s *h2InboundSession) delegate() (mux.Session, error) {
+	if err := s.doHandshake(context.Background()); err != nil {
+		return nil, err
+	}
+	return s.ss, nil // safe: ss is stored before handshakeDone is set
+}
+
+func (s *h2InboundSession) Open(ctx context.Context) (net.Conn, error) {
+	ss, err := s.delegate()
+	if err != nil {
+		return nil, err
+	}
+	return ss.Open(ctx)
+}
+
+func (s *h2InboundSession) Accept() (net.Conn, error) {
+	ss, err := s.delegate()
+	if err != nil {
+		return nil, err
+	}
+	return ss.Accept()
+}
+
+func (s *h2InboundSession) Close() error {
+	if s.handshakeDone.Load() {
+		if s.ss != nil {
+			return s.ss.Close()
+		}
+		return nil // handshake already failed; conn was closed in doHandshake
+	}
+	return s.conn.Close()
+}
+
+func (s *h2InboundSession) IsClosed() bool {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.IsClosed()
+	}
+	return false
+}
+
+func (s *h2InboundSession) CloseChan() <-chan struct{} {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.CloseChan()
+	}
+	return nil
+}
+
+func (s *h2InboundSession) IdleChan() <-chan struct{} {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.IdleChan()
+	}
+	return nil
+}
+
+func (s *h2InboundSession) Stats() *mux.SessionMetrics {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.Stats()
+	}
+	return nil
+}
+
+func (s *h2InboundSession) PeerIdentity() string {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.PeerIdentity()
+	}
+	return ""
+}
+
+func (s *h2InboundSession) LocalAddr() net.Addr {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.LocalAddr()
+	}
+	return s.conn.LocalAddr()
+}
+
+func (s *h2InboundSession) RemoteAddr() net.Addr {
+	if s.handshakeDone.Load() && s.ss != nil {
+		return s.ss.RemoteAddr()
+	}
+	return s.conn.RemoteAddr()
+}
+
+// Accept accepts one TCP connection, applies optional socket setup, and
+// returns a Session whose Handshake runs the h2mux server-side setup.
+func (l *H2Listener) Accept() (mux.Session, error) {
 	conn, err := l.l.Accept()
 	if err != nil {
 		return nil, err
@@ -77,12 +205,7 @@ func (l *H2Listener) AcceptSession(ctx context.Context) (mux.Session, error) {
 	if l.cfg.ConnSetup != nil {
 		l.cfg.ConnSetup(conn)
 	}
-	ss, err := Server(ctx, conn, l.cfg)
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	return ss, nil
+	return &h2InboundSession{conn: conn, cfg: l.cfg}, nil
 }
 
 // Addr returns the listener's local network address.

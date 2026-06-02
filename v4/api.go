@@ -18,6 +18,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/hexian000/gosnippets/formats"
@@ -56,14 +57,18 @@ func (h *apiConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
 		return
 	}
-	b := make([]byte, r.ContentLength)
-	n, err := io.ReadFull(r.Body, b)
+	// Use LimitReader to handle chunked transfers (ContentLength == -1) safely.
+	b, err := io.ReadAll(io.LimitReader(r.Body, maxContentLength+1))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(formats.Error(err)))
 		return
 	}
-	cfg, err := config.Load(b[:n])
+	if len(b) > maxContentLength {
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		return
+	}
+	cfg, err := config.Load(b)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(formats.Error(err)))
@@ -151,6 +156,7 @@ type apiStats struct {
 
 type apiStatsHandler struct {
 	s    *Server
+	mu   sync.Mutex
 	last apiStats
 }
 
@@ -243,8 +249,8 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		stats.ReqSuccess, stats.ReqTotal-stats.ReqSuccess)
 
 	if !stateless {
+		h.mu.Lock()
 		dt := now.Sub(h.last.Timestamp).Seconds()
-
 		fprintf(w, "%-20s: %.1f/s (%+.1f/s rejected)\n", "Authorized",
 			float64(stats.Served-h.last.Served)/dt,
 			float64((stats.Accepted-h.last.Accepted)-(stats.Served-h.last.Served))/dt)
@@ -257,12 +263,12 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fprintf(w, "%-20s: Rx %s/s, Tx %s/s\n", "Stream Throughput",
 			formats.IECBytes(float64(stats.BytesReceived-h.last.BytesReceived)/dt),
 			formats.IECBytes(float64(stats.BytesSent-h.last.BytesSent)/dt))
-
 		h.last.Accepted, h.last.Served = stats.Accepted, stats.Served
 		h.last.ReqTotal, h.last.ReqSuccess = stats.ReqTotal, stats.ReqSuccess
 		h.last.WireLengthReceived, h.last.WireLengthSent = stats.WireLengthReceived, stats.WireLengthSent
 		h.last.BytesReceived, h.last.BytesSent = stats.BytesReceived, stats.BytesSent
 		h.last.Timestamp = now
+		h.mu.Unlock()
 	}
 
 	fprintf(w, "\n> Sessions\n")
