@@ -93,7 +93,8 @@ class SmokeStats:
     active_streams: int = 0
     graceful_eofs: int = 0
     forced_shutdown_closes: int = 0
-    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, init=False, repr=False)
 
     def record_open(self) -> None:
         with self._lock:
@@ -158,7 +159,8 @@ class SmokeStats:
 @dataclass
 class SharedSockets:
     sockets: List[socket.socket] = field(default_factory=list)
-    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, init=False, repr=False)
 
     def add_many(self, values: List[socket.socket]) -> None:
         if not values:
@@ -286,7 +288,8 @@ def run_command(
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired:
-            raise SmokeTestError("command timed out: %s" % quote_command(command))
+            raise SmokeTestError("command timed out: %s" %
+                                 quote_command(command))
         except subprocess.CalledProcessError as exc:
             raise SmokeTestError(
                 "command failed with status %d: %s (see %s)"
@@ -409,7 +412,8 @@ def probe_echo_path(
             with socket.create_connection(address, timeout=0.5) as sock:
                 sock.settimeout(DEFAULT_IO_TIMEOUT_SECONDS)
                 sock.sendall(payload)
-                received = recv_exact(sock, len(payload), timeout_seconds=DEFAULT_IO_TIMEOUT_SECONDS)
+                received = recv_exact(
+                    sock, len(payload), timeout_seconds=DEFAULT_IO_TIMEOUT_SECONDS)
                 if received != payload:
                     raise SmokeTestError("probe received mismatched payload")
                 return
@@ -417,7 +421,8 @@ def probe_echo_path(
             raise
         except (OSError, EOFError):
             time.sleep(0.05)
-    raise SmokeTestError("timed out waiting for end-to-end traffic on %s:%d" % address)
+    raise SmokeTestError(
+        "timed out waiting for end-to-end traffic on %s:%d" % address)
 
 
 def recv_exact(sock: socket.socket, size: int, timeout_seconds: float) -> bytes:
@@ -445,14 +450,16 @@ def close_socket(sock: socket.socket) -> None:
 
 
 def make_connection(address: Tuple[str, int]) -> socket.socket:
-    sock = socket.create_connection(address, timeout=DEFAULT_IO_TIMEOUT_SECONDS)
+    sock = socket.create_connection(
+        address, timeout=DEFAULT_IO_TIMEOUT_SECONDS)
     sock.settimeout(DEFAULT_IO_TIMEOUT_SECONDS)
     return sock
 
 
 def do_echo_roundtrip(sock: socket.socket, payload: bytes) -> None:
     sock.sendall(payload)
-    received = recv_exact(sock, len(payload), timeout_seconds=DEFAULT_IO_TIMEOUT_SECONDS)
+    received = recv_exact(sock, len(payload),
+                          timeout_seconds=DEFAULT_IO_TIMEOUT_SECONDS)
     if received != payload:
         raise SmokeTestError("echo payload mismatch")
 
@@ -556,7 +563,8 @@ def wait_for_graceful_close(
     peek_flag = getattr(socket, "MSG_PEEK", 0)
     while remaining and time.monotonic() < deadline:
         wait_seconds = min(0.2, max(0.0, deadline - time.monotonic()))
-        readable, _, exceptional = select.select(remaining, [], remaining, wait_seconds)
+        readable, _, exceptional = select.select(
+            remaining, [], remaining, wait_seconds)
         for sock in list(set(readable + exceptional)):
             try:
                 data = sock.recv(1, peek_flag)
@@ -579,7 +587,8 @@ def wait_for_process_exit(proc: subprocess.Popen, name: str, timeout_seconds: fl
     except subprocess.TimeoutExpired:
         terminate_process(proc, name)
         if proc.poll() is None:
-            raise SmokeTestError("%s did not exit within %.1fs (see %s)" % (name, timeout_seconds, log_path))
+            raise SmokeTestError("%s did not exit within %.1fs (see %s)" % (
+                name, timeout_seconds, log_path))
         return int(proc.returncode)
 
 
@@ -703,7 +712,8 @@ def run_smoke_test(args: argparse.Namespace) -> int:
             daemon=True,
         )
         echo_thread.start()
-        wait_for_port(assets.echo_addr, timeout_seconds=DEFAULT_STARTUP_TIMEOUT_SECONDS)
+        wait_for_port(assets.echo_addr,
+                      timeout_seconds=DEFAULT_STARTUP_TIMEOUT_SECONDS)
 
         server_proc, server_log_handle = start_process(
             [str(binary_path), "-c", str(assets.server_config_path)],
@@ -741,7 +751,8 @@ def run_smoke_test(args: argparse.Namespace) -> int:
         for worker_id in range(args.workers):
             thread = threading.Thread(
                 target=worker_main,
-                args=(worker_id, seed, assets.client_listen_addr, stop_event, stats, lingering),
+                args=(worker_id, seed, assets.client_listen_addr,
+                      stop_event, stats, lingering),
                 name="smoke-worker-%02d" % worker_id,
                 daemon=True,
             )
@@ -762,7 +773,8 @@ def run_smoke_test(args: argparse.Namespace) -> int:
             thread.join(timeout=2.0)
 
         sockets_left_open = lingering.drain()
-        ensure_lingering_connections(sockets_left_open, assets.client_listen_addr, stats, count=2)
+        ensure_lingering_connections(
+            sockets_left_open, assets.client_listen_addr, stats, count=2)
 
         shutdown_start = time.monotonic()
         log("sending SIGTERM to tlswrapper server [pid:%d]" % server_proc.pid)

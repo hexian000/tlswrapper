@@ -367,42 +367,50 @@ def render_markdown_report(
         "| --- | --- |",
         "| Module root | %s |" % relative_path(ROOT),
         "| Profile directory | %s |" % relative_path(profile_dir),
-        "| Transport security | %s |" % ("mutual TLS" if use_tls else "plaintext"),
+        "| Transport security | %s |" % (
+            "mutual TLS" if use_tls else "plaintext"),
         "| Workload | `%s` |" % workload_command,
         "| Test binary | [%s](%s) |"
         % (
             relative_path(test_binary_path),
-            os.path.relpath(test_binary_path, start=output_dir).replace(os.sep, "/"),
+            os.path.relpath(test_binary_path,
+                            start=output_dir).replace(os.sep, "/"),
         ),
         "| CPU profile | [%s](%s) |"
         % (
             relative_path(cpu_profile_path),
-            os.path.relpath(cpu_profile_path, start=output_dir).replace(os.sep, "/"),
+            os.path.relpath(cpu_profile_path,
+                            start=output_dir).replace(os.sep, "/"),
         ),
         "| Memory profile | [%s](%s) |"
         % (
             relative_path(mem_profile_path),
-            os.path.relpath(mem_profile_path, start=output_dir).replace(os.sep, "/"),
+            os.path.relpath(mem_profile_path,
+                            start=output_dir).replace(os.sep, "/"),
         ),
         "| Test output | [%s](%s) |"
         % (
             relative_path(test_output_path),
-            os.path.relpath(test_output_path, start=output_dir).replace(os.sep, "/"),
+            os.path.relpath(test_output_path,
+                            start=output_dir).replace(os.sep, "/"),
         ),
         "| iperf3 server log | [%s](%s) |"
         % (
             relative_path(iperf_server_log_path),
-            os.path.relpath(iperf_server_log_path, start=output_dir).replace(os.sep, "/"),
+            os.path.relpath(iperf_server_log_path,
+                            start=output_dir).replace(os.sep, "/"),
         ),
         "| iperf3 stdout | [%s](%s) |"
         % (
             relative_path(iperf_stdout_log_path),
-            os.path.relpath(iperf_stdout_log_path, start=output_dir).replace(os.sep, "/"),
+            os.path.relpath(iperf_stdout_log_path,
+                            start=output_dir).replace(os.sep, "/"),
         ),
         "| iperf3 stderr | [%s](%s) |"
         % (
             relative_path(iperf_stderr_log_path),
-            os.path.relpath(iperf_stderr_log_path, start=output_dir).replace(os.sep, "/"),
+            os.path.relpath(iperf_stderr_log_path,
+                            start=output_dir).replace(os.sep, "/"),
         ),
         "",
         "## CPU Hotspots",
@@ -434,8 +442,10 @@ def render_markdown_report(
             "",
             "## Raw Reports",
             "",
-            "- [CPU top](%s)" % os.path.relpath(cpu_top_path, start=output_dir).replace(os.sep, "/"),
-            "- [Memory top](%s)" % os.path.relpath(mem_top_path, start=output_dir).replace(os.sep, "/"),
+            "- [CPU top](%s)" % os.path.relpath(cpu_top_path,
+                                                start=output_dir).replace(os.sep, "/"),
+            "- [Memory top](%s)" % os.path.relpath(mem_top_path,
+                                                   start=output_dir).replace(os.sep, "/"),
         ]
     )
     return "\n".join(lines) + "\n"
@@ -449,8 +459,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "module_dir",
         help="path to the Go module root, for example v4",
     )
-    parser.add_argument("--profile-dir", default=str(DEFAULT_PROFILE_DIR), help="profile output directory (default: ../build/goprof from the script location)")
-    parser.add_argument("--output", help="Markdown output path (default: build/goprof.md)")
+    parser.add_argument("--profile-dir", default=str(DEFAULT_PROFILE_DIR),
+                        help="profile output directory (default: ../build/goprof from the script location)")
+    parser.add_argument(
+        "--output", help="Markdown output path (default: build/goprof.md)")
     parser.add_argument(
         "--iperf3",
         default="iperf3",
@@ -485,7 +497,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     iperf3 = ensure_tool(args.iperf3)
 
     profile_dir = resolve_path(ROOT, args.profile_dir)
-    output_path = resolve_path(ROOT, args.output) if args.output else DEFAULT_OUTPUT
+    output_path = resolve_path(
+        ROOT, args.output) if args.output else DEFAULT_OUTPUT
     profile_dir.mkdir(parents=True, exist_ok=True)
 
     test_binary_path = profile_dir / "tlswrapper.test"
@@ -505,9 +518,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     write_profile_test(temp_test_path)
     try:
         run_command(
-            ["go", "test", "-mod=vendor", "-c", "-o", str(test_binary_path), "."],
+            ["go", "test", "-mod=vendor", "-c",
+                "-o", str(test_binary_path), "."],
             cwd=ROOT,
-            timeout=command_timeout_seconds(args.duration, grace_seconds=BUILD_TIMEOUT_GRACE_SECONDS),
+            timeout=command_timeout_seconds(
+                args.duration, grace_seconds=BUILD_TIMEOUT_GRACE_SECONDS),
         )
     finally:
         if temp_test_path.exists():
@@ -543,15 +558,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         cwd=ROOT,
         env=test_env,
         capture_output=True,
-        timeout=command_timeout_seconds(args.duration, grace_seconds=PROFILE_TIMEOUT_GRACE_SECONDS),
+        timeout=command_timeout_seconds(
+            args.duration, grace_seconds=PROFILE_TIMEOUT_GRACE_SECONDS),
     )
     test_output_path.write_text(test_proc.stdout or "", encoding="utf-8")
 
     cpu_top_text = run_command(
-        ["go", "tool", "pprof", "-top", "-nodecount=25", str(test_binary_path), str(cpu_profile_path)],
+        ["go", "tool", "pprof", "-top", "-nodecount=25",
+            str(test_binary_path), str(cpu_profile_path)],
         cwd=ROOT,
         capture_output=True,
-        timeout=command_timeout_seconds(args.duration, grace_seconds=PPROF_TIMEOUT_GRACE_SECONDS),
+        timeout=command_timeout_seconds(
+            args.duration, grace_seconds=PPROF_TIMEOUT_GRACE_SECONDS),
     ).stdout or ""
     mem_top_text = run_command(
         [
@@ -566,7 +584,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ],
         cwd=ROOT,
         capture_output=True,
-        timeout=command_timeout_seconds(args.duration, grace_seconds=PPROF_TIMEOUT_GRACE_SECONDS),
+        timeout=command_timeout_seconds(
+            args.duration, grace_seconds=PPROF_TIMEOUT_GRACE_SECONDS),
     ).stdout or ""
     cpu_top_path.write_text(cpu_top_text, encoding="utf-8")
     mem_top_path.write_text(mem_top_text, encoding="utf-8")

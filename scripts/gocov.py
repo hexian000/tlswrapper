@@ -23,7 +23,8 @@ DEFAULT_OUTPUT = DEFAULT_BUILD_DIR / "gocov.md"
 DEFAULT_PROFILE_DIR = DEFAULT_BUILD_DIR / "gocov"
 DEFAULT_LINE_DIR = DEFAULT_PROFILE_DIR / "line-coverage"
 EXCLUDED_SUFFIXES = ("_test.go", ".pb.go", "_grpc.pb.go")
-FUNCTION_LINE_RE = re.compile(r"^(?P<file>.+?\.go):(?P<line>[0-9]+):\s+(?P<func>\S+)\s+(?P<pct>[0-9.]+%)$")
+FUNCTION_LINE_RE = re.compile(
+    r"^(?P<file>.+?\.go):(?P<line>[0-9]+):\s+(?P<func>\S+)\s+(?P<pct>[0-9.]+%)$")
 
 
 @dataclass
@@ -173,7 +174,8 @@ def collect_coverage(profile_path: Path, module_name: str) -> Dict[str, FileCove
                 file_coverage.executable_lines.add(line_number)
                 if count > 0:
                     file_coverage.covered_lines.add(line_number)
-                    file_coverage.line_hits[line_number] = file_coverage.line_hits.get(line_number, 0) + count
+                    file_coverage.line_hits[line_number] = file_coverage.line_hits.get(
+                        line_number, 0) + count
             file_coverage.total_statements += num_statements
             if count > 0:
                 file_coverage.covered_statements += num_statements
@@ -213,7 +215,8 @@ def write_line_files(line_dir: Path, rows: Sequence[Tuple[str, FileCoverage]]) -
             continue
         output_path = line_dir / (source + ".cover")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        source_lines = source_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        source_lines = source_path.read_text(
+            encoding="utf-8", errors="replace").splitlines()
         with output_path.open("w", encoding="utf-8") as handle:
             handle.write("        -:    0:Source:%s\n" % source)
             handle.write("        -:    0:Generator:gocov.py\n")
@@ -227,7 +230,8 @@ def write_line_files(line_dir: Path, rows: Sequence[Tuple[str, FileCoverage]]) -
                 else:
                     count = file_coverage.line_hits.get(line_number, 0)
                     count_token = str(count) if count > 0 else "#####"
-                handle.write("%9s:%5d:%s\n" % (count_token, line_number, source_line))
+                handle.write("%9s:%5d:%s\n" %
+                             (count_token, line_number, source_line))
 
 
 def classify_scope(source_rel: str) -> str:
@@ -257,7 +261,8 @@ def build_summary_rows(rows: Sequence[Tuple[str, FileCoverage]]) -> List[Tuple[s
         (label, counts[0], counts[1], counts[2], counts[3])
         for label, counts in sorted(summary.items())
     ]
-    rows_out.append(("overall", overall[0], overall[1], overall[2], overall[3]))
+    rows_out.append(
+        ("overall", overall[0], overall[1], overall[2], overall[3]))
     return rows_out
 
 
@@ -289,7 +294,8 @@ def parse_function_summary(text: str, module_name: str) -> tuple[str, List[Tuple
             percent_value = float(percent_text.rstrip("%"))
         except ValueError:
             continue
-        rows.append(("%s:%s" % (source_rel, function_name), percent_text, percent_value))
+        rows.append(("%s:%s" % (source_rel, function_name),
+                    percent_text, percent_value))
     rows.sort(key=lambda item: (item[2], item[0]))
     return total_percent, rows
 
@@ -315,12 +321,14 @@ def render_markdown_report(
         "| Coverage profile | [%s](%s) |"
         % (
             relative_path(profile_path),
-            os.path.relpath(profile_path, start=output_dir).replace(os.sep, "/"),
+            os.path.relpath(profile_path, start=output_dir).replace(
+                os.sep, "/"),
         ),
         "| Function summary | [%s](%s) |"
         % (
             relative_path(function_text_path),
-            os.path.relpath(function_text_path, start=output_dir).replace(os.sep, "/"),
+            os.path.relpath(function_text_path,
+                            start=output_dir).replace(os.sep, "/"),
         ),
         "| Total statement coverage | %s |" % function_total,
         "",
@@ -372,7 +380,8 @@ def render_markdown_report(
                 file_coverage.total,
                 file_coverage.percent,
                 file_coverage.statement_percent,
-                os.path.relpath(line_file, start=output_dir).replace(os.sep, "/"),
+                os.path.relpath(line_file, start=output_dir).replace(
+                    os.sep, "/"),
             )
         )
     return "\n".join(lines) + "\n"
@@ -386,9 +395,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "module_dir",
         help="path to the Go module root, for example v4",
     )
-    parser.add_argument("--build-dir", default=str(DEFAULT_BUILD_DIR), help="build directory (default: ../build from the script location)")
-    parser.add_argument("--profile-dir", default=str(DEFAULT_PROFILE_DIR), help="coverage output directory (default: ../build/gocov from the script location)")
-    parser.add_argument("--output", help="Markdown output path (default: build/gocov.md)")
+    parser.add_argument("--build-dir", default=str(DEFAULT_BUILD_DIR),
+                        help="build directory (default: ../build from the script location)")
+    parser.add_argument("--profile-dir", default=str(DEFAULT_PROFILE_DIR),
+                        help="coverage output directory (default: ../build/gocov from the script location)")
+    parser.add_argument(
+        "--output", help="Markdown output path (default: build/gocov.md)")
     parser.add_argument(
         "--packages",
         default="./...",
@@ -405,7 +417,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ensure_tool("go")
 
     profile_dir = resolve_path(ROOT, args.profile_dir)
-    output_path = resolve_path(ROOT, args.output) if args.output else DEFAULT_OUTPUT
+    output_path = resolve_path(
+        ROOT, args.output) if args.output else DEFAULT_OUTPUT
     profile_dir.mkdir(parents=True, exist_ok=True)
     profile_path = profile_dir / "coverage.out"
     function_text_path = profile_dir / "coverage.func.txt"
@@ -438,9 +451,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     coverage = collect_coverage(profile_path, module_name)
     rows = summarize_rows(iter_expected_sources(), coverage)
-    write_line_files(DEFAULT_LINE_DIR if profile_dir == DEFAULT_PROFILE_DIR else profile_dir / "line-coverage", rows)
+    write_line_files(DEFAULT_LINE_DIR if profile_dir ==
+                     DEFAULT_PROFILE_DIR else profile_dir / "line-coverage", rows)
     line_dir = DEFAULT_LINE_DIR if profile_dir == DEFAULT_PROFILE_DIR else profile_dir / "line-coverage"
-    function_total, function_rows = parse_function_summary(function_text, module_name)
+    function_total, function_rows = parse_function_summary(
+        function_text, module_name)
     report = render_markdown_report(
         rows,
         output_path=output_path,

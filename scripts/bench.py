@@ -171,7 +171,8 @@ def ensure_certificates(binary_path: Path, runtime_dir: Path, duration: int) -> 
     run_command(
         [str(binary_path), "--gencerts", "client,server"],
         cwd=runtime_dir,
-        timeout=command_timeout_seconds(duration, grace_seconds=COMMAND_TIMEOUT_GRACE_SECONDS),
+        timeout=command_timeout_seconds(
+            duration, grace_seconds=COMMAND_TIMEOUT_GRACE_SECONDS),
     )
 
 
@@ -208,7 +209,8 @@ def build_binary(binary_path: Path, duration: int) -> None:
         ],
         cwd=ROOT,
         env=env,
-        timeout=command_timeout_seconds(duration, grace_seconds=BUILD_TIMEOUT_GRACE_SECONDS),
+        timeout=command_timeout_seconds(
+            duration, grace_seconds=BUILD_TIMEOUT_GRACE_SECONDS),
     )
 
 
@@ -511,7 +513,8 @@ def render_markdown_report(
         "| Binary | %s |" % relative_path(binary_path),
         "| Duration per run | %d s |" % duration,
         "| Parallel streams | %d |" % parallel,
-        "| Transport security | %s |" % ("mutual TLS" if use_tls else "plaintext"),
+        "| Transport security | %s |" % (
+            "mutual TLS" if use_tls else "plaintext"),
         "| Netem delay | %s |" % (netem_delay or "off"),
         "| Bidirectional method | iperf3 --bidir single run |",
         "",
