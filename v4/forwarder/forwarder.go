@@ -134,7 +134,7 @@ func (f *forwarder) connCopy(dst net.Conn, src net.Conn) error {
 	return err
 }
 
-// Start begins forwarding data between accepted and dialed connections.
+// Start begins forwarding data between accepted and dialed.
 func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandler) error {
 	select {
 	case <-f.g.CloseC():

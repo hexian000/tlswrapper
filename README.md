@@ -99,15 +99,17 @@ If the `tls` section is omitted, tlswrapper runs in plaintext mode and does not 
 # client-cert.pem, client-key.pem, server-cert.pem, server-key.pem
 
 # set the SNI value embedded in the certificate subject/SAN
-./tlswrapper -gencerts server -sni example.com
+./tlswrapper -gencerts server -sni myserver.example.com
 
 # generate a self-signed CA key pair
 ./tlswrapper -gencerts ca -sni ca.example.com
 # ca-cert.pem, ca-key.pem
 
 # sign a peer certificate with that CA key pair
-./tlswrapper -gencerts peer -sign ca
+./tlswrapper -gencerts peer -sign ca -sni peer.example.com
 ```
+
+When `-sni` is omitted it defaults to `example.com`; override it for real deployments.
 
 `-keytype` accepts `rsa` (default), `ecdsa`, or `ed25519`. `-keysize` sets the key size (RSA: bits, ECDSA: 224/256/384/521); `0` selects a safe default for the chosen type.
 
@@ -161,7 +163,7 @@ Adding `ca-cert.pem` to `"authcerts"` allows peer certificates signed by that CA
 }
 ```
 
-To use QUIC instead of TCP, add `"mux_protocol": "h3mux"` to both config files and update `mux_listen` / `mux_connect` to the UDP port.
+To use QUIC instead of TCP, add `"mux_protocol": "h3mux"` to both config files and point the addresses in `mux_listen` / `mux_connect` to a port reachable over UDP.
 
 For complex cases, see the [full example](https://github.com/hexian000/tlswrapper/wiki/Configuration-Example).
 

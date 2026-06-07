@@ -278,13 +278,12 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 		return nil, err
 	}
 
-	// sessionCtx lives for the entire session lifetime and is cancelled on Close().
+	// sessionCtx (and the Control RPC) live for the entire session lifetime;
+	// using ctx would cancel the stream when the caller's deadline expires.
 	sessionCtx, cancel := context.WithCancel(context.Background())
 
 	grpcClient := muxpb.NewMuxClient(cc)
 
-	// Open the Control stream with sessionCtx so it lives for the session lifetime.
-	// (Using ctx here would cancel the stream when the caller's deadline expires.)
 	ctrlStream, err := grpcClient.Control(sessionCtx)
 	if err != nil {
 		cancel()

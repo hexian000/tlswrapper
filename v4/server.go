@@ -42,7 +42,7 @@ var (
 type Server struct {
 	cfg        *config.File
 	tlscfg     *tls.Config
-	serverName string // TLS SNI override from CLI --server-name flag
+	serverName string // TLS SNI override from CLI -sni flag
 	cfgMu      sync.RWMutex
 
 	l           hlistener.Listener
@@ -89,7 +89,7 @@ type Server struct {
 }
 
 // NewServer builds a Server from the initial config snapshot.
-// serverName is the TLS SNI override passed via the --server-name CLI flag;
+// serverName is the TLS SNI override passed via the -sni CLI flag;
 // pass an empty string when constructing from tests or when no override is needed.
 func NewServer(cfg *config.File, serverName string) (*Server, error) {
 	g := routines.NewGroup()

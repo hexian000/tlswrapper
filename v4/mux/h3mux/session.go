@@ -112,8 +112,7 @@ func (s *h3Session) Open(ctx context.Context) (net.Conn, error) {
 		}
 		return nil, err
 	}
-	// QUIC only makes a stream visible to the peer after data is sent.
-	// Write a single marker byte so AcceptStream unblocks on the remote side.
+	// Send the marker so the peer sees the stream.
 	if _, err := qs.Write([]byte{streamOpenMarker}); err != nil {
 		_ = qs.Close()
 		s.metrics.StreamsFailed.Add(1)
