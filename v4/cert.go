@@ -38,18 +38,24 @@ func newCertificate(parent *x509.Certificate, signKey any, sni string, pubKey an
 		Bytes: rawKey,
 	})
 
+	// Use a random 128-bit serial number: random serials are the X.509 norm and
+	// avoid collisions when a batch of certificates is generated concurrently.
+	serialMax := new(big.Int).Lsh(big.NewInt(1), 128)
+	serial, err := rand.Int(rand.Reader, serialMax)
+	if err != nil {
+		err = fmt.Errorf("serial number: %s", formats.Error(err))
+		return
+	}
+
 	now := time.Now()
 	tmpl := x509.Certificate{
 		NotBefore:    now,
 		NotAfter:     now.AddDate(0, 0, 3652), // 10 years
-		SerialNumber: big.NewInt(now.UnixNano()),
+		SerialNumber: serial,
+		// The subject carries only the common name (the SNI); organization,
+		// locality and similar attributes are left empty.
 		Subject: pkix.Name{
-			Country:            []string{"US"},
-			Province:           []string{"California"},
-			Locality:           []string{"Mountain View"},
-			Organization:       []string{"Your Organization"},
-			OrganizationalUnit: []string{"Your Unit"},
-			CommonName:         sni,
+			CommonName: sni,
 		},
 		DNSNames: []string{sni},
 		ExtKeyUsage: []x509.ExtKeyUsage{

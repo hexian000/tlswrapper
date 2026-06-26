@@ -131,29 +131,45 @@ func TestNewTLSConfigValid(t *testing.T) {
 	if tlsCfg == nil {
 		t.Fatal("expected non-nil tls.Config")
 	}
-	if tlsCfg.ServerName != "example.com" {
-		t.Fatalf("ServerName = %q, want %q", tlsCfg.ServerName, "example.com")
-	}
 	if len(tlsCfg.Certificates) != 1 {
 		t.Fatalf("len(Certificates) = %d, want 1", len(tlsCfg.Certificates))
 	}
+	// SNI and ALPN are applied by the mux layer, not baked into the credential
+	// config returned by NewTLSConfig.
+	if tlsCfg.ServerName != "" {
+		t.Fatalf("ServerName = %q, want empty (applied by mux layer)", tlsCfg.ServerName)
+	}
+	if len(tlsCfg.NextProtos) != 0 {
+		t.Fatalf("NextProtos = %v, want empty (applied by mux layer)", tlsCfg.NextProtos)
+	}
 }
 
-func TestNewTLSConfigServerNameOverride(t *testing.T) {
-	cfg := &File{
-		TLS: &TLS{
-			Certificate: utilsTestCertPEM,
-			PrivateKey:  utilsTestKeyPEM,
-			AuthCerts:   []string{utilsTestCertPEM},
-			ServerName:  "peer.example.org",
-		},
+func TestServerNameAccessor(t *testing.T) {
+	// Plaintext mode: no SNI.
+	if got := (&File{}).ServerName(); got != "" {
+		t.Fatalf("ServerName() with nil TLS = %q, want empty", got)
 	}
-	tlsCfg, err := cfg.NewTLSConfig()
-	if err != nil {
-		t.Fatal(err)
+	// Default when the TLS section omits sni.
+	if got := (&File{TLS: &TLS{}}).ServerName(); got != DefaultServerName {
+		t.Fatalf("ServerName() = %q, want %q", got, DefaultServerName)
 	}
-	if tlsCfg.ServerName != "peer.example.org" {
-		t.Fatalf("ServerName = %q, want %q", tlsCfg.ServerName, "peer.example.org")
+	// Explicit override.
+	if got := (&File{TLS: &TLS{ServerName: "peer.example.org"}}).ServerName(); got != "peer.example.org" {
+		t.Fatalf("ServerName() = %q, want %q", got, "peer.example.org")
+	}
+}
+
+func TestALPNAccessor(t *testing.T) {
+	// Empty (nil TLS or unset) means "use the mux protocol default".
+	if got := (&File{}).ALPN(); got != "" {
+		t.Fatalf("ALPN() with nil TLS = %q, want empty", got)
+	}
+	if got := (&File{TLS: &TLS{}}).ALPN(); got != "" {
+		t.Fatalf("ALPN() unset = %q, want empty", got)
+	}
+	// Explicit override.
+	if got := (&File{TLS: &TLS{ALPN: "h2"}}).ALPN(); got != "h2" {
+		t.Fatalf("ALPN() = %q, want %q", got, "h2")
 	}
 }
 

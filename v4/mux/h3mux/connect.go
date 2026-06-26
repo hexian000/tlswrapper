@@ -104,7 +104,7 @@ func serverHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Ses
 }
 
 // Listen creates a QUIC listener on addr using the h3mux server TLS config
-// (with ALPN injected) and the QUIC config derived from cfg.
+// (with SNI and ALPN applied) and the QUIC config derived from cfg.
 // The caller is responsible for accepting connections and passing them to
 // NewSession.
 func Listen(addr string, cfg *Config) (*quic.Listener, error) {

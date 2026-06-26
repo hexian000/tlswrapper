@@ -328,6 +328,8 @@ func (s *Server) getMuxDialer() mux.Dialer {
 func (s *Server) buildH3MuxDialer(cfg *config.File, tlscfg *tls.Config) *h3mux.H3Mux {
 	return h3mux.New(&h3mux.Config{
 		TLSConfig:                      tlscfg,
+		ServerName:                     cfg.ServerName(),
+		ALPN:                           cfg.ALPN(),
 		LocalID:                        cfg.Identity.Claim,
 		RejectInbound:                  cfg.Connect == "",
 		KeepAlivePeriod:                cfg.KeepAlive(),
@@ -361,6 +363,8 @@ func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 		// that certificate rotation takes effect without restarting the listener.
 		l, err := h3mux.ListenMux(addr, &h3mux.Config{
 			TLSConfigProvider:              func() *tls.Config { _, tlscfg := s.getConfig(); return tlscfg },
+			ServerName:                     cfg.ServerName(),
+			ALPN:                           cfg.ALPN(),
 			LocalID:                        cfg.Identity.Claim,
 			RejectInbound:                  cfg.Connect == "",
 			KeepAlivePeriod:                cfg.KeepAlive(),
@@ -417,6 +421,8 @@ func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 func (s *Server) buildH2MuxDialer(cfg *config.File, tlscfg *tls.Config) *h2mux.H2Mux {
 	return h2mux.New(&h2mux.Config{
 		TLSConfig:     tlscfg,
+		ServerName:    cfg.ServerName(),
+		ALPN:          cfg.ALPN(),
 		LocalID:       cfg.Identity.Claim,
 		RejectInbound: cfg.Connect == "",
 		KeepAlive:     cfg.KeepAlive(),
@@ -435,6 +441,8 @@ func (s *Server) buildH2MuxDialer(cfg *config.File, tlscfg *tls.Config) *h2mux.H
 func (s *Server) buildH2MuxListener(l net.Listener, cfg *config.File) *h2mux.H2Listener {
 	return h2mux.NewListener(l, &h2mux.Config{
 		TLSConfigProvider:    func() *tls.Config { _, tlscfg := s.getConfig(); return tlscfg },
+		ServerName:           cfg.ServerName(),
+		ALPN:                 cfg.ALPN(),
 		LocalID:              cfg.Identity.Claim,
 		RejectInbound:        cfg.Connect == "",
 		WriteTimeout:         cfg.SendTimeout(),

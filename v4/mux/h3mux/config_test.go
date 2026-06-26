@@ -5,6 +5,7 @@ package h3mux
 
 import (
 	"crypto/tls"
+	"slices"
 	"testing"
 	"time"
 )
@@ -69,22 +70,24 @@ func TestQuicConfigOptionalFields(t *testing.T) {
 	}
 }
 
-// TestPrependALPNNoDuplicate verifies that if alpn is already in NextProtos
-// it is not inserted again.
-func TestPrependALPNNoDuplicate(t *testing.T) {
-	cfg := &Config{
-		TLSConfig: &tls.Config{
-			NextProtos: []string{alpn, "other"},
-		},
+// TestTLSClientConfigApply verifies that tlsClientConfig advertises exactly the
+// resolved ALPN (defaulting to "h3", replacing any preset protocols) and sets
+// the configured SNI.
+func TestTLSClientConfigApply(t *testing.T) {
+	// Default ALPN replaces whatever NextProtos held; ServerName untouched.
+	cfg := &Config{TLSConfig: &tls.Config{NextProtos: []string{"stale", "other"}}}
+	got := cfg.tlsClientConfig()
+	if !slices.Equal(got.NextProtos, []string{defaultH3ALPN}) {
+		t.Fatalf("NextProtos = %v, want [%q]", got.NextProtos, defaultH3ALPN)
 	}
-	result := cfg.tlsClientConfig()
-	count := 0
-	for _, proto := range result.NextProtos {
-		if proto == alpn {
-			count++
-		}
+
+	// Overrides for both ALPN and SNI are applied.
+	cfg = &Config{ServerName: "sni.example", ALPN: "custom", TLSConfig: &tls.Config{}}
+	got = cfg.tlsClientConfig()
+	if !slices.Equal(got.NextProtos, []string{"custom"}) {
+		t.Fatalf("NextProtos = %v, want [custom]", got.NextProtos)
 	}
-	if count != 1 {
-		t.Fatalf("alpn %q appears %d times in NextProtos, want 1: %v", alpn, count, result.NextProtos)
+	if got.ServerName != "sni.example" {
+		t.Fatalf("ServerName = %q, want %q", got.ServerName, "sni.example")
 	}
 }

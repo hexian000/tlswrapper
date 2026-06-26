@@ -30,6 +30,9 @@ type TLS struct {
 	// for this name. Empty defaults to "example.com", matching the gencerts
 	// default server name.
 	ServerName string `json:"sni,omitempty"`
+	// ALPN advertised in the TLS handshake. Empty uses the mux protocol's
+	// standard identifier ("h2" for h2mux, "h3" for h3mux).
+	ALPN string `json:"alpn,omitempty"`
 }
 
 // Mux holds mux-agnostic transport settings.

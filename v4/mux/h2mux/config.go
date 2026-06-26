@@ -26,6 +26,12 @@ type Config struct {
 	// TLSConfigProvider, when non-nil, is called on each Dial/AcceptSession to
 	// obtain the current TLS config. Takes precedence over TLSConfig.
 	TLSConfigProvider func() *tls.Config
+	// ServerName is the TLS SNI to send on outbound (client) handshakes.
+	// Empty leaves the resolved TLS config's ServerName untouched.
+	ServerName string
+	// ALPN is the single application protocol advertised in the TLS handshake.
+	// Empty uses defaultH2ALPN ("h2"), matching gRPC-over-HTTP/2.
+	ALPN string
 	// RejectInbound is advertised in the hello: the peer should not Open() streams to us.
 	RejectInbound bool
 
@@ -49,6 +55,10 @@ type Config struct {
 	IdleTimeout          time.Duration // default 0 (no idle timeout)
 }
 
+// defaultH2ALPN is the ALPN identifier used when Config.ALPN is empty. h2mux is
+// gRPC over HTTP/2, whose standard ALPN identifier is "h2".
+const defaultH2ALPN = "h2"
+
 // tlsConfig resolves the TLS config to use for a single connection.
 // TLSConfigProvider takes precedence over TLSConfig.
 func (c *Config) tlsConfig() *tls.Config {
@@ -56,6 +66,30 @@ func (c *Config) tlsConfig() *tls.Config {
 		return c.TLSConfigProvider()
 	}
 	return c.TLSConfig
+}
+
+// alpn returns the ALPN identifier to advertise, applying defaultH2ALPN when
+// Config.ALPN is empty.
+func (c *Config) alpn() string {
+	if c.ALPN != "" {
+		return c.ALPN
+	}
+	return defaultH2ALPN
+}
+
+// appliedTLSConfig resolves the current TLS config and returns a clone with the
+// configured SNI and ALPN applied. Returns nil in plaintext mode (no TLS).
+func (c *Config) appliedTLSConfig() *tls.Config {
+	cfg := c.tlsConfig()
+	if cfg == nil {
+		return nil
+	}
+	cfg = cfg.Clone()
+	if c.ServerName != "" {
+		cfg.ServerName = c.ServerName
+	}
+	cfg.NextProtos = []string{c.alpn()}
+	return cfg
 }
 
 func windowSize(v int32) int32 {

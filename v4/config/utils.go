@@ -72,8 +72,13 @@ func (c *File) IdleTimeout() time.Duration {
 // It matches the default server name used by the gencerts certificate tool.
 const DefaultServerName = "example.com"
 
-// NewTLSConfig creates a tls.Config from the TLS section.
-// Returns nil if TLS is not configured (plaintext mode).
+// NewTLSConfig builds the credential portion of the TLS config (certificate,
+// peer verification, minimum version) from the TLS section. Returns nil if TLS
+// is not configured (plaintext mode).
+//
+// SNI and ALPN are deliberately left unset: they are applied per handshake by
+// the mux layer from the ServerName and ALPN accessors, so the same credential
+// config can serve both h2mux ("h2") and h3mux ("h3").
 func (c *File) NewTLSConfig() (*tls.Config, error) {
 	if c.TLS == nil {
 		return nil, nil
@@ -86,19 +91,34 @@ func (c *File) NewTLSConfig() (*tls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	sni := c.TLS.ServerName
-	if sni == "" {
-		sni = DefaultServerName
-	}
 	return &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    certPool,
 		RootCAs:      certPool,
-		ServerName:   sni,
 		MinVersion:   tls.VersionTLS13,
-		NextProtos:   []string{"h2"},
 	}, nil
+}
+
+// ServerName returns the SNI to send on outbound TLS handshakes, applying
+// DefaultServerName when the TLS section omits it. Returns "" in plaintext mode.
+func (c *File) ServerName() string {
+	if c.TLS == nil {
+		return ""
+	}
+	if c.TLS.ServerName != "" {
+		return c.TLS.ServerName
+	}
+	return DefaultServerName
+}
+
+// ALPN returns the configured ALPN override, or "" to let the mux layer apply
+// its protocol default. Returns "" in plaintext mode.
+func (c *File) ALPN() string {
+	if c.TLS == nil {
+		return ""
+	}
+	return c.TLS.ALPN
 }
 
 // logWrapper wraps slog.Logger to implement io.Writer

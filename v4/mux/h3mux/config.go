@@ -11,17 +11,18 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-// alpn is the Application-Layer Protocol Negotiation identifier for h3mux.
-// It must be present in tls.Config.NextProtos on both client and server.
-const alpn = "tlswrapper/3"
+// defaultH3ALPN is the Application-Layer Protocol Negotiation identifier used
+// when Config.ALPN is empty. QUIC mandates an ALPN; "h3" is the standard
+// HTTP/3 identifier.
+const defaultH3ALPN = "h3"
 
 // Config holds options for creating an h3mux session.
 // Zero values for numeric/duration fields use built-in defaults.
 type Config struct {
 	// LocalID is the local identity claim sent in the handshake.
 	LocalID string
-	// TLSConfig is required: QUIC mandates TLS 1.3. The h3mux package
-	// automatically appends the alpn identifier to NextProtos.
+	// TLSConfig is required: QUIC mandates TLS 1.3. The h3mux package applies
+	// ServerName (SNI) and ALPN to a clone of this config per handshake.
 	// For dynamic cert rotation use TLSConfigProvider (it takes precedence).
 	TLSConfig *tls.Config
 	// TLSConfigProvider, when non-nil, is called to obtain the current TLS
@@ -29,6 +30,13 @@ type Config struct {
 	// GetConfigForClient) and on each Dial (client side). Takes precedence
 	// over TLSConfig.
 	TLSConfigProvider func() *tls.Config
+	// ServerName is the TLS SNI to send on outbound (client) handshakes.
+	// Empty leaves the resolved TLS config's ServerName untouched.
+	ServerName string
+	// ALPN is the single application protocol advertised in the TLS handshake.
+	// Empty uses defaultH3ALPN ("h3"). QUIC mandates an ALPN, so h3mux always
+	// advertises exactly one.
+	ALPN string
 	// RejectInbound is advertised in the handshake: the peer should not Open() streams to us.
 	RejectInbound bool
 
@@ -108,42 +116,48 @@ func (c *Config) currentTLSConfig() *tls.Config {
 	return c.TLSConfig
 }
 
-// tlsClientConfig returns a copy of the current TLS config with the h3mux
-// ALPN prepended. Panics if no TLS config is available.
-func (c *Config) tlsClientConfig() *tls.Config {
-	cfg := c.currentTLSConfig().Clone()
-	cfg.NextProtos = prependALPN(cfg.NextProtos)
+// alpn returns the ALPN identifier to advertise, applying defaultH3ALPN when
+// Config.ALPN is empty.
+func (c *Config) alpn() string {
+	if c.ALPN != "" {
+		return c.ALPN
+	}
+	return defaultH3ALPN
+}
+
+// applyTLS returns a clone of cfg with the configured SNI and ALPN applied.
+// QUIC mandates exactly one application protocol, so NextProtos is set to the
+// resolved identifier, replacing whatever it held.
+func (c *Config) applyTLS(cfg *tls.Config) *tls.Config {
+	cfg = cfg.Clone()
+	if c.ServerName != "" {
+		cfg.ServerName = c.ServerName
+	}
+	cfg.NextProtos = []string{c.alpn()}
 	return cfg
 }
 
-// tlsServerConfig returns a copy of the current TLS config with the h3mux
-// ALPN prepended. Panics if no TLS config is available.
+// tlsClientConfig returns a copy of the current TLS config with the configured
+// SNI and ALPN applied. Panics if no TLS config is available.
+func (c *Config) tlsClientConfig() *tls.Config {
+	return c.applyTLS(c.currentTLSConfig())
+}
+
+// tlsServerConfig returns a copy of the current TLS config with the configured
+// SNI and ALPN applied. Panics if no TLS config is available.
 // When TLSConfigProvider is set, the returned config additionally resolves
 // the provider on every inbound handshake via GetConfigForClient, so that
 // certificate rotation takes effect without restarting the listener.
 func (c *Config) tlsServerConfig() *tls.Config {
-	cfg := c.currentTLSConfig().Clone()
-	cfg.NextProtos = prependALPN(cfg.NextProtos)
+	cfg := c.applyTLS(c.currentTLSConfig())
 	if c.TLSConfigProvider != nil {
 		cfg.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
 			cur := c.TLSConfigProvider()
 			if cur == nil {
 				return nil, errors.New("h3mux: TLS config unavailable")
 			}
-			cur = cur.Clone()
-			cur.NextProtos = prependALPN(cur.NextProtos)
-			return cur, nil
+			return c.applyTLS(cur), nil
 		}
 	}
 	return cfg
-}
-
-// prependALPN ensures alpn is the first entry in protos.
-func prependALPN(protos []string) []string {
-	for _, p := range protos {
-		if p == alpn {
-			return protos
-		}
-	}
-	return append([]string{alpn}, protos...)
 }

@@ -25,8 +25,8 @@ func TestTLSServerConfigProviderRotation(t *testing.T) {
 	}
 
 	sc := cfg.tlsServerConfig()
-	if !slices.Contains(sc.NextProtos, alpn) {
-		t.Fatalf("NextProtos = %v, want to contain %q", sc.NextProtos, alpn)
+	if !slices.Contains(sc.NextProtos, defaultH3ALPN) {
+		t.Fatalf("NextProtos = %v, want to contain %q", sc.NextProtos, defaultH3ALPN)
 	}
 	if sc.GetConfigForClient == nil {
 		t.Fatal("GetConfigForClient = nil, want per-handshake resolver")
@@ -51,8 +51,8 @@ func TestTLSServerConfigProviderRotation(t *testing.T) {
 	if got.ServerName != "gen-2" {
 		t.Fatalf("ServerName after rotation = %q, want %q", got.ServerName, "gen-2")
 	}
-	if !slices.Contains(got.NextProtos, alpn) {
-		t.Fatalf("rotated NextProtos = %v, want to contain %q", got.NextProtos, alpn)
+	if !slices.Contains(got.NextProtos, defaultH3ALPN) {
+		t.Fatalf("rotated NextProtos = %v, want to contain %q", got.NextProtos, defaultH3ALPN)
 	}
 
 	// A nil provider result must fail the handshake instead of panicking.

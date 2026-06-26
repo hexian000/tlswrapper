@@ -251,7 +251,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 		}
 	}
 
-	tlscfg := cfg.tlsConfig()
+	tlscfg := cfg.appliedTLSConfig()
 	if tlscfg != nil {
 		conn = tls.Client(conn, tlscfg)
 	}
@@ -455,7 +455,7 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 		}
 	}
 
-	tlscfg := cfg.tlsConfig()
+	tlscfg := cfg.appliedTLSConfig()
 	if tlscfg != nil {
 		conn = tls.Server(conn, tlscfg)
 	}
