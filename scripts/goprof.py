@@ -23,6 +23,8 @@ DEFAULT_PROFILE_DIR = DEFAULT_BUILD_DIR / "goprof"
 DEFAULT_OUTPUT = DEFAULT_BUILD_DIR / "goprof.md"
 PROFILE_TEST_NAME = "TestProfileIperf3Workload"
 PROFILE_TEST_FILE = "zz_goprof_workload_test.go"
+SUPPORTED_PROTOCOLS = ("h2mux", "h3mux")
+DEFAULT_PROTOCOL = "h2mux"
 COMMAND_TIMEOUT_GRACE_SECONDS = 30.0
 BUILD_TIMEOUT_GRACE_SECONDS = 300.0
 PROFILE_TIMEOUT_GRACE_SECONDS = 120.0
@@ -95,11 +97,12 @@ func goprofTLSMaterial(t *testing.T, sni string) ([]byte, []byte) {
     return certPEM, keyPEM
 }
 
-func goprofTLSConfig(certPEM, keyPEM, authCertPEM []byte) map[string]any {
+func goprofTLSConfig(certPEM, keyPEM, authCertPEM []byte, sni string) map[string]any {
     return map[string]any{
         "cert":      string(certPEM),
         "key":       string(keyPEM),
         "authcerts": []string{string(authCertPEM)},
+        "sni":       sni,
     }
 }
 
@@ -111,6 +114,10 @@ func TestProfileIperf3Workload(t *testing.T) {
     duration := goprofEnvInt(t, "GOPROF_DURATION", 30)
     parallel := goprofEnvInt(t, "GOPROF_PARALLEL", 10)
     useTLS := goprofEnvBool("GOPROF_TLS")
+    muxProtocol := os.Getenv("GOPROF_MUX_PROTOCOL")
+    if muxProtocol == "" {
+        muxProtocol = "h2mux"
+    }
     muxAddr := os.Getenv("GOPROF_MUX_ADDR")
     clientListenAddr := os.Getenv("GOPROF_CLIENT_LISTEN_ADDR")
     iperfServerAddr := os.Getenv("GOPROF_IPERF_SERVER_ADDR")
@@ -119,6 +126,7 @@ func TestProfileIperf3Workload(t *testing.T) {
     }
 
     serverConfig := map[string]any{
+        "mux_protocol": muxProtocol,
         "mux_listen": muxAddr,
         "connect":    iperfServerAddr,
         "max_streams": 1000,
@@ -130,6 +138,7 @@ func TestProfileIperf3Workload(t *testing.T) {
         },
     }
     clientConfig := map[string]any{
+        "mux_protocol": muxProtocol,
         "mux_connect": muxAddr,
         "listen":      clientListenAddr,
         "identity":    map[string]any{"claim": "profile-client"},
@@ -144,11 +153,11 @@ func TestProfileIperf3Workload(t *testing.T) {
     if useTLS {
         serverCertPEM, serverKeyPEM := goprofTLSMaterial(t, "example.com")
         clientCertPEM, clientKeyPEM := goprofTLSMaterial(t, "example.com")
-        serverConfig["tls"] = goprofTLSConfig(serverCertPEM, serverKeyPEM, clientCertPEM)
-        clientConfig["tls"] = goprofTLSConfig(clientCertPEM, clientKeyPEM, serverCertPEM)
+        serverConfig["tls"] = goprofTLSConfig(serverCertPEM, serverKeyPEM, clientCertPEM, "example.com")
+        clientConfig["tls"] = goprofTLSConfig(clientCertPEM, clientKeyPEM, serverCertPEM, "example.com")
     }
 
-    srv, err := NewServer(newTestConfig(t, serverConfig), "")
+    srv, err := NewServer(newTestConfig(t, serverConfig))
     if err != nil {
         t.Fatal("server create:", err)
     }
@@ -157,7 +166,7 @@ func TestProfileIperf3Workload(t *testing.T) {
     }
     t.Cleanup(func() { _ = srv.Shutdown() })
 
-    cli, err := NewServer(newTestConfig(t, clientConfig), "")
+    cli, err := NewServer(newTestConfig(t, clientConfig))
     if err != nil {
         t.Fatal("client create:", err)
     }
@@ -352,6 +361,7 @@ def render_markdown_report(
         iperf_stdout_log_path: Path,
         iperf_stderr_log_path: Path,
         use_tls: bool,
+        protocol: str,
 ) -> str:
     output_dir = output_path.parent
     lines = [
@@ -361,6 +371,7 @@ def render_markdown_report(
         "| --- | --- |",
         "| Module root | %s |" % relative_path(ROOT),
         "| Profile directory | %s |" % relative_path(profile_dir),
+        "| Mux protocol | %s |" % protocol,
         "| Transport security | %s |" % (
             "mutual TLS" if use_tls else "plaintext"),
         "| Workload | `%s` |" % workload_command,
@@ -479,12 +490,22 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="enable mutual TLS on the mux transport (default: off)",
     )
+    parser.add_argument(
+        "--protocol",
+        "-p",
+        choices=SUPPORTED_PROTOCOLS,
+        default=DEFAULT_PROTOCOL,
+        help="mux transport protocol (default: %(default)s)",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     global ROOT
     args = parse_args(argv)
+    if args.protocol == "h3mux" and not args.tls:
+        raise SystemExit(
+            "--protocol h3mux requires --tls (QUIC requires TLS)")
     ROOT = resolve_path(Path.cwd().resolve(), args.module_dir)
     ensure_project_root(ROOT)
     ensure_tool("go")
@@ -529,6 +550,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "GOPROF_DURATION": str(args.duration),
             "GOPROF_PARALLEL": str(args.parallel),
             "GOPROF_TLS": "1" if args.tls else "0",
+            "GOPROF_MUX_PROTOCOL": args.protocol,
             "GOPROF_MUX_ADDR": mux_addr,
             "GOPROF_CLIENT_LISTEN_ADDR": client_listen_addr,
             "GOPROF_IPERF_SERVER_ADDR": iperf_server_addr,
@@ -601,6 +623,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         iperf_stdout_log_path=iperf_stdout_log_path,
         iperf_stderr_log_path=iperf_stderr_log_path,
         use_tls=args.tls,
+        protocol=args.protocol,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")
