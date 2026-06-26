@@ -131,8 +131,9 @@ func AppMain(f *AppFlags) int {
 		slog.Fatal("load config: ", formats.Error(err))
 		os.Exit(1)
 	}
-	if f.LogLevel < 0 {
-		slog.Default().SetLevel(cfg.LogLevel)
+	// config.Load applies cfg.LogLevel; the -loglevel flag takes precedence.
+	if f.LogLevel >= 0 {
+		slog.Default().SetLevel(slog.Level(f.LogLevel))
 	}
 	slog.Debugf("runtime: %s", runtime.Version())
 	server, err := NewServer(cfg, f.ServerName)
@@ -165,6 +166,10 @@ func AppMain(f *AppFlags) int {
 		if err != nil {
 			slog.Error("read config: ", formats.Error(err))
 			continue
+		}
+		// config.Load applies cfg.LogLevel; the -loglevel flag takes precedence.
+		if f.LogLevel >= 0 {
+			slog.Default().SetLevel(slog.Level(f.LogLevel))
 		}
 		if err := server.ReloadConfig(cfg); err != nil {
 			slog.Error("reload config: ", formats.Error(err))

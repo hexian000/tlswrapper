@@ -96,6 +96,48 @@ func TestServerReloadConfigAddsAndRemovesTunnels(t *testing.T) {
 	}
 }
 
+func TestServerReloadIdentityListenAddrChange(t *testing.T) {
+	oldAddr := freePort(t)
+	newAddr := freePort(t)
+	s := newTestServer(t, nil)
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	if err := s.ReloadConfig(newTestConfig(t, map[string]any{
+		"identity": map[string]any{"listen": map[string]any{"peer-a": oldAddr}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 2*time.Second, func() bool {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		il, ok := s.identities["peer-a"]
+		return ok && il.addr == oldAddr
+	})
+
+	// Reload with the same identity name bound to a different address.
+	if err := s.ReloadConfig(newTestConfig(t, map[string]any{
+		"identity": map[string]any{"listen": map[string]any{"peer-a": newAddr}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 2*time.Second, func() bool {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		il, ok := s.identities["peer-a"]
+		return ok && il.addr == newAddr
+	})
+	conn, err := net.DialTimeout("tcp", newAddr, 2*time.Second)
+	if err != nil {
+		t.Fatal("new address not reachable:", err)
+	}
+	_ = conn.Close()
+	conn, err = net.DialTimeout("tcp", oldAddr, 200*time.Millisecond)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("expected old listener to be closed")
+	}
+}
+
 func TestServerStartWithAPIListener(t *testing.T) {
 	apiAddr := freePort(t)
 	s := newTestServer(t, map[string]any{"api_listen": apiAddr})

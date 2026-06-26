@@ -74,6 +74,9 @@ type Forwarder interface {
 	// handler may be nil. If Start returns nil, OnWriteClosed runs once per
 	// direction and OnClosed runs once after both directions finish.
 	Start(accepted net.Conn, dialed net.Conn, handler EventHandler) error
+	// SetLimit adjusts the maximum number of active connection pairs.
+	// Pairs already running are unaffected when the limit shrinks.
+	SetLimit(maxConn int)
 	Count() int
 	HalfOpenCount() int
 	Close()
@@ -83,17 +86,23 @@ type forwarder struct {
 	mu          sync.Mutex
 	g           routines.Group
 	conn        map[net.Conn]struct{}
-	counter     chan struct{}
+	count       atomic.Int64
+	limit       atomic.Int64
 	numHalfOpen atomic.Int32
 }
 
 // New returns a Forwarder limited to maxConn active connection pairs.
 func New(maxConn int, g routines.Group) Forwarder {
-	return &forwarder{
-		conn:    make(map[net.Conn]struct{}),
-		counter: make(chan struct{}, maxConn),
-		g:       g,
+	f := &forwarder{
+		conn: make(map[net.Conn]struct{}),
+		g:    g,
 	}
+	f.limit.Store(int64(maxConn))
+	return f
+}
+
+func (f *forwarder) SetLimit(maxConn int) {
+	f.limit.Store(int64(maxConn))
 }
 
 func (f *forwarder) addConn(accepted net.Conn, dialed net.Conn) {
@@ -139,14 +148,16 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 	select {
 	case <-f.g.CloseC():
 		return routines.ErrClosed
-	case f.counter <- struct{}{}:
 	default:
+	}
+	if f.count.Add(1) > f.limit.Load() {
+		f.count.Add(-1)
 		return ErrConnLimit
 	}
 	f.addConn(accepted, dialed)
 	cleanup := func() {
 		f.cleanupConn(accepted, dialed)
-		<-f.counter
+		f.count.Add(-1)
 	}
 	var remaining atomic.Int32
 	remaining.Store(2)
@@ -216,7 +227,7 @@ func (f *forwarder) Start(accepted net.Conn, dialed net.Conn, handler EventHandl
 }
 
 func (f *forwarder) Count() int {
-	return len(f.counter)
+	return int(f.count.Load())
 }
 
 func (f *forwarder) HalfOpenCount() int {

@@ -702,10 +702,10 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 	for name, addr := range cfg.Identity.Listen {
 		activeListens[name] = addr
 	}
-	// Stop stale identity listeners.
+	// Stop identity listeners that were removed or whose address changed.
 	for id, il := range s.identities {
-		if _, ok := activeListens[id]; ok {
-			delete(activeListens, id) // still active, retain
+		if addr, ok := activeListens[id]; ok && addr == il.addr {
+			delete(activeListens, id) // unchanged, retain
 		} else {
 			delete(s.identities, id)
 			il.stop()
@@ -719,7 +719,7 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 			errs = append(errs, fmt.Errorf("identity %q: listen: %w", id, err))
 			continue
 		}
-		il := &identityListener{id: id, l: l}
+		il := &identityListener{id: id, addr: listenAddr, l: l}
 		if err := il.start(s); err != nil {
 			slog.Errorf("identity %q: start: %s", id, formats.Error(err))
 			errs = append(errs, fmt.Errorf("identity %q: start: %w", id, err))
@@ -763,11 +763,17 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 
 // reloadMuxListen restarts the MuxListen listener when its configuration
 // changed from old to cfg. Errors are logged; the reload continues regardless.
+// The mux listener captures its tunables (windows, timeouts, stream limits,
+// identity claim, RejectInbound) at build time, so any change to them requires
+// a restart; TLS material is excluded because it is fetched per connection.
 func (s *Server) reloadMuxListen(old, cfg *config.File) error {
 	if cfg.MuxListen == old.MuxListen &&
 		cfg.MuxProtocol == old.MuxProtocol &&
 		cfg.MaxSessions == old.MaxSessions &&
-		cfg.MaxStartups == old.MaxStartups {
+		cfg.MaxStartups == old.MaxStartups &&
+		cfg.Mux == old.Mux &&
+		cfg.Identity.Claim == old.Identity.Claim &&
+		cfg.Connect == old.Connect {
 		return nil
 	}
 	s.listenMu.Lock()
@@ -1008,6 +1014,7 @@ func (s *Server) ReloadConfig(cfg *config.File) error {
 	}
 	s.muxDialer = s.buildMuxDialer(cfg, s.tlscfg)
 	s.cfgMu.Unlock()
+	s.f.SetLimit(maxStreams(cfg))
 	// 3. Mark all existing sessions as stale so they age out when idle.
 	s.markSessionsStale()
 	// 4. Reload listeners when addresses/limits change.

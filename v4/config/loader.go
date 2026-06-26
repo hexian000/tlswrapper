@@ -83,6 +83,7 @@ func Load(b []byte) (*File, error) {
 	if err := cfg.SetLogger(slog.Default()); err != nil {
 		return nil, err
 	}
+	slog.Default().SetLevel(cfg.LogLevel)
 	return &cfg, nil
 }
 

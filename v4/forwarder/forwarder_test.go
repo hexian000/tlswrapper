@@ -145,6 +145,40 @@ func TestForwarderConnLimit(t *testing.T) {
 	}
 }
 
+func TestForwarderSetLimit(t *testing.T) {
+	g := newTestGroup(t)
+	f := New(1, g)
+
+	a1, b1 := net.Pipe()
+	a2, b2 := net.Pipe()
+	a3, b3 := net.Pipe()
+	t.Cleanup(func() {
+		for _, c := range []net.Conn{a1, b1, a2, b2, a3, b3} {
+			_ = c.Close()
+		}
+	})
+
+	if err := f.Start(a1, b1, nil); err != nil {
+		t.Fatal("first Start:", err)
+	}
+	if err := f.Start(a2, b2, nil); err != ErrConnLimit {
+		t.Fatalf("second Start: got %v, want ErrConnLimit", err)
+	}
+	// Raising the limit must allow the previously rejected pair.
+	f.SetLimit(2)
+	if err := f.Start(a2, b2, nil); err != nil {
+		t.Fatal("Start after SetLimit(2):", err)
+	}
+	// Shrinking the limit below the active count rejects new pairs only.
+	f.SetLimit(1)
+	if err := f.Start(a3, b3, nil); err != ErrConnLimit {
+		t.Fatalf("Start after SetLimit(1): got %v, want ErrConnLimit", err)
+	}
+	if got := f.Count(); got != 2 {
+		t.Fatalf("Count() = %d, want 2", got)
+	}
+}
+
 func TestForwarderHalfOpenCount(t *testing.T) {
 	g := newTestGroup(t)
 	f := New(10, g)

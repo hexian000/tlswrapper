@@ -76,8 +76,9 @@ func (h *EmptyHandler) Serve(_ context.Context, accepted net.Conn) {
 // identityListener owns a named local listener that routes inbound TCP
 // connections to the mux session identified by id.
 type identityListener struct {
-	id string
-	l  net.Listener
+	id   string
+	addr string // configured listen address; compared on config reload
+	l    net.Listener
 }
 
 // start launches the accept loop for il in s's goroutine group.
