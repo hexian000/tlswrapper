@@ -5,6 +5,8 @@ package h3mux
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
 	"sync"
 
@@ -15,6 +17,13 @@ import (
 
 // compile-time check that h3Session implements mux.Session.
 var _ mux.Session = (*h3Session)(nil)
+
+// openMarker is a 1-byte stream-open signal written by Open() and consumed by
+// Accept(). QUIC streams are invisible to the peer until the first STREAM frame
+// is sent, so without this handshake Accept() would block forever if the caller
+// waits for it before writing any application data (unlike gRPC/h2mux, which
+// sends HTTP/2 HEADERS when opening a stream).
+var openMarker = [1]byte{0}
 
 // h3Session implements mux.Session over a QUIC connection.
 // Because QUIC is symmetric (both endpoints can open streams), there is no
@@ -91,8 +100,12 @@ func (s *h3Session) wrapStream(qs *quic.Stream) net.Conn {
 }
 
 // Open opens a new bidirectional stream to the peer.
-// QUIC v1 signals the new stream to the peer as soon as OpenStreamSync
-// completes, so no application-level marker byte is required.
+// A 1-byte open marker is written immediately so that the peer's Accept()
+// returns as soon as the stream is created, before any application data is
+// sent. This mirrors the behaviour of gRPC/h2mux, which sends HTTP/2 HEADERS
+// on stream open. Without this, Accept() on the peer would block until the
+// first application Write(), because QUIC streams are not announced to the
+// peer until the first STREAM frame is transmitted.
 func (s *h3Session) Open(ctx context.Context) (net.Conn, error) {
 	if s.IsClosed() {
 		return nil, mux.ErrSessionClosed
@@ -108,12 +121,21 @@ func (s *h3Session) Open(ctx context.Context) (net.Conn, error) {
 		}
 		return nil, err
 	}
+	if _, err := qs.Write(openMarker[:]); err != nil {
+		_ = qs.Close()
+		s.metrics.StreamsFailed.Add(1)
+		if s.IsClosed() {
+			return nil, mux.ErrSessionClosed
+		}
+		return nil, fmt.Errorf("open marker write: %w", err)
+	}
 	s.metrics.StreamsOpened.Add(1)
 	s.metrics.NumStreams.Add(1)
 	return s.wrapStream(qs), nil
 }
 
 // Accept blocks until a new stream is available or the session is closed.
+// It reads and discards the 1-byte open marker written by the opener's Open().
 func (s *h3Session) Accept() (net.Conn, error) {
 	qs, err := s.conn.AcceptStream(s.conn.Context())
 	if err != nil {
@@ -121,6 +143,14 @@ func (s *h3Session) Accept() (net.Conn, error) {
 			return nil, mux.ErrSessionClosed
 		}
 		return nil, err
+	}
+	var marker [1]byte
+	if _, err := io.ReadFull(qs, marker[:]); err != nil {
+		_ = qs.Close()
+		if s.IsClosed() {
+			return nil, mux.ErrSessionClosed
+		}
+		return nil, fmt.Errorf("open marker read: %w", err)
 	}
 	s.metrics.StreamsAccepted.Add(1)
 	s.metrics.NumStreams.Add(1)

@@ -23,6 +23,7 @@ DEFAULT_OUTPUT = DEFAULT_BUILD_DIR / "gocov.md"
 DEFAULT_PROFILE_DIR = DEFAULT_BUILD_DIR / "gocov"
 DEFAULT_LINE_DIR = DEFAULT_PROFILE_DIR / "line-coverage"
 EXCLUDED_SUFFIXES = ("_test.go", ".pb.go", "_grpc.pb.go")
+GO_TEST_TIMEOUT_SECONDS = 120.0
 FUNCTION_LINE_RE = re.compile(
     r"^(?P<file>.+?\.go):(?P<line>[0-9]+):\s+(?P<func>\S+)\s+(?P<pct>[0-9.]+%)$")
 
@@ -92,15 +93,18 @@ def run_command(
         *,
         cwd: Optional[Path] = None,
         capture_output: bool = False,
+        timeout: Optional[float] = None,
+        check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     log("+ %s" % quote_command(command))
     return subprocess.run(
         list(command),
         cwd=str(cwd) if cwd is not None else None,
         text=True,
-        check=True,
+        check=check,
         stdout=subprocess.PIPE if capture_output else None,
         stderr=subprocess.STDOUT if capture_output else None,
+        timeout=timeout,
     )
 
 
@@ -425,21 +429,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     test_log_path = profile_dir / "go-test.log"
     module_name = module_path(ROOT)
 
-    test_proc = run_command(
-        [
-            "go",
-            "test",
-            "-mod=vendor",
-            "-count=1",
-            "-covermode=count",
-            "-coverprofile",
-            str(profile_path),
-            args.packages,
-        ],
-        cwd=ROOT,
-        capture_output=True,
-    )
-    test_log_path.write_text(test_proc.stdout or "", encoding="utf-8")
+    try:
+        test_proc = run_command(
+            [
+                "go",
+                "test",
+                "-mod=vendor",
+                "-count=1",
+                "-timeout",
+                "%ds" % int(GO_TEST_TIMEOUT_SECONDS),
+                "-covermode=count",
+                "-coverprofile",
+                str(profile_path),
+                args.packages,
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            timeout=GO_TEST_TIMEOUT_SECONDS + 30.0,
+            check=False,
+        )
+        test_log_path.write_text(test_proc.stdout or "", encoding="utf-8")
+        if test_proc.returncode != 0:
+            log("go test exited with code %d (coverage profile may be partial)" % test_proc.returncode)
+    except subprocess.TimeoutExpired:
+        log("go test timed out after %.0fs (coverage profile may be partial)" % GO_TEST_TIMEOUT_SECONDS)
 
     func_proc = run_command(
         ["go", "tool", "cover", "-func", str(profile_path)],

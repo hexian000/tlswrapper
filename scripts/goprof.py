@@ -142,19 +142,13 @@ func TestProfileIperf3Workload(t *testing.T) {
         },
     }
     if useTLS {
-        oldServerName := appFlags.ServerName
-        appFlags.ServerName = "example.com"
-        t.Cleanup(func() {
-            appFlags.ServerName = oldServerName
-        })
-
-        serverCertPEM, serverKeyPEM := goprofTLSMaterial(t, appFlags.ServerName)
-        clientCertPEM, clientKeyPEM := goprofTLSMaterial(t, appFlags.ServerName)
+        serverCertPEM, serverKeyPEM := goprofTLSMaterial(t, "example.com")
+        clientCertPEM, clientKeyPEM := goprofTLSMaterial(t, "example.com")
         serverConfig["tls"] = goprofTLSConfig(serverCertPEM, serverKeyPEM, clientCertPEM)
         clientConfig["tls"] = goprofTLSConfig(clientCertPEM, clientKeyPEM, serverCertPEM)
     }
 
-    srv, err := NewServer(newTestConfig(t, serverConfig))
+    srv, err := NewServer(newTestConfig(t, serverConfig), "")
     if err != nil {
         t.Fatal("server create:", err)
     }
@@ -163,7 +157,7 @@ func TestProfileIperf3Workload(t *testing.T) {
     }
     t.Cleanup(func() { _ = srv.Shutdown() })
 
-    cli, err := NewServer(newTestConfig(t, clientConfig))
+    cli, err := NewServer(newTestConfig(t, clientConfig), "")
     if err != nil {
         t.Fatal("client create:", err)
     }
