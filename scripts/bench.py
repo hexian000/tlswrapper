@@ -51,22 +51,12 @@ class ScenarioResult:
     interval_bps: List[float]
 
 
-_SCENARIOS_ALL = (
+SCENARIOS = (
     Scenario("uplink", "Uplink"),
     Scenario("downlink", "Downlink"),
     Scenario("bidir", "Bidirectional"),
     Scenario("parallel", "Parallel Bidirectional"),
 )
-_SCENARIOS_SKIP_PARALLEL = {"h3mux"}
-
-
-def get_scenarios(protocol: str) -> Sequence[Scenario]:
-    skip_parallel = protocol in _SCENARIOS_SKIP_PARALLEL
-    return [
-        scenario
-        for scenario in _SCENARIOS_ALL
-        if not (skip_parallel and scenario.name == "parallel")
-    ]
 
 
 def log(message: str) -> None:
@@ -202,8 +192,10 @@ def prepare_runtime_assets(
         ensure_certificates(binary_path, runtime_dir, duration)
     server_config_path = runtime_dir / "server.json"
     client_config_path = runtime_dir / "client.json"
-    write_config(server_config_path, build_server_config(protocol, use_tls, window))
-    write_config(client_config_path, build_client_config(protocol, use_tls, window))
+    write_config(server_config_path, build_server_config(
+        protocol, use_tls, window))
+    write_config(client_config_path, build_client_config(
+        protocol, use_tls, window))
     return server_config_path, client_config_path
 
 
@@ -672,7 +664,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     if args.no_tls and args.protocol == "h3mux":
-        raise SystemExit("--no-tls is incompatible with h3mux (QUIC requires TLS)")
+        raise SystemExit(
+            "--no-tls is incompatible with h3mux (QUIC requires TLS)")
     use_tls = not args.no_tls
     maybe_reexec_in_netns(args.netem_delay)
     iperf3 = ensure_tool(args.iperf3)
@@ -690,7 +683,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     configure_netem(args.netem_delay)
 
-    output_path = Path(args.output).expanduser().resolve() if args.output else DEFAULT_OUTPUT
+    output_path = Path(args.output).expanduser(
+    ).resolve() if args.output else DEFAULT_OUTPUT
 
     results: List[ScenarioResult] = []
     server_proc: Optional[subprocess.Popen[str]] = None
@@ -736,8 +730,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         time.sleep(args.startup_wait)
 
-        scenarios = get_scenarios(args.protocol)
-        for scenario in scenarios:
+        for scenario in SCENARIOS:
             commands = build_scenario_commands(
                 iperf3, scenario, args.duration, args.parallel)
             timeout_seconds = command_timeout_seconds(

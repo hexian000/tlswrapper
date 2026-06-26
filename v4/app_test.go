@@ -33,6 +33,21 @@ func freePort(t *testing.T) string {
 	return addr
 }
 
+// waitFor polls cond every 10 ms until it returns true or timeout elapses.
+func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !cond() {
+		t.Fatal("condition not satisfied before timeout")
+	}
+}
+
 // startEchoServer starts a simple TCP echo server; the listener is closed on cleanup.
 func startEchoServer(t *testing.T) string {
 	t.Helper()
@@ -122,16 +137,7 @@ func TestForwardBidirectional(t *testing.T) {
 	t.Cleanup(func() { _ = cli.Shutdown() })
 
 	// 5. Wait for the outbound mux session to be established (up to 5 s).
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if cli.Stats().NumSessions > 0 {
-			break
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	if cli.Stats().NumSessions == 0 {
-		t.Fatal("mux session not established within 5 s")
-	}
+	waitFor(t, 5*time.Second, func() bool { return cli.Stats().NumSessions > 0 })
 
 	// 6. Connect through the session and verify bidirectional forwarding.
 	conn, err := net.DialTimeout("tcp", clientListenAddr, 3*time.Second)
@@ -201,16 +207,7 @@ func TestForwardIdentityListenMuxConnect(t *testing.T) {
 	t.Cleanup(func() { _ = cli.Shutdown() })
 
 	// Wait for the outbound mux session to be established.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if cli.Stats().NumSessions > 0 {
-			break
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	if cli.Stats().NumSessions == 0 {
-		t.Fatal("mux session not established within 5 s")
-	}
+	waitFor(t, 5*time.Second, func() bool { return cli.Stats().NumSessions > 0 })
 
 	// Connect through the identity.listen["server"] port and verify echo.
 	conn, err := net.DialTimeout("tcp", clientListenAddr, 3*time.Second)
@@ -371,16 +368,7 @@ func TestForwardH3MuxBidirectional(t *testing.T) {
 	t.Cleanup(func() { _ = cli.Shutdown() })
 
 	// Wait for the outbound h3mux session to be established (up to 5 s).
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if cli.Stats().NumSessions > 0 {
-			break
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	if cli.Stats().NumSessions == 0 {
-		t.Fatal("h3mux session not established within 5 s")
-	}
+	waitFor(t, 5*time.Second, func() bool { return cli.Stats().NumSessions > 0 })
 
 	// Connect through the session and verify bidirectional forwarding.
 	conn, err := net.DialTimeout("tcp", clientListenAddr, 3*time.Second)

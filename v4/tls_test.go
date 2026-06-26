@@ -11,26 +11,21 @@ import (
 )
 
 func TestTLS(t *testing.T) {
-	println("tls: start")
 	serverCert, err := tls.X509KeyPair([]byte(testServerCertPEM), []byte(testServerKeyPEM))
 	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
 	clientCert, err := tls.X509KeyPair([]byte(testClientCertPEM), []byte(testClientKeyPEM))
 	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
 	serverCertPool := x509.NewCertPool()
 	if ok := serverCertPool.AppendCertsFromPEM([]byte(testClientCertPEM)); !ok {
-		t.Fail()
-		return
+		t.Fatal("failed to parse client cert into pool")
 	}
 	clientCertPool := x509.NewCertPool()
 	if ok := clientCertPool.AppendCertsFromPEM([]byte(testServerCertPEM)); !ok {
-		t.Fail()
-		return
+		t.Fatal("failed to parse server cert into pool")
 	}
 	serverCfg := &tls.Config{
 		Certificates: []tls.Certificate{serverCert},
@@ -45,56 +40,48 @@ func TestTLS(t *testing.T) {
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    clientCertPool,
 		RootCAs:      clientCertPool,
-		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			block := &pem.Block{
-				Type:  "CERTIFICATE",
-				Bytes: rawCerts[0],
-			}
-			t.Logf("%s", string(pem.EncodeToMemory(block)))
+		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			block := &pem.Block{Type: "CERTIFICATE", Bytes: rawCerts[0]}
+			t.Logf("peer cert:\n%s", pem.EncodeToMemory(block))
 			return nil
 		},
 		ServerName: "example.com",
 		MinVersion: tls.VersionTLS13,
 	}
 
-	println("tls: listen")
-	l, err := tls.Listen("tcp", "127.0.0.1:46854", serverCfg)
+	l, err := tls.Listen("tcp", "127.0.0.1:0", serverCfg)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	ch := make(chan struct{})
+	t.Cleanup(func() { _ = l.Close() })
+
+	serverDone := make(chan struct{})
 	go func() {
-		defer close(ch)
+		defer close(serverDone)
 		conn, err := l.Accept()
 		if err != nil {
-			panic(err)
+			return
 		}
+		defer conn.Close()
 		b := make([]byte, 256)
 		n, _ := conn.Read(b)
-		println("tls: echo")
 		_, _ = conn.Write(b[:n])
-		_ = conn.Close()
 	}()
-	println("tls: dial")
-	clientConn, err := tls.Dial("tcp", "127.0.0.1:46854", clientCfg)
+
+	clientConn, err := tls.Dial("tcp", l.Addr().String(), clientCfg)
 	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
-	println("tls: handshake")
-	_, err = clientConn.Write([]byte("Hello TLS"))
-	if err != nil {
-		t.Error(err)
-		return
+	defer clientConn.Close()
+
+	if _, err = clientConn.Write([]byte("Hello TLS")); err != nil {
+		t.Fatal(err)
 	}
 	b := make([]byte, 256)
-	_, err = clientConn.Read(b)
-	if err != nil {
-		t.Error(err)
-		return
+	if _, err = clientConn.Read(b); err != nil {
+		t.Fatal(err)
 	}
-	_ = clientConn.Close()
-	println("tls: ok")
+	<-serverDone
 }
 
 const (
