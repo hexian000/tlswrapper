@@ -319,6 +319,7 @@ func (s *Server) buildH3MuxDialer(cfg *config.File, tlscfg *tls.Config) *h3mux.H
 	return h3mux.New(&h3mux.Config{
 		TLSConfig:                      tlscfg,
 		LocalID:                        cfg.Identity.Claim,
+		RejectInbound:                  cfg.Connect == "",
 		KeepAlivePeriod:                cfg.KeepAlive(),
 		HandshakeTimeout:               cfg.ConnectTimeout(),
 		MaxIdleTimeout:                 cfg.IdleTimeout(),
@@ -350,6 +351,7 @@ func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 		l, err := h3mux.ListenMux(addr, &h3mux.Config{
 			TLSConfigProvider:              func() *tls.Config { _, tlscfg := s.getConfig(); return tlscfg },
 			LocalID:                        cfg.Identity.Claim,
+			RejectInbound:                  cfg.Connect == "",
 			KeepAlivePeriod:                cfg.KeepAlive(),
 			HandshakeTimeout:               cfg.ConnectTimeout(),
 			MaxIdleTimeout:                 cfg.IdleTimeout(),
@@ -395,6 +397,7 @@ func (s *Server) buildH2MuxDialer(cfg *config.File, tlscfg *tls.Config) *h2mux.H
 	return h2mux.New(&h2mux.Config{
 		TLSConfig:     tlscfg,
 		LocalID:       cfg.Identity.Claim,
+		RejectInbound: cfg.Connect == "",
 		KeepAlive:     cfg.KeepAlive(),
 		PingTimeout:   cfg.PingTimeout(),
 		WriteTimeout:  cfg.SendTimeout(),
@@ -412,6 +415,7 @@ func (s *Server) buildH2MuxListener(l net.Listener, cfg *config.File) *h2mux.H2L
 	return h2mux.NewListener(l, &h2mux.Config{
 		TLSConfigProvider:    func() *tls.Config { _, tlscfg := s.getConfig(); return tlscfg },
 		LocalID:              cfg.Identity.Claim,
+		RejectInbound:        cfg.Connect == "",
 		WriteTimeout:         cfg.SendTimeout(),
 		SessionWindow:        int32(cfg.Mux.SessionWindow),
 		StreamWindow:         int32(cfg.Mux.StreamWindow),

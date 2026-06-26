@@ -59,6 +59,57 @@ func TestServerHandleInboundStream(t *testing.T) {
 	})
 }
 
+// TestServerRejectInboundWiring verifies that a node without a "connect"
+// forwarding target advertises RejectInbound during the mux handshake, so the
+// peer's OpenStream fails fast instead of opening a stream that would only be
+// dropped, and that configuring "connect" keeps streams open as usual.
+func TestServerRejectInboundWiring(t *testing.T) {
+	openMainTunnelStream := func(t *testing.T, srvOverrides map[string]any) (net.Conn, error) {
+		t.Helper()
+		muxAddr := freePort(t)
+		srvOverrides["mux_listen"] = muxAddr
+		srv := newTestServer(t, srvOverrides)
+		if err := srv.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = srv.Shutdown() })
+		cli := newTestServer(t, map[string]any{
+			"mux_connect": muxAddr,
+			"identity":    map[string]any{"claim": "test-client"},
+		})
+		if err := cli.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cli.Shutdown() })
+		waitFor(t, 5*time.Second, func() bool { return cli.Stats().NumSessions > 0 })
+		tn := cli.findSession("")
+		if tn == nil {
+			t.Fatal("main tunnel not found")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		return tn.OpenStream(ctx)
+	}
+
+	t.Run("no-connect-rejects", func(t *testing.T) {
+		conn, err := openMainTunnelStream(t, map[string]any{})
+		if !errors.Is(err, h2mux.ErrInboundRejected) {
+			t.Fatalf("OpenStream: got %v, want ErrInboundRejected", err)
+		}
+		if conn != nil {
+			_ = conn.Close()
+		}
+	})
+
+	t.Run("with-connect-allows", func(t *testing.T) {
+		conn, err := openMainTunnelStream(t, map[string]any{"connect": startEchoServer(t)})
+		if err != nil {
+			t.Fatalf("OpenStream: %v", err)
+		}
+		_ = conn.Close()
+	})
+}
+
 func TestServerReloadConfigAddsAndRemovesTunnels(t *testing.T) {
 	listenAddr := freePort(t)
 	s := newTestServer(t, nil)
