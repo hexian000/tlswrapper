@@ -136,14 +136,14 @@
                     "additionalProperties": false
                 },
                 "session_window": {
-                    "description": "Fixed HTTP/2 connection-level flow-control window size in bytes. 0 leaves it unset. If either session_window or stream_window is non-zero, gRPC static flow control is used and any unset window stays at gRPC's default initial size. Non-zero values are clamped to [65535, 2147483647]. Default: 0.",
+                    "description": "Transport-level connection receive window size in bytes. 0 means use the internal default. Non-zero values are clamped to [65535, 2147483647]. Default: 0.",
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 2147483647,
                     "default": 0
                 },
                 "stream_window": {
-                    "description": "Fixed HTTP/2 stream-level flow-control window size in bytes. 0 leaves it unset. If either session_window or stream_window is non-zero, gRPC static flow control is used and any unset window stays at gRPC's default initial size. Non-zero values are clamped to [65535, 2147483647]. Default: 0.",
+                    "description": "Transport-level stream receive window size in bytes. 0 means use the internal default. Non-zero values are clamped to [65535, 2147483647]. Default: 0.",
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 2147483647,

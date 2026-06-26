@@ -28,13 +28,15 @@ type TLS struct {
 	AuthCerts []string `json:"authcerts"`
 }
 
-// Mux holds settings for the mux (transport-level) connection.
+// Mux holds mux-agnostic transport settings.
+// SessionWindow and StreamWindow control the receive window sizes for
+// the transport-level flow control. 0 means use the internal default.
 type Mux struct {
 	// TCP socket options for the mux socket
 	TCP TCP `json:"tcp"`
-	// Fixed HTTP/2 connection-level flow-control window size in bytes (0 = gRPC dynamic flow control)
+	// Transport-level connection receive window size in bytes (0 = internal default).
 	SessionWindow int `json:"session_window"`
-	// Fixed HTTP/2 stream-level flow-control window size in bytes (0 = gRPC dynamic flow control)
+	// Transport-level stream receive window size in bytes (0 = internal default).
 	StreamWindow int `json:"stream_window"`
 	// Historical name for the maximum concurrent streams per mux session.
 	// Maps to HTTP/2 MaxConcurrentStreams; 0 disables the explicit limit.

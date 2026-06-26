@@ -304,12 +304,16 @@ func (s *Server) getMuxDialer() mux.Dialer {
 // buildH3MuxDialer constructs a new H3Mux dialer from cfg and tlscfg.
 func (s *Server) buildH3MuxDialer(cfg *config.File, tlscfg *tls.Config) *h3mux.H3Mux {
 	return h3mux.New(&h3mux.Config{
-		TLSConfig:          tlscfg,
-		LocalID:            cfg.Identity.Claim,
-		KeepAlivePeriod:    cfg.KeepAlive(),
-		HandshakeTimeout:   cfg.ConnectTimeout(),
-		MaxIdleTimeout:     cfg.IdleTimeout(),
-		MaxIncomingStreams: int64(cfg.Mux.MaxHalfOpen),
+		TLSConfig:                      tlscfg,
+		LocalID:                        cfg.Identity.Claim,
+		KeepAlivePeriod:                cfg.KeepAlive(),
+		HandshakeTimeout:               cfg.ConnectTimeout(),
+		MaxIdleTimeout:                 cfg.IdleTimeout(),
+		MaxIncomingStreams:             int64(cfg.Mux.MaxHalfOpen),
+		InitialConnectionReceiveWindow: uint64(cfg.Mux.SessionWindow),
+		MaxConnectionReceiveWindow:     64 << 20, // quic-go default: 15 MiB
+		InitialStreamReceiveWindow:     uint64(cfg.Mux.StreamWindow),
+		MaxStreamReceiveWindow:         16 << 20, // quic-go default: 6 MiB
 	})
 }
 
@@ -328,12 +332,16 @@ func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 	if cfg.MuxProtocol == "h3mux" {
 		_, tlscfg := s.getConfig()
 		ml, err := h3mux.ListenMux(addr, &h3mux.Config{
-			TLSConfig:          tlscfg,
-			LocalID:            cfg.Identity.Claim,
-			KeepAlivePeriod:    cfg.KeepAlive(),
-			HandshakeTimeout:   cfg.ConnectTimeout(),
-			MaxIdleTimeout:     cfg.IdleTimeout(),
-			MaxIncomingStreams: int64(cfg.Mux.MaxHalfOpen),
+			TLSConfig:                      tlscfg,
+			LocalID:                        cfg.Identity.Claim,
+			KeepAlivePeriod:                cfg.KeepAlive(),
+			HandshakeTimeout:               cfg.ConnectTimeout(),
+			MaxIdleTimeout:                 cfg.IdleTimeout(),
+			MaxIncomingStreams:             int64(cfg.Mux.MaxHalfOpen),
+			InitialConnectionReceiveWindow: uint64(cfg.Mux.SessionWindow),
+			MaxConnectionReceiveWindow:     64 << 20, // quic-go default: 15 MiB
+			InitialStreamReceiveWindow:     uint64(cfg.Mux.StreamWindow),
+			MaxStreamReceiveWindow:         16 << 20, // quic-go default: 6 MiB
 		})
 		if err != nil {
 			return err

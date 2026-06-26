@@ -5,7 +5,6 @@ package h3mux
 
 import (
 	"context"
-	"io"
 	"net"
 	"sync"
 
@@ -91,12 +90,9 @@ func (s *h3Session) wrapStream(qs *quic.Stream) net.Conn {
 	}
 }
 
-// streamOpenMarker is a single byte sent by the opener immediately after
-// OpenStreamSync, making the stream visible to the peer's AcceptStream.
-// QUIC only signals a new stream to the peer once data has been sent.
-const streamOpenMarker = byte(0)
-
 // Open opens a new bidirectional stream to the peer.
+// QUIC v1 signals the new stream to the peer as soon as OpenStreamSync
+// completes, so no application-level marker byte is required.
 func (s *h3Session) Open(ctx context.Context) (net.Conn, error) {
 	if s.IsClosed() {
 		return nil, mux.ErrSessionClosed
@@ -112,12 +108,6 @@ func (s *h3Session) Open(ctx context.Context) (net.Conn, error) {
 		}
 		return nil, err
 	}
-	// Send the marker so the peer sees the stream.
-	if _, err := qs.Write([]byte{streamOpenMarker}); err != nil {
-		_ = qs.Close()
-		s.metrics.StreamsFailed.Add(1)
-		return nil, err
-	}
 	s.metrics.StreamsOpened.Add(1)
 	s.metrics.NumStreams.Add(1)
 	return s.wrapStream(qs), nil
@@ -127,15 +117,6 @@ func (s *h3Session) Open(ctx context.Context) (net.Conn, error) {
 func (s *h3Session) Accept() (net.Conn, error) {
 	qs, err := s.conn.AcceptStream(s.conn.Context())
 	if err != nil {
-		if s.IsClosed() {
-			return nil, mux.ErrSessionClosed
-		}
-		return nil, err
-	}
-	// Consume and discard the stream-open marker written by the opener.
-	var marker [1]byte
-	if _, err := io.ReadFull(qs, marker[:]); err != nil {
-		_ = qs.Close()
 		if s.IsClosed() {
 			return nil, mux.ErrSessionClosed
 		}
