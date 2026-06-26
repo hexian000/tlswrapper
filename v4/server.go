@@ -166,11 +166,11 @@ func (s *Server) findSession(peerIdentity string) *tunnel {
 func (s *Server) getAllTunnels() []*tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	cap := len(s.identityTunnels) + len(s.acceptedTunnels)
+	total := len(s.identityTunnels) + len(s.acceptedTunnels)
 	if s.mainTunnel != nil {
-		cap++
+		total++
 	}
-	result := make([]*tunnel, 0, cap)
+	result := make([]*tunnel, 0, total)
 	if s.mainTunnel != nil {
 		result = append(result, s.mainTunnel)
 	}
@@ -246,10 +246,18 @@ func (s *Server) Stats() (stats ServerStats) {
 	}
 	allTunnels := s.getAllTunnels()
 	sessionMap := make(map[string]SessionStats)
+	var latSamples []time.Duration
 	for _, t := range allTunnels {
 		v := t.Stats()
 		if v.Active {
 			stats.NumSessions++
+		}
+		// Collect raw latency samples in the same pass; global percentiles must
+		// be computed from raw samples (percentiles are not mergeable).
+		for _, d := range t.streamLatency.Snapshot() {
+			if d > 0 {
+				latSamples = append(latSamples, d)
+			}
 		}
 		// All tunnels contribute to aggregated stream-open and traffic counts,
 		// regardless of whether they have a peer identity.
@@ -275,15 +283,6 @@ func (s *Server) Stats() (stats ServerStats) {
 	stats.NumSessionsCreated = s.stats.numSessionsCreated.Load()
 	stats.NumSessionsFinalized = s.stats.numSessionsFinalized.Load()
 	stats.NumStreamsHalfOpen = uint32(s.f.HalfOpenCount())
-	var latSamples []time.Duration
-	for _, t := range allTunnels {
-		snap := t.streamLatency.Snapshot()
-		for _, d := range snap {
-			if d > 0 {
-				latSamples = append(latSamples, d)
-			}
-		}
-	}
 	if len(latSamples) > 0 {
 		slices.Sort(latSamples)
 		n := len(latSamples)
@@ -1004,6 +1003,7 @@ func (s *Server) Shutdown() error {
 	case <-waitDone:
 	case <-time.After(shutdownWaitTimeout):
 		slog.Warning("graceful shutdown timed out, forcing exit")
+		return errors.New("graceful shutdown timed out")
 	}
 	return nil
 }

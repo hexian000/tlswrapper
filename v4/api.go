@@ -314,8 +314,8 @@ type serverMetricsCollector struct {
 	sessionStreamsAcceptedDesc  *prometheus.Desc
 	sessionStreamsSucceededDesc *prometheus.Desc
 	sessionStreamsFailedDesc    *prometheus.Desc
-	sessionBytesDesc            *prometheus.Desc
-	sessionWireLengthDesc       *prometheus.Desc
+	sessionWireBytesDesc        *prometheus.Desc
+	sessionPayloadBytesDesc     *prometheus.Desc
 }
 
 func newServerMetricsCollector(s *Server) prometheus.Collector {
@@ -377,11 +377,11 @@ func newServerMetricsCollector(s *Server) prometheus.Collector {
 			"tlswrapper_session_streams_failed_total",
 			"Total streams that ended with an error in the session.",
 			[]string{"identity"}, nil),
-		sessionBytesDesc: prometheus.NewDesc(
+		sessionWireBytesDesc: prometheus.NewDesc(
 			"tlswrapper_session_bytes_total",
 			"Total wire bytes transferred in the session.",
 			[]string{"identity", "direction"}, nil),
-		sessionWireLengthDesc: prometheus.NewDesc(
+		sessionPayloadBytesDesc: prometheus.NewDesc(
 			"tlswrapper_session_payload_bytes_total",
 			"Total payload bytes transferred in the session.",
 			[]string{"identity", "direction"}, nil),
@@ -403,8 +403,8 @@ func (c *serverMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.sessionStreamsAcceptedDesc
 	ch <- c.sessionStreamsSucceededDesc
 	ch <- c.sessionStreamsFailedDesc
-	ch <- c.sessionBytesDesc
-	ch <- c.sessionWireLengthDesc
+	ch <- c.sessionWireBytesDesc
+	ch <- c.sessionPayloadBytesDesc
 }
 
 func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -445,13 +445,13 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			float64(ss.StreamsSucceeded), ss.PeerIdentity)
 		ch <- prometheus.MustNewConstMetric(c.sessionStreamsFailedDesc, prometheus.CounterValue,
 			float64(ss.StreamsFailed), ss.PeerIdentity)
-		ch <- prometheus.MustNewConstMetric(c.sessionBytesDesc, prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.sessionWireBytesDesc, prometheus.CounterValue,
 			float64(ss.WireLengthSent), ss.PeerIdentity, "tx")
-		ch <- prometheus.MustNewConstMetric(c.sessionBytesDesc, prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.sessionWireBytesDesc, prometheus.CounterValue,
 			float64(ss.WireLengthReceived), ss.PeerIdentity, "rx")
-		ch <- prometheus.MustNewConstMetric(c.sessionWireLengthDesc, prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.sessionPayloadBytesDesc, prometheus.CounterValue,
 			float64(ss.BytesSent), ss.PeerIdentity, "tx")
-		ch <- prometheus.MustNewConstMetric(c.sessionWireLengthDesc, prometheus.CounterValue,
+		ch <- prometheus.MustNewConstMetric(c.sessionPayloadBytesDesc, prometheus.CounterValue,
 			float64(ss.BytesReceived), ss.PeerIdentity, "rx")
 	}
 	ch <- prometheus.MustNewConstMetric(c.streamsDesc, prometheus.GaugeValue,

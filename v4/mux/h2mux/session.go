@@ -75,18 +75,27 @@ func (ss *session) recvControlLoop() {
 // requestID non-empty: route to pending Open() call; empty: push to acceptCh.
 func (ss *session) DeliverStream(requestID string, conn net.Conn) {
 	if requestID != "" {
+		// Claim the waiter by removing it under the lock: this makes delivery and
+		// the waiter's abandon (see serverSession.Open) mutually exclusive, so a
+		// given request is resolved by exactly one of them.
 		ss.pendingMu.Lock()
 		ch := ss.pending[requestID]
-		ss.pendingMu.Unlock()
 		if ch != nil {
-			select {
-			case ch <- conn:
-				return
-			case <-ss.closedCh:
-				_ = conn.Close()
-				return
-			}
+			delete(ss.pending, requestID)
 		}
+		ss.pendingMu.Unlock()
+		if ch == nil {
+			// No waiter: the Open() call already gave up (timeout/close), or the
+			// requestID is unknown or a duplicate. Close the conn instead of
+			// misrouting it onto acceptCh as a peer-initiated inbound stream.
+			_ = conn.Close()
+			return
+		}
+		// We exclusively own this handoff. ch is buffered (cap 1) with this as
+		// its only sender, so the send never blocks. The waiter either receives
+		// the conn or, if it has already abandoned, drains and closes it.
+		ch <- conn
+		return
 	}
 	select {
 	case ss.acceptCh <- conn:
@@ -295,32 +304,48 @@ func (ss *serverSession) Open(ctx context.Context) (net.Conn, error) {
 	ss.pendingMu.Lock()
 	ss.pending[rid] = ch
 	ss.pendingMu.Unlock()
-	defer func() {
+
+	// abandon removes our pending entry when we give up (send error, ctx done,
+	// or session close). It returns claimed=true when a deliverer has already
+	// removed the entry, in which case that deliverer is guaranteed to send
+	// exactly one conn on ch; the caller must then drain and close it so the
+	// stream is not leaked.
+	abandon := func() (claimed bool) {
 		ss.pendingMu.Lock()
-		delete(ss.pending, rid)
-		ss.pendingMu.Unlock()
-	}()
+		defer ss.pendingMu.Unlock()
+		if ss.pending[rid] == ch {
+			delete(ss.pending, rid)
+			return false
+		}
+		return true
+	}
 
 	if err := ss.ctrl.Send(&muxpb.ControlMessage{
 		Body: &muxpb.ControlMessage_OpenRequest{
 			OpenRequest: &muxpb.OpenRequest{RequestId: rid},
 		},
 	}); err != nil {
+		if abandon() {
+			_ = (<-ch).Close()
+		}
 		return nil, err
 	}
 
 	select {
-	case conn, ok := <-ch:
-		if !ok {
-			return nil, mux.ErrSessionClosed
-		}
+	case conn := <-ch:
 		if ss.metrics != nil {
 			ss.metrics.StreamsOpened.Add(1)
 		}
 		return conn, nil
 	case <-ss.closedCh:
+		if abandon() {
+			_ = (<-ch).Close()
+		}
 		return nil, mux.ErrSessionClosed
 	case <-ctx.Done():
+		if abandon() {
+			_ = (<-ch).Close()
+		}
 		return nil, ctx.Err()
 	}
 }

@@ -115,7 +115,6 @@ func AppMain(f *AppFlags) int {
 	}
 	if f.GenCerts != "" {
 		return genCerts(f)
-
 	}
 	if f.DumpConfig {
 		return dumpConfig(f)
