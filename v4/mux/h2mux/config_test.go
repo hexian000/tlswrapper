@@ -3,7 +3,10 @@
 
 package h2mux
 
-import "testing"
+import (
+	"crypto/tls"
+	"testing"
+)
 
 func TestConfigWindowOptions(t *testing.T) {
 	tests := []struct {
@@ -26,6 +29,55 @@ func TestConfigWindowOptions(t *testing.T) {
 				t.Fatalf("grpcServerOptions() = %d, want %d", got, tt.wantServer)
 			}
 		})
+	}
+}
+
+func TestConfigALPN(t *testing.T) {
+	if got := (&Config{}).alpn(); got != defaultH2ALPN {
+		t.Fatalf("default alpn() = %q, want %q", got, defaultH2ALPN)
+	}
+	if got := (&Config{ALPN: "myproto"}).alpn(); got != "myproto" {
+		t.Fatalf("alpn() = %q, want %q", got, "myproto")
+	}
+}
+
+func TestConfigAppliedTLSConfig(t *testing.T) {
+	// Plaintext mode: no TLS config resolves to nil.
+	if got := (&Config{}).appliedTLSConfig(); got != nil {
+		t.Fatalf("appliedTLSConfig() with no TLS = %v, want nil", got)
+	}
+
+	base := &tls.Config{MinVersion: tls.VersionTLS13}
+	cfg := &Config{TLSConfig: base, ServerName: "example.com", ALPN: "myproto"}
+	applied := cfg.appliedTLSConfig()
+	if applied == nil {
+		t.Fatal("appliedTLSConfig() = nil, want non-nil")
+	}
+	// The original config must not be mutated (Clone semantics).
+	if base.ServerName != "" || len(base.NextProtos) != 0 {
+		t.Fatal("appliedTLSConfig mutated the source TLS config")
+	}
+	if applied.ServerName != "example.com" {
+		t.Fatalf("ServerName = %q, want %q", applied.ServerName, "example.com")
+	}
+	if len(applied.NextProtos) != 1 || applied.NextProtos[0] != "myproto" {
+		t.Fatalf("NextProtos = %v, want [myproto]", applied.NextProtos)
+	}
+
+	// Without an explicit ALPN, the default identifier is advertised.
+	applied = (&Config{TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13}}).appliedTLSConfig()
+	if len(applied.NextProtos) != 1 || applied.NextProtos[0] != defaultH2ALPN {
+		t.Fatalf("default NextProtos = %v, want [%s]", applied.NextProtos, defaultH2ALPN)
+	}
+
+	// TLSConfigProvider takes precedence over TLSConfig.
+	provided := &tls.Config{MinVersion: tls.VersionTLS13, ServerName: "ignored"}
+	pcfg := &Config{
+		TLSConfig:         &tls.Config{ServerName: "fromfield"},
+		TLSConfigProvider: func() *tls.Config { return provided },
+	}
+	if got := pcfg.appliedTLSConfig(); got.ServerName != "ignored" {
+		t.Fatalf("provider precedence: ServerName = %q, want %q", got.ServerName, "ignored")
 	}
 }
 

@@ -153,6 +153,19 @@ func transferAndVerify(t *testing.T, src, dst net.Conn, want []byte) {
 	}
 }
 
+// TestSessionHandshakeNoop verifies that calling Handshake on an
+// already-established session (client or server) is a no-op returning nil.
+func TestSessionHandshakeNoop(t *testing.T) {
+	cli, srv := quicSessions(t, &Config{LocalID: "cli"}, &Config{LocalID: "srv"})
+	ctx := context.Background()
+	if err := cli.Handshake(ctx); err != nil {
+		t.Fatalf("cli.Handshake() = %v, want nil", err)
+	}
+	if err := srv.Handshake(ctx); err != nil {
+		t.Fatalf("srv.Handshake() = %v, want nil", err)
+	}
+}
+
 func TestSessionPeerIdentity(t *testing.T) {
 	cli, srv := quicSessions(t,
 		&Config{LocalID: "client-id"},
@@ -487,6 +500,233 @@ func TestH3MuxNewSession(t *testing.T) {
 	}
 	if got := res.sess.PeerIdentity(); got != "cli" {
 		t.Fatalf("srv.PeerIdentity() = %q, want %q", got, "cli")
+	}
+}
+
+// TestH3InboundSessionImplicitHandshake exercises the h3InboundSession wrapper
+// returned by H3Listener.Accept along the path the server uses in production:
+// the session is used directly (Accept/Open/accessors) WITHOUT an explicit
+// Handshake call, so the first Accept must run the handshake implicitly via
+// delegate(). The server-side use runs concurrently with the client Dial.
+func TestH3InboundSessionImplicitHandshake(t *testing.T) {
+	serverTLS, clientTLS := generateSelfSignedTLS(t)
+
+	ml, err := ListenMux("127.0.0.1:0", &Config{TLSConfig: serverTLS, LocalID: "srv"})
+	if err != nil {
+		t.Fatal("ListenMux:", err)
+	}
+	t.Cleanup(func() { _ = ml.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+
+	type acceptResult struct {
+		conn net.Conn
+		err  error
+	}
+	srvSessCh := make(chan mux.Session, 1)
+	acceptCh := make(chan acceptResult, 1)
+	go func() {
+		ss, err := ml.Accept()
+		if err != nil {
+			srvSessCh <- nil
+			acceptCh <- acceptResult{nil, err}
+			return
+		}
+		srvSessCh <- ss
+		// First Accept triggers the implicit handshake (delegate -> doHandshake),
+		// concurrently with the client's Dial below.
+		conn, err := ss.Accept()
+		acceptCh <- acceptResult{conn, err}
+	}()
+
+	cliSess, err := Dial(ctx, ml.Addr().String(), &Config{TLSConfig: clientTLS, LocalID: "cli"})
+	if err != nil {
+		t.Fatal("Dial:", err)
+	}
+	t.Cleanup(func() { _ = cliSess.Close() })
+
+	cliConn, err := cliSess.Open(ctx)
+	if err != nil {
+		t.Fatal("cli.Open:", err)
+	}
+	defer cliConn.Close()
+
+	ar := <-acceptCh
+	if ar.err != nil {
+		t.Fatal("srv.Accept:", ar.err)
+	}
+	defer ar.conn.Close()
+	transferAndVerify(t, cliConn, ar.conn, []byte("implicit handshake works"))
+
+	srv := <-srvSessCh
+	if srv == nil {
+		t.Fatal("ml.Accept returned nil session")
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+
+	// Server opens a stream back to the client, covering h3InboundSession.Open.
+	cliAcceptCh := make(chan net.Conn, 1)
+	go func() {
+		conn, err := cliSess.Accept()
+		if err != nil {
+			cliAcceptCh <- nil
+			return
+		}
+		cliAcceptCh <- conn
+	}()
+	srvConn, err := srv.Open(ctx)
+	if err != nil {
+		t.Fatal("srv.Open:", err)
+	}
+	defer srvConn.Close()
+	cliConn2 := <-cliAcceptCh
+	if cliConn2 == nil {
+		t.Fatal("cli.Accept returned nil")
+	}
+	defer cliConn2.Close()
+	transferAndVerify(t, srvConn, cliConn2, []byte("server opened stream"))
+
+	// Post-handshake: accessors forward to the underlying session.
+	if got := srv.PeerIdentity(); got != "cli" {
+		t.Fatalf("post-handshake PeerIdentity() = %q, want %q", got, "cli")
+	}
+	if srv.Stats() == nil {
+		t.Fatal("post-handshake Stats() = nil")
+	}
+	if srv.CloseChan() == nil {
+		t.Fatal("post-handshake CloseChan() = nil")
+	}
+	if srv.IdleChan() == nil {
+		t.Fatal("post-handshake IdleChan() = nil")
+	}
+	if srv.LocalAddr() == nil {
+		t.Fatal("post-handshake LocalAddr() = nil")
+	}
+	if srv.RemoteAddr() == nil {
+		t.Fatal("post-handshake RemoteAddr() = nil")
+	}
+	if srv.IsClosed() {
+		t.Fatal("post-handshake IsClosed() = true, want false")
+	}
+}
+
+// TestH3InboundSessionPreHandshakeAccessors verifies the accessor fallbacks of
+// the h3InboundSession wrapper before any handshake has run: address accessors
+// return the raw QUIC connection's addresses and the session-backed accessors
+// return zero values.
+func TestH3InboundSessionPreHandshakeAccessors(t *testing.T) {
+	serverTLS, clientTLS := generateSelfSignedTLS(t)
+
+	ml, err := ListenMux("127.0.0.1:0", &Config{TLSConfig: serverTLS, LocalID: "srv"})
+	if err != nil {
+		t.Fatal("ListenMux:", err)
+	}
+	t.Cleanup(func() { _ = ml.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+
+	// Dial establishes QUIC/TLS and then blocks on the h3mux control-stream
+	// handshake, which the server never completes here: ml.Accept returns the
+	// inbound session right after the QUIC handshake, and we inspect it before
+	// triggering any handshake. Dial unblocks (with an error) once we close.
+	dialDone := make(chan struct{})
+	go func() {
+		defer close(dialDone)
+		cliSess, _ := Dial(ctx, ml.Addr().String(), &Config{TLSConfig: clientTLS, LocalID: "cli"})
+		if cliSess != nil {
+			_ = cliSess.Close()
+		}
+	}()
+	t.Cleanup(func() { <-dialDone })
+
+	ss, err := ml.Accept()
+	if err != nil {
+		t.Fatal("Accept:", err)
+	}
+	// Closing the inbound session (pre-handshake) tears down the QUIC conn,
+	// which unblocks the Dial goroutine above.
+	t.Cleanup(func() { _ = ss.Close() })
+
+	// Inspect accessors before triggering the handshake. Addr accessors fall
+	// back to the raw QUIC conn; the rest return zero values.
+	if ss.LocalAddr() == nil {
+		t.Fatal("pre-handshake LocalAddr() = nil")
+	}
+	if ss.RemoteAddr() == nil {
+		t.Fatal("pre-handshake RemoteAddr() = nil")
+	}
+	if ss.IsClosed() {
+		t.Fatal("pre-handshake IsClosed() = true, want false")
+	}
+	if ss.CloseChan() != nil {
+		t.Fatal("pre-handshake CloseChan() != nil")
+	}
+	if ss.IdleChan() != nil {
+		t.Fatal("pre-handshake IdleChan() != nil")
+	}
+	if ss.Stats() != nil {
+		t.Fatal("pre-handshake Stats() != nil")
+	}
+	if got := ss.PeerIdentity(); got != "" {
+		t.Fatalf("pre-handshake PeerIdentity() = %q, want \"\"", got)
+	}
+}
+
+// TestH3NewListenerWrapsExternalListener exercises NewListener, which wraps a
+// caller-owned *quic.Listener (obtained from Listen) as a mux.Listener. Sessions
+// accepted this way report zero wire-length metrics (unlike ListenMux), but the
+// Accept/Handshake/Addr/Close lifecycle must otherwise work end-to-end.
+func TestH3NewListenerWrapsExternalListener(t *testing.T) {
+	serverTLS, clientTLS := generateSelfSignedTLS(t)
+
+	ql, err := Listen("127.0.0.1:0", &Config{TLSConfig: serverTLS, LocalID: "srv"})
+	if err != nil {
+		t.Fatal("Listen:", err)
+	}
+	ml := NewListener(ql, &Config{TLSConfig: serverTLS, LocalID: "srv"})
+	t.Cleanup(func() { _ = ml.Close() })
+
+	if ml.Addr() == nil {
+		t.Fatal("ml.Addr() = nil, want non-nil")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+
+	type srvResult struct {
+		sess mux.Session
+		err  error
+	}
+	srvCh := make(chan srvResult, 1)
+	go func() {
+		ss, err := ml.Accept()
+		if err != nil {
+			srvCh <- srvResult{nil, err}
+			return
+		}
+		err = ss.Handshake(ctx)
+		srvCh <- srvResult{ss, err}
+	}()
+
+	cliSess, err := Dial(ctx, ml.Addr().String(), &Config{TLSConfig: clientTLS, LocalID: "cli"})
+	if err != nil {
+		t.Fatal("Dial:", err)
+	}
+	t.Cleanup(func() { _ = cliSess.Close() })
+
+	res := <-srvCh
+	if res.err != nil {
+		t.Fatal("Accept+Handshake:", res.err)
+	}
+	t.Cleanup(func() { _ = res.sess.Close() })
+
+	if got := res.sess.PeerIdentity(); got != "cli" {
+		t.Fatalf("srv.PeerIdentity() = %q, want %q", got, "cli")
+	}
+	if got := cliSess.PeerIdentity(); got != "srv" {
+		t.Fatalf("cli.PeerIdentity() = %q, want %q", got, "srv")
 	}
 }
 

@@ -5,10 +5,12 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 )
 
 func TestParseMaxStartups(t *testing.T) {
@@ -507,6 +509,33 @@ func TestLoadFile(t *testing.T) {
 		_, err := LoadFile(configPath)
 		if err == nil {
 			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+func TestLoadReader(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		data, _ := json.Marshal(map[string]any{"type": Type})
+		cfg, err := LoadReader(strings.NewReader(string(data)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg == nil {
+			t.Fatal("LoadReader returned nil config")
+		}
+	})
+
+	t.Run("read-error", func(t *testing.T) {
+		_, err := LoadReader(iotest.ErrReader(errors.New("boom")))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("invalid-content", func(t *testing.T) {
+		_, err := LoadReader(strings.NewReader("{not json}"))
+		if err == nil {
+			t.Fatal("expected error for invalid content, got nil")
 		}
 	})
 }

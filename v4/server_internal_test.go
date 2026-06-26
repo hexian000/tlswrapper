@@ -264,6 +264,58 @@ func TestLocalHandlerServe(t *testing.T) {
 	})
 }
 
+// TestFindSessionLastIdentityFallback verifies that findSession falls back to
+// the identity tunnel that last reached a peer (via lastIdentityValue) when no
+// session is currently active, so OpenStream can dial on demand.
+func TestFindSessionLastIdentityFallback(t *testing.T) {
+	s := newTestServer(t, nil)
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	// A tunnel with no active session but a remembered last identity.
+	tn := newTunnel("", s)
+	tn.lastIdentity = "peer-x"
+	s.mu.Lock()
+	s.identityTunnels = append(s.identityTunnels, tn)
+	s.mu.Unlock()
+
+	if got := tn.lastIdentityValue(); got != "peer-x" {
+		t.Fatalf("lastIdentityValue() = %q, want %q", got, "peer-x")
+	}
+	if got := s.findSession("peer-x"); got != tn {
+		t.Fatalf("findSession(peer-x) = %v, want fallback tunnel", got)
+	}
+	if got := s.findSession("unknown"); got != nil {
+		t.Fatalf("findSession(unknown) = %v, want nil", got)
+	}
+	// An empty identity always resolves to the main tunnel.
+	if got := s.findSession(""); got != s.mainTunnel {
+		t.Fatalf("findSession(\"\") = %v, want mainTunnel", got)
+	}
+}
+
+// TestTimeoutAllSessions verifies that timeoutAllSessions closes every active
+// session across all tunnels without removing the tunnels themselves.
+func TestTimeoutAllSessions(t *testing.T) {
+	s := newTestServer(t, nil)
+	t.Cleanup(func() { _ = s.Shutdown() })
+
+	cli, srv := newMuxSessionPair(t, &h2mux.Config{LocalID: "client"}, &h2mux.Config{LocalID: "server"})
+	t.Cleanup(func() { _ = cli.Close() })
+	tn := newTunnel("", s)
+	tn.ss = srv
+	s.mu.Lock()
+	s.acceptedTunnels[srv] = tn
+	s.mu.Unlock()
+
+	if srv.IsClosed() {
+		t.Fatal("precondition: session already closed")
+	}
+	s.timeoutAllSessions()
+	if !srv.IsClosed() {
+		t.Fatal("expected session to be closed after timeoutAllSessions")
+	}
+}
+
 func TestEmptyHandlerServeClosesConn(t *testing.T) {
 	accepted, peer := net.Pipe()
 	done := make(chan struct{})
