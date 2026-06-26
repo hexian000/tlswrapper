@@ -19,14 +19,15 @@ from typing import Dict, List, Optional, Sequence, TextIO
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-ROOT = Path.cwd().resolve()
-DEFAULT_BUILD_DIR = SCRIPT_DIR.parent / "build"
+ROOT = SCRIPT_DIR.parent
+DEFAULT_BUILD_DIR = ROOT / "build"
 DEFAULT_OUTPUT = DEFAULT_BUILD_DIR / "bench.md"
 BENCH_NETNS_ENV = "BENCH_NETNS"
 MUX_TRANSPORT_PORT = 8443
 CONFIG_TYPE = "application/x-tlswrapper-config; version=4"
 COMMAND_TIMEOUT_GRACE_SECONDS = 30.0
-BUILD_TIMEOUT_GRACE_SECONDS = 300.0
+SUPPORTED_PROTOCOLS = ("h2mux", "h3mux")
+DEFAULT_PROTOCOL = "h2mux"
 
 
 @dataclass(frozen=True)
@@ -63,11 +64,11 @@ def quote_command(command: Sequence[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
 
 
-def ensure_project_root(root: Path) -> None:
-    if not (root / "go.mod").exists() or not (root / "cmd" / "tlswrapper").exists():
-        raise SystemExit(
-            "path does not look like a tlswrapper module root: %s" % root
-        )
+def ensure_binary(binary_path: Path) -> None:
+    if not binary_path.exists():
+        raise SystemExit("binary not found: %s" % binary_path)
+    if not os.access(str(binary_path), os.X_OK):
+        raise SystemExit("binary is not executable: %s" % binary_path)
 
 
 def ensure_tool(name: str) -> str:
@@ -75,13 +76,6 @@ def ensure_tool(name: str) -> str:
     if path is None:
         raise SystemExit("required tool not found: %s" % name)
     return path
-
-
-def resolve_path(base: Path, value: str) -> Path:
-    path = Path(value)
-    if not path.is_absolute():
-        path = base / path
-    return path.resolve()
 
 
 def relative_path(path: Path) -> str:
@@ -113,18 +107,22 @@ def run_command(
         raise SystemExit("command timed out: %s" % quote_command(command))
 
 
-def build_server_config(use_tls: bool) -> Dict[str, object]:
+def build_server_config(protocol: str, use_tls: bool, window: Optional[int] = None) -> Dict[str, object]:
+    mux: Dict[str, object] = {}
+    if window is not None:
+        mux["stream_window"] = window
+        mux["session_window"] = window
     config: Dict[str, object] = {
         "type": CONFIG_TYPE,
+        "mux_protocol": protocol,
         "api_listen": "127.0.0.1:9081",
         "mux_listen": "127.0.0.1:8443",
-        "listen": "127.0.0.1:5203",
         "connect": "127.0.0.1:5201",
-        "mux": {
-            "stream_window": 16777216,
-            "session_window": 16777216,
+        "identity": {
+            "claim": "bench-server",
         },
-        "loglevel": 5,
+        "mux": mux,
+        "loglevel": 4,
     }
     if use_tls:
         config["tls"] = {
@@ -135,20 +133,21 @@ def build_server_config(use_tls: bool) -> Dict[str, object]:
     return config
 
 
-def build_client_config(use_tls: bool) -> Dict[str, object]:
+def build_client_config(protocol: str, use_tls: bool, window: Optional[int] = None) -> Dict[str, object]:
+    mux: Dict[str, object] = {}
+    if window is not None:
+        mux["stream_window"] = window
+        mux["session_window"] = window
     config: Dict[str, object] = {
         "type": CONFIG_TYPE,
-        "mux_connect": "127.0.0.1:8443",
-        "listen": "127.0.0.1:5202",
-        "connect": "127.0.0.1:5201",
-        "mux": {
-            "stream_window": 16777216,
-            "session_window": 16777216,
-        },
+        "mux_protocol": protocol,
         "identity": {
             "claim": "bench-client",
+            "mux_connect": ["127.0.0.1:8443"],
+            "listen": {"bench-server": "127.0.0.1:5202"},
         },
-        "loglevel": 5,
+        "mux": mux,
+        "loglevel": 4,
     }
     if use_tls:
         config["tls"] = {
@@ -180,7 +179,9 @@ def prepare_runtime_assets(
         binary_path: Path,
         runtime_dir: Path,
         *,
+        protocol: str,
         use_tls: bool,
+        window: Optional[int],
         duration: int,
 ) -> tuple[Path, Path]:
     runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -188,30 +189,9 @@ def prepare_runtime_assets(
         ensure_certificates(binary_path, runtime_dir, duration)
     server_config_path = runtime_dir / "server.json"
     client_config_path = runtime_dir / "client.json"
-    write_config(server_config_path, build_server_config(use_tls))
-    write_config(client_config_path, build_client_config(use_tls))
+    write_config(server_config_path, build_server_config(protocol, use_tls, window))
+    write_config(client_config_path, build_client_config(protocol, use_tls, window))
     return server_config_path, client_config_path
-
-
-def build_binary(binary_path: Path, duration: int) -> None:
-    binary_path.parent.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy()
-    env.setdefault("CGO_ENABLED", "0")
-    run_command(
-        [
-            "go",
-            "build",
-            "-mod=vendor",
-            "-trimpath",
-            "-o",
-            str(binary_path),
-            "./cmd/tlswrapper",
-        ],
-        cwd=ROOT,
-        env=env,
-        timeout=command_timeout_seconds(
-            duration, grace_seconds=BUILD_TIMEOUT_GRACE_SECONDS),
-    )
 
 
 def terminate_process(proc: subprocess.Popen[str], name: str) -> None:
@@ -501,7 +481,8 @@ def render_markdown_report(
         duration: int,
         parallel: int,
         netem_delay: Optional[str],
-    use_tls: bool,
+        use_tls: bool,
+        protocol: str,
 ) -> str:
     output_dir = output_path.parent
     lines = [
@@ -509,12 +490,13 @@ def render_markdown_report(
         "",
         "| Field | Value |",
         "| --- | --- |",
-        "| Project root | %s |" % relative_path(ROOT),
+        "| Build dir | %s |" % relative_path(binary_path.parent),
         "| Binary | %s |" % relative_path(binary_path),
         "| Duration per run | %d s |" % duration,
         "| Parallel streams | %d |" % parallel,
         "| Transport security | %s |" % (
             "mutual TLS" if use_tls else "plaintext"),
+        "| Mux protocol | %s |" % protocol,
         "| Netem delay | %s |" % (netem_delay or "off"),
         "| Bidirectional method | iperf3 --bidir single run |",
         "",
@@ -566,11 +548,7 @@ def render_markdown_report(
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the benchmark suite for a tlswrapper module and write build/bench.md."
-    )
-    parser.add_argument(
-        "module_dir",
-        help="path to the tlswrapper Go module root, for example v4",
+        description="Run the benchmark suite for tlswrapper using the existing build binary."
     )
     parser.add_argument(
         "--build-dir",
@@ -588,9 +566,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="iperf3 test duration in seconds (default: 30)",
     )
     parser.add_argument(
-        "--tls",
+        "--no-tls",
         action="store_true",
-        help="enable mutual TLS on the mux transport (default: off)",
+        dest="no_tls",
+        help="disable mTLS (only allowed with h2mux)",
     )
     parser.add_argument(
         "--parallel",
@@ -608,33 +587,46 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--netem-delay",
         help="optional tc netem delay applied to the mux transport, for example 100ms",
     )
+    parser.add_argument(
+        "--window",
+        type=int,
+        default=None,
+        help="set both mux stream_window and session_window in bytes (default: omit, use Go defaults)",
+    )
+    parser.add_argument(
+        "--protocol",
+        "-p",
+        choices=SUPPORTED_PROTOCOLS,
+        default=DEFAULT_PROTOCOL,
+        help="mux transport protocol (default: %%(default)s)",
+    )
     parser.add_argument("--iperf3", default="iperf3",
                         help="iperf3 executable name")
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    global ROOT
     args = parse_args(argv)
-    ROOT = resolve_path(Path.cwd().resolve(), args.module_dir)
-    ensure_project_root(ROOT)
+    if args.no_tls and args.protocol == "h3mux":
+        raise SystemExit("--no-tls is incompatible with h3mux (QUIC requires TLS)")
+    use_tls = not args.no_tls
     maybe_reexec_in_netns(args.netem_delay)
     iperf3 = ensure_tool(args.iperf3)
-    ensure_tool("go")
-    build_dir = resolve_path(ROOT, args.build_dir)
+    build_dir = Path(args.build_dir).expanduser().resolve()
     build_dir.mkdir(parents=True, exist_ok=True)
     binary_path = build_dir / "tlswrapper"
-    build_binary(binary_path, args.duration)
+    ensure_binary(binary_path)
     server_config_path, client_config_path = prepare_runtime_assets(
         binary_path,
         build_dir,
-        use_tls=args.tls,
+        protocol=args.protocol,
+        use_tls=use_tls,
+        window=args.window,
         duration=args.duration,
     )
     configure_netem(args.netem_delay)
 
-    output_path = resolve_path(
-        ROOT, args.output) if args.output else DEFAULT_OUTPUT
+    output_path = Path(args.output).expanduser().resolve() if args.output else DEFAULT_OUTPUT
 
     results: List[ScenarioResult] = []
     server_proc: Optional[subprocess.Popen[str]] = None
@@ -751,7 +743,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         duration=args.duration,
         parallel=args.parallel,
         netem_delay=args.netem_delay,
-        use_tls=args.tls,
+        use_tls=use_tls,
+        protocol=args.protocol,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")

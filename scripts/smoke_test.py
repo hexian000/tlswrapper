@@ -10,7 +10,6 @@ import os
 import random
 import select
 import shlex
-import shutil
 import signal
 import socket
 import subprocess
@@ -37,11 +36,12 @@ GENCERT_NAMES = "client,server"
 GENCERT_KEYTYPE = "ed25519"
 HOST = "127.0.0.1"
 PROGRESS_INTERVAL_SECONDS = 1.0
-STREAM_WINDOW_BYTES = 16 * 1024 * 1024
 MIN_PAYLOAD_SIZE = 64
 MAX_PAYLOAD_SIZE = 4096
 WORKER_TARGET_ACTIVE = 3
 WORKER_MAX_ACTIVE = 6
+SUPPORTED_PROTOCOLS = ("h2mux", "h3mux")
+DEFAULT_PROTOCOL = "h2mux"
 
 
 class SmokeTestError(RuntimeError):
@@ -205,9 +205,21 @@ def make_runtime_dir(build_dir: Path) -> Path:
     return build_dir / name
 
 
-def build_server_config(assets: RuntimeAssets) -> Dict[str, object]:
+def build_server_config(assets: RuntimeAssets, protocol: str, window: Optional[int] = None) -> Dict[str, object]:
+    mux: Dict[str, object] = {
+        "max_streams": 1024,
+        "connect_timeout": 5,
+        "timeout": 5,
+        "keepalive": 5,
+        "send_timeout": 5,
+        "idle_timeout": 0,
+    }
+    if window is not None:
+        mux["stream_window"] = window
+        mux["session_window"] = window
     return {
         "type": CONFIG_TYPE,
+        "mux_protocol": protocol,
         "api_listen": "%s:%d" % assets.api_addr,
         "mux_listen": "%s:%d" % assets.mux_addr,
         "listen": "%s:%d" % assets.server_listen_addr,
@@ -220,25 +232,28 @@ def build_server_config(assets: RuntimeAssets) -> Dict[str, object]:
             "key": "@server-key.pem",
             "authcerts": ["@client-cert.pem"],
         },
-        "mux": {
-            "stream_window": STREAM_WINDOW_BYTES,
-            "session_window": STREAM_WINDOW_BYTES,
-            "max_streams": 1024,
-            "connect_timeout": 5,
-            "timeout": 5,
-            "keepalive": 5,
-            "send_timeout": 5,
-            "idle_timeout": 0,
-        },
-        "loglevel": 5,
+        "mux": mux,
+        "loglevel": 6,
         "max_sessions": 64,
         "max_startups": "10:30:60",
     }
 
 
-def build_client_config(assets: RuntimeAssets) -> Dict[str, object]:
+def build_client_config(assets: RuntimeAssets, protocol: str, window: Optional[int] = None) -> Dict[str, object]:
+    mux: Dict[str, object] = {
+        "max_streams": 1024,
+        "connect_timeout": 5,
+        "timeout": 5,
+        "keepalive": 5,
+        "send_timeout": 5,
+        "idle_timeout": 0,
+    }
+    if window is not None:
+        mux["stream_window"] = window
+        mux["session_window"] = window
     return {
         "type": CONFIG_TYPE,
+        "mux_protocol": protocol,
         "mux_connect": "%s:%d" % assets.mux_addr,
         "listen": "%s:%d" % assets.client_listen_addr,
         "connect": "%s:%d" % assets.echo_addr,
@@ -250,17 +265,8 @@ def build_client_config(assets: RuntimeAssets) -> Dict[str, object]:
             "key": "@client-key.pem",
             "authcerts": ["@server-cert.pem"],
         },
-        "mux": {
-            "stream_window": STREAM_WINDOW_BYTES,
-            "session_window": STREAM_WINDOW_BYTES,
-            "max_streams": 1024,
-            "connect_timeout": 5,
-            "timeout": 5,
-            "keepalive": 5,
-            "send_timeout": 5,
-            "idle_timeout": 0,
-        },
-        "loglevel": 5,
+        "mux": mux,
+        "loglevel": 6,
     }
 
 
@@ -297,7 +303,7 @@ def run_command(
             )
 
 
-def prepare_runtime_assets(binary_path: Path, build_dir: Path, duration_seconds: float) -> RuntimeAssets:
+def prepare_runtime_assets(binary_path: Path, build_dir: Path, duration_seconds: float, protocol: str, window: Optional[int] = None) -> RuntimeAssets:
     runtime_dir = make_runtime_dir(build_dir)
     runtime_dir.mkdir(parents=True, exist_ok=False)
     assets = RuntimeAssets(
@@ -327,8 +333,8 @@ def prepare_runtime_assets(binary_path: Path, build_dir: Path, duration_seconds:
         timeout_seconds=command_timeout_seconds(duration_seconds),
         log_path=assets.gencerts_log_path,
     )
-    write_json(assets.server_config_path, build_server_config(assets))
-    write_json(assets.client_config_path, build_client_config(assets))
+    write_json(assets.server_config_path, build_server_config(assets, protocol, window))
+    write_json(assets.client_config_path, build_client_config(assets, protocol, window))
     return assets
 
 
@@ -377,6 +383,12 @@ def wait_for_port(
     name: Optional[str] = None,
     log_path: Optional[Path] = None,
 ) -> None:
+    """Wait until *address* is reachable via TCP, or until *log_path*
+    contains a line with the substring \"mux listen\" (which covers UDP /
+    QUIC-based mux listeners that have no TCP port to probe).
+
+    When *proc* is given the function also fails fast if that process exits
+    before the port or log marker becomes ready."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if proc is not None and proc.poll() is not None:
@@ -385,10 +397,18 @@ def wait_for_port(
                 % (name or "process", proc.returncode, log_path)
             )
         try:
-            with socket.create_connection(address, timeout=0.5):
+            with socket.create_connection(address, timeout=0.3):
                 return
         except OSError:
-            time.sleep(0.05)
+            pass
+        if log_path is not None:
+            try:
+                text = log_path.read_text(encoding="utf-8")
+            except OSError:
+                text = ""
+            if "mux listen" in text:
+                return
+        time.sleep(0.05)
     raise SmokeTestError("timed out waiting for %s:%d" % address)
 
 
@@ -667,9 +687,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="random seed for reproducible workloads (default: current time)",
     )
     parser.add_argument(
-        "--keep-logs",
-        action="store_true",
-        help="preserve the runtime directory instead of cleaning it up on success",
+        "--protocol",
+        "-p",
+        choices=SUPPORTED_PROTOCOLS,
+        default=DEFAULT_PROTOCOL,
+        help="mux transport protocol (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--window",
+        type=int,
+        default=None,
+        help="set both mux stream_window and session_window in bytes (default: omit, use Go defaults)",
     )
     return parser.parse_args(argv)
 
@@ -697,14 +725,13 @@ def run_smoke_test(args: argparse.Namespace) -> int:
     client_log_handle = None
     workers = []
     echo_thread = None
-    runtime_kept = False
     graceful_closed = 0
     graceful_shutdown_seconds = 0.0
     server_exit_code = -1
     client_exit_code = -1
 
     try:
-        assets = prepare_runtime_assets(binary_path, build_dir, args.duration)
+        assets = prepare_runtime_assets(binary_path, build_dir, args.duration, args.protocol, args.window)
         echo_thread = threading.Thread(
             target=run_echo_server,
             args=(assets.echo_addr, echo_stop),
@@ -805,7 +832,6 @@ def run_smoke_test(args: argparse.Namespace) -> int:
         )
 
         if failures:
-            runtime_kept = True
             print("FAIL")
             print("seed=%d" % seed)
             print("runtime_dir=%s" % assets.runtime_dir)
@@ -820,11 +846,7 @@ def run_smoke_test(args: argparse.Namespace) -> int:
 
         print("PASS")
         print("seed=%d" % seed)
-        runtime_kept = bool(args.keep_logs)
-        if runtime_kept:
-            print("runtime_dir=%s" % assets.runtime_dir)
-        else:
-            print("runtime_dir_cleaned=%s" % assets.runtime_dir)
+        print("runtime_dir=%s" % assets.runtime_dir)
         print(format_snapshot(snapshot))
         print("graceful_closed=%d" % graceful_closed)
         print("graceful_shutdown_seconds=%.3f" % graceful_shutdown_seconds)
@@ -852,8 +874,6 @@ def run_smoke_test(args: argparse.Namespace) -> int:
             echo_thread.join(timeout=1.0)
         for sock in lingering.drain():
             close_socket(sock)
-        if assets is not None and assets.runtime_dir.exists() and not runtime_kept:
-            shutil.rmtree(assets.runtime_dir)
 
 
 def run_echo_server(address: Tuple[str, int], stop_event: threading.Event) -> None:
