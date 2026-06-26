@@ -25,9 +25,9 @@ import (
 )
 
 // generateSelfSignedTLS creates a minimal self-signed ECDSA certificate pair
-// for use in in-process tests. The returned *tls.Config has skip-verify set
-// on the client side for simplicity.
-func generateSelfSignedTLS(t *testing.T) (serverTLS, clientTLS *tls.Config) {
+// for use in in-process tests and benchmarks. The returned *tls.Config has
+// skip-verify set on the client side for simplicity.
+func generateSelfSignedTLS(t testing.TB) (serverTLS, clientTLS *tls.Config) {
 	t.Helper()
 
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -76,7 +76,7 @@ func generateSelfSignedTLS(t *testing.T) (serverTLS, clientTLS *tls.Config) {
 
 // quicSessions creates a pair of h3mux sessions over a real QUIC loopback
 // connection.  Both sessions are closed via t.Cleanup when the test ends.
-func quicSessions(t *testing.T, clientCfg, serverCfg *Config) (cli, srv mux.Session) {
+func quicSessions(t testing.TB, clientCfg, serverCfg *Config) (cli, srv mux.Session) {
 	t.Helper()
 	serverTLS, clientTLS := generateSelfSignedTLS(t)
 

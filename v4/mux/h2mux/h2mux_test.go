@@ -20,6 +20,13 @@ import (
 	mux "github.com/hexian000/tlswrapper/v4/mux"
 )
 
+// workloadChunk is the per-write size the throughput benchmarks use. It matches
+// the forwarder's io.CopyBuffer buffer (forwarder.copyBufPool, 64 KiB), which is
+// the largest contiguous write tlswrapper issues on the data path, so the
+// benchmarks reflect a realistic production write size rather than an arbitrary
+// large block.
+const workloadChunk = 64 * 1024
+
 // benchSelfSignedTLS creates a minimal self-signed RSA-4096 certificate pair for
 // benchmarking. The client side skips verification for simplicity.
 //
@@ -119,9 +126,9 @@ func benchTLSSessionPair(b *testing.B) (cli, srv mux.Session) {
 }
 
 // BenchmarkTCPThroughput is the lowest baseline: one-way throughput over a bare
-// TCP loopback connection, with no TLS or mux/gRPC layered on top. Same 128 KiB
-// transfer pattern as the other throughput benchmarks, so the TLS and mux
-// overheads are the successive drops from this number.
+// TCP loopback connection, with no TLS or mux/gRPC layered on top. Same
+// workloadChunk transfer pattern as the other throughput benchmarks, so the TLS
+// and mux overheads are the successive drops from this number.
 func BenchmarkTCPThroughput(b *testing.B) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -152,7 +159,7 @@ func BenchmarkTCPThroughput(b *testing.B) {
 		_ = srvConn.Close()
 	})
 
-	const chunk = 128 * 1024
+	const chunk = workloadChunk
 	writeBuf := make([]byte, chunk)
 
 	done := make(chan struct{})
@@ -229,7 +236,7 @@ func BenchmarkTLSThroughput(b *testing.B) {
 		_ = srvConn.Close()
 	})
 
-	const chunk = 128 * 1024
+	const chunk = workloadChunk
 	writeBuf := make([]byte, chunk)
 
 	done := make(chan struct{})
@@ -291,7 +298,7 @@ func BenchmarkStreamThroughputTLS(b *testing.B) {
 		_ = srvConn.Close()
 	})
 
-	const chunk = 128 * 1024
+	const chunk = workloadChunk
 	writeBuf := make([]byte, chunk)
 
 	// Continuous writer: keeps the pipe full so the benchmark loop measures
