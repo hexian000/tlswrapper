@@ -26,6 +26,10 @@ type TLS struct {
 	PrivateKey string `json:"key"`
 	// Authorized peer certificates (inline PEM or "@path" entries)
 	AuthCerts []string `json:"authcerts"`
+	// SNI sent on outbound TLS handshakes; the peer certificate must be valid
+	// for this name. Empty defaults to "example.com", matching the gencerts
+	// default server name.
+	ServerName string `json:"sni,omitempty"`
 }
 
 // Mux holds mux-agnostic transport settings.

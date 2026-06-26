@@ -109,7 +109,7 @@ If the `tls` section is omitted, tlswrapper runs in plaintext mode and does not 
 ./tlswrapper -gencerts peer -sign ca -sni peer.example.com
 ```
 
-When `-sni` is omitted it defaults to `example.com`; override it for real deployments.
+When `-sni` is omitted it defaults to `example.com`; override it for real deployments. The `-sni` flag only affects certificate generation: at runtime, the SNI sent on outbound TLS handshakes comes from the `"sni"` key in the config `tls` section (also defaulting to `example.com`), and must match a name the peer certificate is valid for.
 
 `-keytype` accepts `rsa` (default), `ecdsa`, or `ed25519`. `-keysize` sets the key size (RSA: bits, ECDSA: 224/256/384/521); `0` selects a safe default for the chosen type.
 

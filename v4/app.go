@@ -136,7 +136,7 @@ func AppMain(f *AppFlags) int {
 		slog.Default().SetLevel(slog.Level(f.LogLevel))
 	}
 	slog.Debugf("runtime: %s", runtime.Version())
-	server, err := NewServer(cfg, f.ServerName)
+	server, err := NewServer(cfg)
 	if err != nil {
 		slog.Fatal("server init: ", formats.Error(err))
 		os.Exit(1)

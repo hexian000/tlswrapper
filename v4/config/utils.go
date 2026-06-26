@@ -68,9 +68,13 @@ func (c *File) IdleTimeout() time.Duration {
 	return time.Duration(c.Mux.IdleTimeout) * time.Second
 }
 
+// DefaultServerName is the SNI used when TLS.ServerName is empty.
+// It matches the default server name used by the gencerts certificate tool.
+const DefaultServerName = "example.com"
+
 // NewTLSConfig creates a tls.Config from the TLS section.
 // Returns nil if TLS is not configured (plaintext mode).
-func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {
+func (c *File) NewTLSConfig() (*tls.Config, error) {
 	if c.TLS == nil {
 		return nil, nil
 	}
@@ -81,6 +85,10 @@ func (c *File) NewTLSConfig(sni string) (*tls.Config, error) {
 	certPool, err := newX509CertPool(c.TLS.AuthCerts)
 	if err != nil {
 		return nil, err
+	}
+	sni := c.TLS.ServerName
+	if sni == "" {
+		sni = DefaultServerName
 	}
 	return &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},

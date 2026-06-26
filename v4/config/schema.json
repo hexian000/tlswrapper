@@ -88,6 +88,11 @@
                         "type": "string"
                     },
                     "minItems": 1
+                },
+                "sni": {
+                    "description": "SNI sent on outbound TLS handshakes; the peer certificate must be valid for this name. Defaults to 'example.com', matching the gencerts default server name.",
+                    "type": "string",
+                    "default": "example.com"
                 }
             },
             "required": ["cert", "key", "authcerts"],

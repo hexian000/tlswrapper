@@ -157,23 +157,15 @@ func (c *File) ParsedMaxStartups() (start, rate, full int) {
 	return
 }
 
-// isLoopbackHost reports whether host (a bare hostname or IP, no port) resolves
-// exclusively to loopback addresses. IP literals are checked directly; hostnames
-// are resolved via DNS and every returned address must be loopback.
+// isLoopbackHost reports whether host (a bare hostname or IP, no port) is
+// known to be loopback. IP literals are checked directly and "localhost" is
+// accepted by convention; other hostnames are treated as non-loopback rather
+// than resolved, so config loading never blocks on DNS.
 func isLoopbackHost(host string) bool {
 	if ip := net.ParseIP(host); ip != nil {
 		return ip.IsLoopback()
 	}
-	ips, err := net.LookupIP(host)
-	if err != nil || len(ips) == 0 {
-		return false
-	}
-	for _, ip := range ips {
-		if !ip.IsLoopback() {
-			return false
-		}
-	}
-	return true
+	return strings.EqualFold(host, "localhost")
 }
 
 // Validate checks declared values and clamps tunables into supported ranges.

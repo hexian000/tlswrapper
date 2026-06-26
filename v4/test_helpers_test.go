@@ -57,7 +57,7 @@ func newTestConfig(t *testing.T, overrides map[string]any) *config.File {
 
 func newTestServer(t *testing.T, overrides map[string]any) *Server {
 	t.Helper()
-	s, err := NewServer(newTestConfig(t, overrides), "")
+	s, err := NewServer(newTestConfig(t, overrides))
 	if err != nil {
 		t.Fatal(err)
 	}

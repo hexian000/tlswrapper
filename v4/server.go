@@ -41,10 +41,9 @@ var (
 
 // Server owns listeners, config-driven tunnels, and active mux sessions.
 type Server struct {
-	cfg        *config.File
-	tlscfg     *tls.Config
-	serverName string // TLS SNI override from CLI -sni flag
-	cfgMu      sync.RWMutex
+	cfg    *config.File
+	tlscfg *tls.Config
+	cfgMu  sync.RWMutex
 
 	// listenMu guards l, muxListener, and apiListener, which are swapped by
 	// config reloads while Stats() reads them from API handler goroutines.
@@ -93,13 +92,10 @@ type Server struct {
 }
 
 // NewServer builds a Server from the initial config snapshot.
-// serverName is the TLS SNI override passed via the -sni CLI flag;
-// pass an empty string when constructing from tests or when no override is needed.
-func NewServer(cfg *config.File, serverName string) (*Server, error) {
+func NewServer(cfg *config.File) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
 		cfg:             cfg,
-		serverName:      serverName,
 		identityTunnels: make([]*tunnel, 0),
 		identities:      make(map[string]*identityListener),
 		acceptedTunnels: make(map[mux.Session]*tunnel),
@@ -114,7 +110,7 @@ func NewServer(cfg *config.File, serverName string) (*Server, error) {
 		cfg, _ := s.getConfig()
 		return cfg.ConnectTimeout()
 	}
-	tlscfg, err := cfg.NewTLSConfig(serverName)
+	tlscfg, err := cfg.NewTLSConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -1012,7 +1008,7 @@ func (s *Server) ReloadConfig(cfg *config.File) error {
 	}
 	var errs []error
 	// 1. Build new TLS config; retain old one on failure.
-	newTLSCfg, err := cfg.NewTLSConfig(s.serverName)
+	newTLSCfg, err := cfg.NewTLSConfig()
 	if err != nil {
 		slog.Errorf("reload: TLS config: %s", formats.Error(err))
 		newTLSCfg = nil

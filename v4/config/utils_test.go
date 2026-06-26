@@ -107,7 +107,7 @@ K8wzuiuQ06NyMgsYLd7aOEIZKMtMY8ko
 
 func TestNewTLSConfigNil(t *testing.T) {
 	cfg := &File{}
-	tlsCfg, err := cfg.NewTLSConfig("example.com")
+	tlsCfg, err := cfg.NewTLSConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestNewTLSConfigValid(t *testing.T) {
 			AuthCerts:   []string{utilsTestCertPEM},
 		},
 	}
-	tlsCfg, err := cfg.NewTLSConfig("example.com")
+	tlsCfg, err := cfg.NewTLSConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,6 +139,24 @@ func TestNewTLSConfigValid(t *testing.T) {
 	}
 }
 
+func TestNewTLSConfigServerNameOverride(t *testing.T) {
+	cfg := &File{
+		TLS: &TLS{
+			Certificate: utilsTestCertPEM,
+			PrivateKey:  utilsTestKeyPEM,
+			AuthCerts:   []string{utilsTestCertPEM},
+			ServerName:  "peer.example.org",
+		},
+	}
+	tlsCfg, err := cfg.NewTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tlsCfg.ServerName != "peer.example.org" {
+		t.Fatalf("ServerName = %q, want %q", tlsCfg.ServerName, "peer.example.org")
+	}
+}
+
 func TestNewTLSConfigInvalidCert(t *testing.T) {
 	cfg := &File{
 		TLS: &TLS{
@@ -146,7 +164,7 @@ func TestNewTLSConfigInvalidCert(t *testing.T) {
 			PrivateKey:  "not a key",
 		},
 	}
-	_, err := cfg.NewTLSConfig("example.com")
+	_, err := cfg.NewTLSConfig()
 	if err == nil {
 		t.Fatal("expected error for invalid certificate/key")
 	}
@@ -285,7 +303,7 @@ func TestNewTLSConfigInvalidAuthCert(t *testing.T) {
 			AuthCerts:   []string{"not-a-pem"},
 		},
 	}
-	_, err := cfg.NewTLSConfig("example.com")
+	_, err := cfg.NewTLSConfig()
 	if err == nil {
 		t.Fatal("expected error for invalid auth cert")
 	}

@@ -96,7 +96,7 @@ func TestForwardBidirectional(t *testing.T) {
 		"mux_listen": muxAddr,
 		"connect":    echoAddr,
 	})
-	srv, err := tlswrapper.NewServer(srvCfg, "")
+	srv, err := tlswrapper.NewServer(srvCfg)
 	if err != nil {
 		t.Fatal("server create:", err)
 	}
@@ -112,7 +112,7 @@ func TestForwardBidirectional(t *testing.T) {
 		"listen":      clientListenAddr,
 		"identity":    map[string]any{"claim": "test-client"},
 	})
-	cli, err := tlswrapper.NewServer(cliCfg, "")
+	cli, err := tlswrapper.NewServer(cliCfg)
 	if err != nil {
 		t.Fatal("client create:", err)
 	}
@@ -173,7 +173,7 @@ func TestForwardIdentityListenMuxConnect(t *testing.T) {
 		"connect":    echoAddr,
 		"identity":   map[string]any{"claim": "server"},
 	})
-	srv, err := tlswrapper.NewServer(srvCfg, "")
+	srv, err := tlswrapper.NewServer(srvCfg)
 	if err != nil {
 		t.Fatal("server create:", err)
 	}
@@ -191,7 +191,7 @@ func TestForwardIdentityListenMuxConnect(t *testing.T) {
 			"listen":      map[string]any{"server": clientListenAddr},
 		},
 	})
-	cli, err := tlswrapper.NewServer(cliCfg, "")
+	cli, err := tlswrapper.NewServer(cliCfg)
 	if err != nil {
 		t.Fatal("client create:", err)
 	}
@@ -245,7 +245,7 @@ func TestShutdownClosesServiceListeners(t *testing.T) {
 			},
 		},
 	})
-	srv, err := tlswrapper.NewServer(cfg, "")
+	srv, err := tlswrapper.NewServer(cfg)
 	if err != nil {
 		t.Fatal("server create:", err)
 	}
@@ -336,9 +336,10 @@ func TestForwardH3MuxBidirectional(t *testing.T) {
 			"cert":      serverCertPEM,
 			"key":       serverKeyPEM,
 			"authcerts": []string{clientCertPEM},
+			"sni":       "127.0.0.1", // test certs carry an IP SAN only
 		},
 	})
-	srv, err := tlswrapper.NewServer(srvCfg, "")
+	srv, err := tlswrapper.NewServer(srvCfg)
 	if err != nil {
 		t.Fatal("server create:", err)
 	}
@@ -357,9 +358,10 @@ func TestForwardH3MuxBidirectional(t *testing.T) {
 			"cert":      clientCertPEM,
 			"key":       clientKeyPEM,
 			"authcerts": []string{serverCertPEM},
+			"sni":       "127.0.0.1", // test certs carry an IP SAN only
 		},
 	})
-	cli, err := tlswrapper.NewServer(cliCfg, "")
+	cli, err := tlswrapper.NewServer(cliCfg)
 	if err != nil {
 		t.Fatal("client create:", err)
 	}
