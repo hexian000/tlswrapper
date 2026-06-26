@@ -139,9 +139,14 @@ type H3Listener struct {
 	l   *quic.Listener
 	cfg *Config
 	// tr and pconn are set when the listener was created by ListenMux; they
-	// are owned by the listener and closed together with it.
+	// are owned by the listener and closed together with it. Accepted
+	// connections are tracked in conns so Close can terminate them with a
+	// CONNECTION_CLOSE frame before the transport teardown would otherwise
+	// destroy them silently, leaving peers to detect the loss by timeout.
 	tr    *quic.Transport
 	pconn net.PacketConn
+	mu    sync.Mutex
+	conns map[*quic.Conn]struct{}
 }
 
 // NewListener wraps l as a mux.Listener that upgrades each accepted QUIC
@@ -185,7 +190,20 @@ func ListenMux(addr string, cfg *Config) (*H3Listener, error) {
 		_ = pconn.Close()
 		return nil, err
 	}
-	return &H3Listener{l: l, cfg: cfg, tr: tr, pconn: pconn}, nil
+	return &H3Listener{l: l, cfg: cfg, tr: tr, pconn: pconn, conns: make(map[*quic.Conn]struct{})}, nil
+}
+
+// trackConn registers an accepted connection until its context ends.
+func (l *H3Listener) trackConn(conn *quic.Conn) {
+	l.mu.Lock()
+	l.conns[conn] = struct{}{}
+	l.mu.Unlock()
+	go func() {
+		<-conn.Context().Done()
+		l.mu.Lock()
+		delete(l.conns, conn)
+		l.mu.Unlock()
+	}()
 }
 
 // compile-time interface checks.
@@ -330,18 +348,32 @@ func (l *H3Listener) Accept() (mux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	if l.tr != nil {
+		l.trackConn(conn)
+	}
 	return &h3InboundSession{conn: conn, cfg: l.cfg}, nil
 }
 
 // Addr returns the listener's local network address.
 func (l *H3Listener) Addr() net.Addr { return l.l.Addr() }
 
-// Close closes the underlying QUIC listener, and (when created by ListenMux)
-// the owned transport and UDP socket, terminating existing connections to
-// match the quic.ListenAddr single-use behaviour.
+// Close closes the underlying QUIC listener and, when created by ListenMux,
+// the owned transport and UDP socket. Accepted connections are first closed
+// with a CONNECTION_CLOSE frame so peers learn of the termination immediately;
+// Transport.Close alone would destroy them silently and peers would only
+// notice via loss detection timeouts.
 func (l *H3Listener) Close() error {
 	err := l.l.Close()
 	if l.tr != nil {
+		l.mu.Lock()
+		conns := make([]*quic.Conn, 0, len(l.conns))
+		for conn := range l.conns {
+			conns = append(conns, conn)
+		}
+		l.mu.Unlock()
+		for _, conn := range conns {
+			_ = conn.CloseWithError(0, "listener closed")
+		}
 		_ = l.tr.Close()
 	}
 	if l.pconn != nil {
