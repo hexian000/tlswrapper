@@ -90,6 +90,12 @@ func (c *Config) maxConcurrentStreams() uint32 {
 	return math.MaxUint32 - 1 // reserve 1 for the control stream
 }
 
+// connBufferSize is the gRPC transport read/write buffer size. The default
+// (32 KiB) flushes every other chunk under bulk transfer; batching more
+// frames per syscall measurably reduces write-side CPU. Data is only
+// buffered while the kernel socket is busy, so latency is unaffected.
+const connBufferSize = 128 * 1024
+
 func (c *Config) grpcDialOptions() []grpc.DialOption {
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -100,6 +106,8 @@ func (c *Config) grpcDialOptions() []grpc.DialOption {
 		}),
 		grpc.WithDisableRetry(),
 		grpc.WithDisableServiceConfig(),
+		grpc.WithReadBufferSize(connBufferSize),
+		grpc.WithWriteBufferSize(connBufferSize),
 	}
 	if window := c.sessionWindow(); window > 0 {
 		opts = append(opts, grpc.WithStaticConnWindowSize(window))
@@ -123,6 +131,8 @@ func (c *Config) grpcServerOptions() []grpc.ServerOption {
 			PermitWithoutStream: true,
 		}),
 		grpc.MaxConcurrentStreams(c.maxConcurrentStreams()),
+		grpc.ReadBufferSize(connBufferSize),
+		grpc.WriteBufferSize(connBufferSize),
 	}
 	if window := c.sessionWindow(); window > 0 {
 		opts = append(opts, grpc.StaticConnWindowSize(window))

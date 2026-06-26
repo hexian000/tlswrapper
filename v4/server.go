@@ -889,7 +889,6 @@ func (s *Server) maintenanceLoop() {
 			elapsed := now.Sub(lastTick)
 			lastTick = now
 			// Slowly release pooled objects so the GC can reclaim idle memory.
-			h2mux.DrainPool()
 			forwarder.DrainPool()
 			// If the wall clock advanced more than the ping timeout the device
 			// almost certainly slept (common on Android). The peer would already

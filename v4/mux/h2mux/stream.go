@@ -4,21 +4,15 @@
 package h2mux
 
 import (
-	"io"
 	"net"
 	"os"
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/mem"
+
 	muxpb "github.com/hexian000/tlswrapper/v4/mux/h2mux/proto"
 )
-
-// chunkPool pools *muxpb.Chunk values to reduce per-write allocations.
-var chunkPool = sync.Pool{New: func() any { return &muxpb.Chunk{} }}
-
-// DrainPool discards one pooled object so the GC can reclaim it over time.
-// Intended for periodic background calls to slowly shrink the pool under low load.
-func DrainPool() { _ = chunkPool.Get() }
 
 // h2Addr is a simple net.Addr implementation used as a fallback.
 type h2Addr struct{ Addr string }
@@ -26,12 +20,12 @@ type h2Addr struct{ Addr string }
 func (a h2Addr) Network() string { return "tcp" }
 func (a h2Addr) String() string  { return a.Addr }
 
-type chunkSender interface {
-	Send(*muxpb.Chunk) error
-}
-
-type chunkRecver interface {
-	Recv() (*muxpb.Chunk, error)
+// streamRW is the subset of grpc.ClientStream/ServerStream used to exchange
+// rawChunk messages. Bypassing the generated Send/Recv wrappers lets
+// rawChunkCodec handle the data path without protobuf message objects.
+type streamRW interface {
+	SendMsg(m any) error
+	RecvMsg(m any) error
 }
 
 // grpcStream is a single gRPC bidi stream that implements net.Conn.
@@ -43,14 +37,15 @@ type chunkRecver interface {
 // doneCh is closed on the first Close() call. Server-side Stream handlers
 // (which must stay alive while the stream is in use) wait on doneCh.
 type grpcStream struct {
-	sender     chunkSender
-	recver     chunkRecver
+	rw         streamRW
 	closeWrite func() error // half-close write side
 	onClose    func()       // called once on first Close()
 	abortWrite func()       // called when a blocked write times out
 	abortRead  func()       // called when a blocked read times out
 
-	readBuf    []byte
+	// readBufs holds unconsumed received data as references into transport
+	// buffers; each is freed as it is drained.
+	readBufs   mem.BufferSlice
 	localAddr  net.Addr
 	remoteAddr net.Addr
 
@@ -70,54 +65,60 @@ type grpcStream struct {
 
 func (s *grpcStream) Read(b []byte) (int, error) {
 	for {
-		if len(s.readBuf) > 0 {
-			n := copy(b, s.readBuf)
-			s.readBuf = s.readBuf[n:]
-			return n, nil
-		}
-		chunk, err := s.recvChunk()
-		if err != nil {
-			if err == io.EOF {
-				return 0, io.EOF
+		for len(s.readBufs) > 0 {
+			buf := s.readBufs[0]
+			if buf.Len() > 0 {
+				n, rest := mem.ReadUnsafe(b, buf)
+				if rest == nil {
+					s.readBufs = s.readBufs[1:]
+				} else {
+					s.readBufs[0] = rest
+				}
+				return n, nil
 			}
+			buf.Free()
+			s.readBufs = s.readBufs[1:]
+		}
+		var chunk rawChunk
+		if err := s.recvChunk(&chunk); err != nil {
 			return 0, err
 		}
-		if len(chunk.Data) > 0 {
-			s.readBuf = chunk.Data
-		}
+		s.readBufs = chunk.bufs
 	}
 }
 
-func (s *grpcStream) recvChunk() (*muxpb.Chunk, error) {
+func (s *grpcStream) recvChunk(chunk *rawChunk) error {
 	if timeout, ok := s.readTimeout(); ok {
 		if timeout <= 0 {
 			if s.abortRead != nil {
 				s.abortRead()
 			}
-			return nil, os.ErrDeadlineExceeded
+			return os.ErrDeadlineExceeded
 		}
 		type result struct {
-			chunk *muxpb.Chunk
+			chunk rawChunk
 			err   error
 		}
 		resCh := make(chan result, 1)
 		go func() {
-			chunk, err := s.recver.Recv()
-			resCh <- result{chunk, err}
+			var rc rawChunk
+			err := s.rw.RecvMsg(&rc)
+			resCh <- result{rc, err}
 		}()
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 		select {
 		case res := <-resCh:
-			return res.chunk, res.err
+			*chunk = res.chunk
+			return res.err
 		case <-timer.C:
 			if s.abortRead != nil {
 				s.abortRead()
 			}
-			return nil, os.ErrDeadlineExceeded
+			return os.ErrDeadlineExceeded
 		}
 	}
-	return s.recver.Recv()
+	return s.rw.RecvMsg(chunk)
 }
 
 func (s *grpcStream) readTimeout() (time.Duration, bool) {
@@ -171,12 +172,7 @@ func (s *grpcStream) Write(b []byte) (int, error) {
 func (s *grpcStream) sendChunk(data []byte) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	c := chunkPool.Get().(*muxpb.Chunk)
-	c.Data = data
-	err := s.sender.Send(c)
-	c.Data = nil
-	chunkPool.Put(c)
-	return err
+	return s.rw.SendMsg(&rawChunk{payload: data})
 }
 
 // doCloseWrite invokes closeWrite at most once, serialized against Send.
@@ -252,8 +248,7 @@ func newClientSideStream(
 	abortWrite func(),
 ) net.Conn {
 	return &grpcStream{
-		sender:     cs,
-		recver:     cs,
+		rw:         cs,
 		closeWrite: cs.CloseSend,
 		onClose:    onClose,
 		abortWrite: abortWrite,
@@ -275,8 +270,7 @@ func newServerSideStream(
 	abortWrite func(),
 ) *grpcStream {
 	return &grpcStream{
-		sender:     ss,
-		recver:     ss,
+		rw:         ss,
 		closeWrite: func() error { return nil },
 		onClose:    onClose,
 		abortWrite: abortWrite,

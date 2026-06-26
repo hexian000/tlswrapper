@@ -12,10 +12,10 @@ func TestConfigWindowOptions(t *testing.T) {
 		wantDial   int
 		wantServer int
 	}{
-		{name: "dynamic", cfg: Config{}, wantDial: 4, wantServer: 4},
-		{name: "session-only", cfg: Config{SessionWindow: 256 * 1024}, wantDial: 5, wantServer: 5},
-		{name: "stream-only", cfg: Config{StreamWindow: 256 * 1024}, wantDial: 5, wantServer: 5},
-		{name: "both", cfg: Config{SessionWindow: 256 * 1024, StreamWindow: 512 * 1024}, wantDial: 6, wantServer: 6},
+		{name: "dynamic", cfg: Config{}, wantDial: 6, wantServer: 6},
+		{name: "session-only", cfg: Config{SessionWindow: 256 * 1024}, wantDial: 7, wantServer: 7},
+		{name: "stream-only", cfg: Config{StreamWindow: 256 * 1024}, wantDial: 7, wantServer: 7},
+		{name: "both", cfg: Config{SessionWindow: 256 * 1024, StreamWindow: 512 * 1024}, wantDial: 8, wantServer: 8},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

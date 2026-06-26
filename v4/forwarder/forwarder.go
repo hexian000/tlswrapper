@@ -19,10 +19,14 @@ import (
 // ErrConnLimit is returned when the maximum number of concurrent connections is exceeded
 var ErrConnLimit = errors.New("connection limit is exceeded")
 
-// copyBufPool pools 16 KiB buffers reused across io.CopyBuffer calls.
+// copyBufPool pools buffers reused across io.CopyBuffer calls.
+// Each buffer becomes one h2mux chunk. Larger chunks amortize per-message
+// costs (proto encode/decode, channel wakeups, allocations); 64 KiB measured
+// faster than 16 KiB (one HTTP/2 frame) despite the receive-side merge copy
+// that multi-frame messages incur.
 var copyBufPool = sync.Pool{
 	New: func() any {
-		b := make([]byte, 16384)
+		b := make([]byte, 64*1024)
 		return &b
 	},
 }
@@ -133,7 +137,11 @@ func (f *forwarder) connCopy(dst net.Conn, src net.Conn) error {
 		}
 	}()
 	bp := copyBufPool.Get().(*[]byte)
-	_, err := io.CopyBuffer(dst, src, *bp)
+	// Hide the TCP side's WriterTo/ReadFrom so io.CopyBuffer actually uses
+	// our buffer: one side is always a mux stream (splice never applies),
+	// and the generic fallbacks copy in 32 KiB pieces, which split each mux
+	// chunk across two HTTP/2 frames and force a merge copy on receive.
+	_, err := io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, *bp)
 	copyBufPool.Put(bp)
 	if err != nil &&
 		!errors.Is(err, net.ErrClosed) &&

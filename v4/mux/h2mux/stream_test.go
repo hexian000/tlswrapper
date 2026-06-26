@@ -9,34 +9,28 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	muxpb "github.com/hexian000/tlswrapper/v4/mux/h2mux/proto"
 )
 
-type stubChunkSender struct {
-	send func(*muxpb.Chunk) error
+// stubStreamRW accepts every send and reports EOF on receive.
+type stubStreamRW struct{}
+
+func (stubStreamRW) SendMsg(any) error { return nil }
+func (stubStreamRW) RecvMsg(any) error { return io.EOF }
+
+// blockingRecvRW blocks RecvMsg until unblock is closed, then returns an error.
+type blockingRecvRW struct {
+	stubStreamRW
+	unblock chan struct{}
 }
 
-func (s stubChunkSender) Send(chunk *muxpb.Chunk) error {
-	return s.send(chunk)
-}
-
-type stubChunkRecver struct{}
-
-func (stubChunkRecver) Recv() (*muxpb.Chunk, error) { return nil, io.EOF }
-
-// blockingChunkRecver blocks until unblock is closed, then returns an error.
-type blockingChunkRecver struct{ unblock chan struct{} }
-
-func (r *blockingChunkRecver) Recv() (*muxpb.Chunk, error) {
+func (r *blockingRecvRW) RecvMsg(any) error {
 	<-r.unblock
-	return nil, errors.New("aborted")
+	return errors.New("aborted")
 }
 
 func TestGrpcStreamSetWriteDeadline(t *testing.T) {
 	stream := &grpcStream{
-		sender:     stubChunkSender{send: func(*muxpb.Chunk) error { return nil }},
-		recver:     stubChunkRecver{},
+		rw:         stubStreamRW{},
 		closeWrite: func() error { return nil },
 		doneCh:     make(chan struct{}),
 	}
@@ -59,8 +53,7 @@ func TestGrpcStreamReadTimeout(t *testing.T) {
 	unblock := make(chan struct{})
 	aborted := make(chan struct{}, 1)
 	stream := &grpcStream{
-		sender:     stubChunkSender{send: func(*muxpb.Chunk) error { return nil }},
-		recver:     &blockingChunkRecver{unblock: unblock},
+		rw:         &blockingRecvRW{unblock: unblock},
 		closeWrite: func() error { return nil },
 		abortRead: func() {
 			select {
@@ -91,8 +84,7 @@ func TestGrpcStreamReadTimeout(t *testing.T) {
 
 func TestGrpcStreamSetReadDeadline(t *testing.T) {
 	stream := &grpcStream{
-		sender:     stubChunkSender{send: func(*muxpb.Chunk) error { return nil }},
-		recver:     stubChunkRecver{},
+		rw:         stubStreamRW{},
 		closeWrite: func() error { return nil },
 		doneCh:     make(chan struct{}),
 	}
@@ -110,8 +102,7 @@ func TestGrpcStreamSetReadDeadline(t *testing.T) {
 
 func TestGrpcStreamSetDeadline(t *testing.T) {
 	stream := &grpcStream{
-		sender:     stubChunkSender{send: func(*muxpb.Chunk) error { return nil }},
-		recver:     stubChunkRecver{},
+		rw:         stubStreamRW{},
 		closeWrite: func() error { return nil },
 		doneCh:     make(chan struct{}),
 	}
@@ -145,8 +136,7 @@ func TestGrpcStreamLocalRemoteAddr(t *testing.T) {
 	local := h2Addr{Addr: "127.0.0.1:1234"}
 	remote := h2Addr{Addr: "127.0.0.1:5678"}
 	stream := &grpcStream{
-		sender:     stubChunkSender{send: func(*muxpb.Chunk) error { return nil }},
-		recver:     stubChunkRecver{},
+		rw:         stubStreamRW{},
 		closeWrite: func() error { return nil },
 		doneCh:     make(chan struct{}),
 		localAddr:  local,
@@ -163,8 +153,7 @@ func TestGrpcStreamLocalRemoteAddr(t *testing.T) {
 func TestGrpcStreamCloseWrite(t *testing.T) {
 	called := false
 	stream := &grpcStream{
-		sender:     stubChunkSender{send: func(*muxpb.Chunk) error { return nil }},
-		recver:     stubChunkRecver{},
+		rw:         stubStreamRW{},
 		closeWrite: func() error { called = true; return nil },
 		doneCh:     make(chan struct{}),
 	}
@@ -178,8 +167,7 @@ func TestGrpcStreamCloseWrite(t *testing.T) {
 
 func TestGrpcStreamWriteDeadlineExpired(t *testing.T) {
 	stream := &grpcStream{
-		sender:        stubChunkSender{send: func(*muxpb.Chunk) error { return nil }},
-		recver:        stubChunkRecver{},
+		rw:            stubStreamRW{},
 		closeWrite:    func() error { return nil },
 		doneCh:        make(chan struct{}),
 		writeDeadline: time.Now().Add(-time.Second), // already in the past
@@ -192,8 +180,7 @@ func TestGrpcStreamWriteDeadlineExpired(t *testing.T) {
 
 func TestGrpcStreamReadDeadlineExpired(t *testing.T) {
 	stream := &grpcStream{
-		sender:       stubChunkSender{send: func(*muxpb.Chunk) error { return nil }},
-		recver:       stubChunkRecver{},
+		rw:           stubStreamRW{},
 		closeWrite:   func() error { return nil },
 		doneCh:       make(chan struct{}),
 		readDeadline: time.Now().Add(-time.Second), // already in the past
@@ -204,10 +191,13 @@ func TestGrpcStreamReadDeadlineExpired(t *testing.T) {
 	}
 }
 
-// blockingChunkSender blocks until unblock is closed, then returns an error.
-type blockingChunkSender struct{ unblock chan struct{} }
+// blockingSendRW blocks SendMsg until unblock is closed, then returns an error.
+type blockingSendRW struct {
+	stubStreamRW
+	unblock chan struct{}
+}
 
-func (s *blockingChunkSender) Send(*muxpb.Chunk) error {
+func (s *blockingSendRW) SendMsg(any) error {
 	<-s.unblock
 	return errors.New("aborted")
 }
@@ -216,8 +206,7 @@ func TestGrpcStreamWriteTimeout(t *testing.T) {
 	unblock := make(chan struct{})
 	aborted := make(chan struct{}, 1)
 	stream := &grpcStream{
-		sender:     &blockingChunkSender{unblock: unblock},
-		recver:     stubChunkRecver{},
+		rw:         &blockingSendRW{unblock: unblock},
 		closeWrite: func() error { return nil },
 		abortWrite: func() {
 			select {
@@ -242,7 +231,4 @@ func TestGrpcStreamWriteTimeout(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("abortWrite was not called")
 	}
-}
-func TestStreamDrainPool(t *testing.T) {
-	DrainPool() // must not panic or block
 }
