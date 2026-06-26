@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"net"
 	"sync"
@@ -228,9 +229,9 @@ func (t *tunnel) redial() {
 	_, err := t.dial(ctx)
 	if err != nil && !errors.Is(err, ErrNoDialAddress) &&
 		!errors.Is(err, ErrDialInProgress) && !errors.Is(err, ErrTunnelStopped) {
-		redialCount := t.redialCount + 1
-		if redialCount > t.redialCount {
-			t.redialCount = redialCount
+		// Saturate instead of overflowing; the backoff table is capped anyway.
+		if t.redialCount < math.MaxInt {
+			t.redialCount++
 		}
 		tag := t.tagValue()
 		slog.Infof("%s: redial #%d to %s: %s", tag, t.redialCount, t.dialAddr, formats.Error(err))

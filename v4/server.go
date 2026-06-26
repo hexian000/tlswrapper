@@ -32,6 +32,21 @@ import (
 
 const network = "tcp"
 
+const (
+	// recentEventsSize is the capacity of the in-memory event ring shown by /stats.
+	recentEventsSize = 100
+	// acceptBackoffDelay is the pause after a transient Accept error before retrying.
+	acceptBackoffDelay = 500 * time.Millisecond
+	// shutdownWaitTimeout bounds the wait for unfinished connections during Shutdown.
+	shutdownWaitTimeout = 2 * time.Second
+	// h3MaxConnReceiveWindow caps QUIC connection receive-window auto-tuning
+	// (quic-go default is 15 MiB).
+	h3MaxConnReceiveWindow = 64 << 20
+	// h3MaxStreamReceiveWindow caps QUIC stream receive-window auto-tuning
+	// (quic-go default is 6 MiB).
+	h3MaxStreamReceiveWindow = 16 << 20
+)
+
 var (
 	ErrNoDialAddress  = errors.New("no dial address is configured")
 	ErrDialInProgress = errors.New("another dial is in progress")
@@ -60,7 +75,7 @@ type Server struct {
 	mainTunnel      *tunnel                      // top-level cfg.MuxConnect tunnel
 	localListener   net.Listener                 // top-level cfg.Listen listener
 	localListenAddr string                       // address currently bound by localListener
-	identityTunnels []*tunnel                    // cfg.Identity.MuxConnect[i] tunnels (positional)
+	identityTunnels []*tunnel                    // cfg.Identity.MuxConnect tunnels (one per entry)
 	identities      map[string]*identityListener // cfg.Identity.Listen[name] listeners
 	acceptedTunnels map[mux.Session]*tunnel      // inbound tunnels keyed by their mux session
 	ctx             contextMgr
@@ -103,7 +118,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 			contexts: make(map[context.Context]context.CancelFunc),
 		},
 		f:            forwarder.New(maxStreams(cfg), g),
-		recentEvents: eventlog.NewRecent(100),
+		recentEvents: eventlog.NewRecent(recentEventsSize),
 		g:            g,
 	}
 	s.ctx.timeout = func() time.Duration {
@@ -321,9 +336,9 @@ func (s *Server) buildH3MuxDialer(cfg *config.File, tlscfg *tls.Config) *h3mux.H
 		MaxIdleTimeout:                 cfg.IdleTimeout(),
 		MaxIncomingStreams:             int64(cfg.Mux.MaxHalfOpen),
 		InitialConnectionReceiveWindow: uint64(cfg.Mux.SessionWindow),
-		MaxConnectionReceiveWindow:     64 << 20, // auto-tuning cap; quic-go default is 15 MiB
+		MaxConnectionReceiveWindow:     h3MaxConnReceiveWindow,
 		InitialStreamReceiveWindow:     uint64(cfg.Mux.StreamWindow),
-		MaxStreamReceiveWindow:         16 << 20, // auto-tuning cap; quic-go default is 6 MiB
+		MaxStreamReceiveWindow:         h3MaxStreamReceiveWindow,
 	})
 }
 
@@ -354,9 +369,9 @@ func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 			MaxIdleTimeout:                 cfg.IdleTimeout(),
 			MaxIncomingStreams:             int64(cfg.Mux.MaxHalfOpen),
 			InitialConnectionReceiveWindow: uint64(cfg.Mux.SessionWindow),
-			MaxConnectionReceiveWindow:     64 << 20, // auto-tuning cap; quic-go default is 15 MiB
+			MaxConnectionReceiveWindow:     h3MaxConnReceiveWindow,
 			InitialStreamReceiveWindow:     uint64(cfg.Mux.StreamWindow),
-			MaxStreamReceiveWindow:         16 << 20, // auto-tuning cap; quic-go default is 6 MiB
+			MaxStreamReceiveWindow:         h3MaxStreamReceiveWindow,
 		})
 		if err != nil {
 			return err
@@ -449,7 +464,7 @@ func (s *Server) serveMuxListener(l mux.Listener) {
 			}
 			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
 				slog.Warningf("accept session: %s", formats.Error(err))
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(acceptBackoffDelay)
 				continue
 			}
 			slog.Errorf("accept session: %s", formats.Error(err))
@@ -479,12 +494,9 @@ func (s *Server) serveMuxListener(l mux.Listener) {
 	}
 }
 
+// serveOne handles a single accepted connection; panics are recovered by the
+// goroutine group it runs in.
 func (s *Server) serveOne(accepted net.Conn, handler Handler) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Stackf(slog.LevelError, 0, "panic: %v", r)
-		}
-	}()
 	ctx := s.ctx.withTimeout()
 	if ctx == nil {
 		return
@@ -504,7 +516,7 @@ func (s *Server) Serve(listener net.Listener, handler Handler) {
 			}
 			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
 				slog.Warningf("serve: %s", formats.Error(err))
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(acceptBackoffDelay)
 				continue
 			}
 			slog.Errorf("serve: %s", formats.Error(err))
@@ -740,27 +752,35 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 		s.identities[id] = il
 	}
 
-	// === Part 2: Reconcile identityTunnels by position (cfg.Identity.MuxConnect) ===
-	desired := cfg.Identity.MuxConnect
-	// Find the first position where config diverges from the current slice.
-	keepCount := min(len(s.identityTunnels), len(desired))
-	for i := range keepCount {
-		if s.identityTunnels[i].dialAddr != desired[i] {
-			keepCount = i
-			break
+	// === Part 2: Reconcile identityTunnels by address multiset (cfg.Identity.MuxConnect) ===
+	// Tunnels whose dial address is still configured survive the reload with
+	// their sessions intact; only removed addresses are stopped and added
+	// addresses started, so reordering or inserting entries does not disturb
+	// unrelated tunnels.
+	desired := make(map[string]int, len(cfg.Identity.MuxConnect))
+	for _, addr := range cfg.Identity.MuxConnect {
+		desired[addr]++
+	}
+	kept := s.identityTunnels[:0]
+	for _, t := range s.identityTunnels {
+		if desired[t.dialAddr] > 0 {
+			desired[t.dialAddr]--
+			kept = append(kept, t)
+			continue
+		}
+		if err := t.Stop(); err != nil {
+			slog.Errorf("tunnel %s: %s", t.dialAddr, formats.Error(err))
+			errs = append(errs, fmt.Errorf("stop tunnel %s: %w", t.dialAddr, err))
 		}
 	}
-	// Stop tunnels past the keep boundary.
-	for i := keepCount; i < len(s.identityTunnels); i++ {
-		if err := s.identityTunnels[i].Stop(); err != nil {
-			slog.Errorf("tunnel %s: %s", s.identityTunnels[i].dialAddr, formats.Error(err))
-			errs = append(errs, fmt.Errorf("stop tunnel %s: %w", s.identityTunnels[i].dialAddr, err))
+	s.identityTunnels = kept
+	// Create tunnels for the remaining (added) addresses in config order.
+	for _, addr := range cfg.Identity.MuxConnect {
+		if desired[addr] <= 0 {
+			continue
 		}
-	}
-	s.identityTunnels = s.identityTunnels[:keepCount]
-	// Create new tunnels for added entries.
-	for i := keepCount; i < len(desired); i++ {
-		t := newTunnel(desired[i], s)
+		desired[addr]--
+		t := newTunnel(addr, s)
 		t.tag = t.buildTunnelTag(nil, nil)
 		s.identityTunnels = append(s.identityTunnels, t)
 		if err := t.Start(); err != nil {
@@ -983,7 +1003,7 @@ func (s *Server) Shutdown() error {
 	go func() { s.g.Wait(); close(waitDone) }()
 	select {
 	case <-waitDone:
-	case <-time.After(2 * time.Second):
+	case <-time.After(shutdownWaitTimeout):
 		slog.Warning("graceful shutdown timed out, forcing exit")
 	}
 	return nil

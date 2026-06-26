@@ -129,7 +129,7 @@ func AppMain(f *AppFlags) int {
 	}
 	if err != nil {
 		slog.Fatal("load config: ", formats.Error(err))
-		os.Exit(1)
+		return 1
 	}
 	// config.Load applies cfg.LogLevel; the -loglevel flag takes precedence.
 	if f.LogLevel >= 0 {
@@ -139,11 +139,11 @@ func AppMain(f *AppFlags) int {
 	server, err := NewServer(cfg)
 	if err != nil {
 		slog.Fatal("server init: ", formats.Error(err))
-		os.Exit(1)
+		return 1
 	}
 	if err := server.Start(); err != nil {
 		slog.Fatal("server start: ", formats.Error(err))
-		os.Exit(1)
+		return 1
 	}
 
 	ch := make(chan os.Signal, 1)
