@@ -5,6 +5,7 @@ package h3mux
 
 import (
 	"crypto/tls"
+	"errors"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -21,7 +22,13 @@ type Config struct {
 	LocalID string
 	// TLSConfig is required: QUIC mandates TLS 1.3. The h3mux package
 	// automatically appends the alpn identifier to NextProtos.
+	// For dynamic cert rotation use TLSConfigProvider (it takes precedence).
 	TLSConfig *tls.Config
+	// TLSConfigProvider, when non-nil, is called to obtain the current TLS
+	// config: on each inbound TLS handshake (server side, via
+	// GetConfigForClient) and on each Dial (client side). Takes precedence
+	// over TLSConfig.
+	TLSConfigProvider func() *tls.Config
 	// RejectInbound is advertised in the handshake: the peer should not Open() streams to us.
 	RejectInbound bool
 
@@ -92,19 +99,42 @@ func (c *Config) quicConfig() *quic.Config {
 	return qcfg
 }
 
-// tlsClientConfig returns a copy of the TLS config with the h3mux ALPN prepended.
-// Panics if TLSConfig is nil.
+// currentTLSConfig resolves the TLS config to use right now.
+// TLSConfigProvider takes precedence over TLSConfig.
+func (c *Config) currentTLSConfig() *tls.Config {
+	if c.TLSConfigProvider != nil {
+		return c.TLSConfigProvider()
+	}
+	return c.TLSConfig
+}
+
+// tlsClientConfig returns a copy of the current TLS config with the h3mux
+// ALPN prepended. Panics if no TLS config is available.
 func (c *Config) tlsClientConfig() *tls.Config {
-	cfg := c.TLSConfig.Clone()
+	cfg := c.currentTLSConfig().Clone()
 	cfg.NextProtos = prependALPN(cfg.NextProtos)
 	return cfg
 }
 
-// tlsServerConfig returns a copy of the TLS config with the h3mux ALPN prepended.
-// Panics if TLSConfig is nil.
+// tlsServerConfig returns a copy of the current TLS config with the h3mux
+// ALPN prepended. Panics if no TLS config is available.
+// When TLSConfigProvider is set, the returned config additionally resolves
+// the provider on every inbound handshake via GetConfigForClient, so that
+// certificate rotation takes effect without restarting the listener.
 func (c *Config) tlsServerConfig() *tls.Config {
-	cfg := c.TLSConfig.Clone()
+	cfg := c.currentTLSConfig().Clone()
 	cfg.NextProtos = prependALPN(cfg.NextProtos)
+	if c.TLSConfigProvider != nil {
+		cfg.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			cur := c.TLSConfigProvider()
+			if cur == nil {
+				return nil, errors.New("h3mux: TLS config unavailable")
+			}
+			cur = cur.Clone()
+			cur.NextProtos = prependALPN(cur.NextProtos)
+			return cur, nil
+		}
+	}
 	return cfg
 }
 

@@ -59,6 +59,13 @@ type grpcStream struct {
 	writeDeadline time.Time
 	doneCh        chan struct{}
 	closeOnce     sync.Once
+
+	// writeMu serializes Send and CloseSend on the underlying gRPC stream:
+	// grpc-go forbids calling CloseSend concurrently with SendMsg (or itself,
+	// as happens when one forwarder direction half-closes while the other
+	// force-closes). closeWriteOnce ensures CloseSend runs at most once.
+	writeMu        sync.Mutex
+	closeWriteOnce sync.Once
 }
 
 func (s *grpcStream) Read(b []byte) (int, error) {
@@ -162,6 +169,8 @@ func (s *grpcStream) Write(b []byte) (int, error) {
 }
 
 func (s *grpcStream) sendChunk(data []byte) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	c := chunkPool.Get().(*muxpb.Chunk)
 	c.Data = data
 	err := s.sender.Send(c)
@@ -170,18 +179,31 @@ func (s *grpcStream) sendChunk(data []byte) error {
 	return err
 }
 
-func (s *grpcStream) CloseWrite() error {
-	return s.closeWrite()
+// doCloseWrite invokes closeWrite at most once, serialized against Send.
+func (s *grpcStream) doCloseWrite() error {
+	var err error
+	s.closeWriteOnce.Do(func() {
+		s.writeMu.Lock()
+		err = s.closeWrite()
+		s.writeMu.Unlock()
+	})
+	return err
 }
 
-// Close half-closes the write side and releases any waiter on doneCh.
+func (s *grpcStream) CloseWrite() error {
+	return s.doCloseWrite()
+}
+
+// Close releases any waiter on doneCh, aborts the RPC, and closes the write
+// side.  onClose (the RPC cancel) runs before doCloseWrite so that an
+// in-flight Send holding writeMu is unblocked instead of deadlocking Close.
 func (s *grpcStream) Close() error {
 	s.closeOnce.Do(func() {
-		_ = s.closeWrite()
 		close(s.doneCh)
 		if s.onClose != nil {
 			s.onClose()
 		}
+		_ = s.doCloseWrite()
 	})
 	return nil
 }

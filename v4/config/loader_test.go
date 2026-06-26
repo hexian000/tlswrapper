@@ -75,6 +75,25 @@ func TestCheckType(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
+	t.Run("clamps-negative-limits", func(t *testing.T) {
+		c := Default
+		c.MaxSessions = -1
+		c.Mux.MaxStreams = -1
+		c.Mux.MaxHalfOpen = -1
+		if err := c.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if c.MaxSessions != 0 {
+			t.Fatalf("MaxSessions = %d, want 0", c.MaxSessions)
+		}
+		if c.Mux.MaxStreams != 0 {
+			t.Fatalf("Mux.MaxStreams = %d, want 0", c.Mux.MaxStreams)
+		}
+		if c.Mux.MaxHalfOpen != 0 {
+			t.Fatalf("Mux.MaxHalfOpen = %d, want 0", c.Mux.MaxHalfOpen)
+		}
+	})
+
 	t.Run("clamps-ping-timeout-low", func(t *testing.T) {
 		c := Default
 		c.Mux.PingTimeout = 1

@@ -6,7 +6,6 @@ package h3mux
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 
@@ -18,11 +17,12 @@ import (
 // compile-time check that h3Session implements mux.Session.
 var _ mux.Session = (*h3Session)(nil)
 
-// openMarker is a 1-byte stream-open signal written by Open() and consumed by
-// Accept(). QUIC streams are invisible to the peer until the first STREAM frame
-// is sent, so without this handshake Accept() would block forever if the caller
-// waits for it before writing any application data (unlike gRPC/h2mux, which
-// sends HTTP/2 HEADERS when opening a stream).
+// openMarker is a 1-byte stream-open signal written by Open() and stripped on
+// the accepting side before the first application read. QUIC streams are
+// invisible to the peer until the first STREAM frame is sent, so without this
+// handshake Accept() would block forever if the caller waits for it before
+// writing any application data (unlike gRPC/h2mux, which sends HTTP/2 HEADERS
+// when opening a stream).
 var openMarker = [1]byte{0}
 
 // h3Session implements mux.Session over a QUIC connection.
@@ -89,10 +89,13 @@ func (s *h3Session) onStreamClose(_ error) {
 }
 
 // wrapStream wraps a raw quic.Stream into a net.Conn-compatible countingConn.
-func (s *h3Session) wrapStream(qs *quic.Stream) net.Conn {
+// stripMarker must be true for accepted streams so the 1-byte open marker is
+// consumed before the first application read.
+func (s *h3Session) wrapStream(qs *quic.Stream, stripMarker bool) net.Conn {
 	local := s.conn.LocalAddr()
 	remote := s.conn.RemoteAddr()
 	inner := newQuicConn(qs, local, remote, s.onStreamClose)
+	inner.stripMarker = stripMarker
 	return &countingConn{
 		Conn:    inner,
 		metrics: &s.metrics,
@@ -131,11 +134,13 @@ func (s *h3Session) Open(ctx context.Context) (net.Conn, error) {
 	}
 	s.metrics.StreamsOpened.Add(1)
 	s.metrics.NumStreams.Add(1)
-	return s.wrapStream(qs), nil
+	return s.wrapStream(qs, false), nil
 }
 
 // Accept blocks until a new stream is available or the session is closed.
-// It reads and discards the 1-byte open marker written by the opener's Open().
+// The 1-byte open marker written by the opener's Open() is consumed lazily by
+// the returned conn's first Read, so a stream whose marker has not arrived
+// yet cannot stall the accept loop for subsequent streams.
 func (s *h3Session) Accept() (net.Conn, error) {
 	qs, err := s.conn.AcceptStream(s.conn.Context())
 	if err != nil {
@@ -144,17 +149,9 @@ func (s *h3Session) Accept() (net.Conn, error) {
 		}
 		return nil, err
 	}
-	var marker [1]byte
-	if _, err := io.ReadFull(qs, marker[:]); err != nil {
-		_ = qs.Close()
-		if s.IsClosed() {
-			return nil, mux.ErrSessionClosed
-		}
-		return nil, fmt.Errorf("open marker read: %w", err)
-	}
 	s.metrics.StreamsAccepted.Add(1)
 	s.metrics.NumStreams.Add(1)
-	return s.wrapStream(qs), nil
+	return s.wrapStream(qs, true), nil
 }
 
 // Close closes the session and the underlying QUIC connection.

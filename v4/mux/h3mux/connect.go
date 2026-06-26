@@ -9,6 +9,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/quic-go/quic-go"
 
@@ -36,6 +37,16 @@ func NewSession(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Session,
 	return serverHandshake(ctx, conn, cfg)
 }
 
+// applyHandshakeDeadline bounds blocking reads/writes on the control stream
+// by the context deadline, so a peer that opens the control stream but never
+// completes the hello exchange cannot park the handshake goroutine forever.
+// The deadline is cleared by the caller after a successful handshake.
+func applyHandshakeDeadline(ctx context.Context, ctrl *quic.Stream) {
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = ctrl.SetDeadline(deadline)
+	}
+}
+
 // clientHandshake opens the control stream, runs the client handshake, and
 // returns an h3Session.
 func clientHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Session, error) {
@@ -44,11 +55,13 @@ func clientHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Ses
 		_ = conn.CloseWithError(0, "handshake failed")
 		return nil, fmt.Errorf("%w: open control stream: %v", ErrHandshakeFailed, err)
 	}
+	applyHandshakeDeadline(ctx, ctrl)
 	peerID, peerRejectsOpen, err := doClientHandshake(ctrl, cfg.LocalID, cfg.RejectInbound)
 	if err != nil {
 		_ = conn.CloseWithError(0, "handshake failed")
 		return nil, err
 	}
+	_ = ctrl.SetDeadline(time.Time{})
 	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, cfg), nil
 }
 
@@ -60,11 +73,13 @@ func serverHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Ses
 		_ = conn.CloseWithError(0, "handshake failed")
 		return nil, fmt.Errorf("%w: accept control stream: %v", ErrHandshakeFailed, err)
 	}
+	applyHandshakeDeadline(ctx, ctrl)
 	peerID, peerRejectsOpen, err := doServerHandshake(ctrl, cfg.LocalID, cfg.RejectInbound)
 	if err != nil {
 		_ = conn.CloseWithError(0, "handshake failed")
 		return nil, err
 	}
+	_ = ctrl.SetDeadline(time.Time{})
 	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, cfg), nil
 }
 

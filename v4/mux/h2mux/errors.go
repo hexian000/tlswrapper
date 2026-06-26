@@ -13,4 +13,6 @@ var (
 	ErrHandshakeFailed = errors.New("mux: handshake failed")
 
 	errUnexpectedMessage = errors.New("mux: unexpected control message")
+
+	errDuplicateControl = errors.New("mux: duplicate control stream")
 )

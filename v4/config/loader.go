@@ -188,6 +188,11 @@ func (c *File) Validate() error {
 			return fmt.Errorf("max_startups: %w", err)
 		}
 	}
+	// clamp limits (negative values would break downstream consumers,
+	// e.g. make(chan, n) panics and uint32 conversions wrap around)
+	clampInt(&c.MaxSessions, 0, math.MaxInt32)
+	clampInt(&c.Mux.MaxStreams, 0, math.MaxInt32)
+	clampInt(&c.Mux.MaxHalfOpen, 0, math.MaxInt32)
 	// clamp timing fields
 	clampInt(&c.Mux.PingTimeout, 10, 86400)
 	clampInt(&c.Mux.KeepAlive, 10, 86400)

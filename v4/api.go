@@ -290,7 +290,8 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if evlog > 0 {
 		fprintf(w, "\n> Recent Events\n")
 		if err := h.s.recentEvents.Format(w, evlog); err != nil {
-			panic(err)
+			// Writing to a disconnected client is not worth more than a debug log.
+			slog.Debugf("stats: eventlog: %s", formats.Error(err))
 		}
 	}
 }
@@ -498,6 +499,10 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		fprintf(w, "%-20s: %s\n", "Time Cost", formats.Duration(time.Since(start)))
 	})
 	mux.HandleFunc("/stack", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		setRespHeader(w.Header(), "text/plain", true)
 		w.WriteHeader(http.StatusOK)
 		var buf [65536]byte

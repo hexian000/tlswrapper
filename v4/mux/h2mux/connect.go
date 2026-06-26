@@ -351,9 +351,10 @@ type muxServer struct {
 	ready chan *serverSession
 
 	// sess is set by Control() after handshake; Stream() handlers wait on sessReady.
-	mu        sync.RWMutex
-	sess      *serverSession
-	sessReady chan struct{} // closed once sess is set
+	mu          sync.RWMutex
+	ctrlStarted bool // a Control RPC has been received; reject duplicates
+	sess        *serverSession
+	sessReady   chan struct{} // closed once sess is set
 }
 
 func newMuxServer(cfg *Config, localAddr, remoteAddr net.Addr, sh *muxStatsHandler) *muxServer {
@@ -369,7 +370,16 @@ func newMuxServer(cfg *Config, localAddr, remoteAddr net.Addr, sh *muxStatsHandl
 
 // Control is the long-lived control stream handler. It performs the server-side
 // handshake, creates the Session, and then stays open until the session closes.
+// Only one Control RPC is allowed per connection; duplicates are rejected
+// (a second close of sessReady would panic and kill the process).
 func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
+	svc.mu.Lock()
+	if svc.ctrlStarted {
+		svc.mu.Unlock()
+		return errDuplicateControl
+	}
+	svc.ctrlStarted = true
+	svc.mu.Unlock()
 	peerIdentity, peerRejectsInbound, err := doServerHandshake(stream, svc.cfg.LocalID, svc.cfg.RejectInbound)
 	if err != nil {
 		return err

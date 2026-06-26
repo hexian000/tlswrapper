@@ -36,6 +36,7 @@ var (
 	ErrNoDialAddress  = errors.New("no dial address is configured")
 	ErrDialInProgress = errors.New("another dial is in progress")
 	ErrNoSession      = errors.New("no active session")
+	ErrTunnelStopped  = errors.New("tunnel is stopped")
 )
 
 // Server owns listeners, config-driven tunnels, and active mux sessions.
@@ -45,9 +46,14 @@ type Server struct {
 	serverName string // TLS SNI override from CLI -sni flag
 	cfgMu      sync.RWMutex
 
+	// listenMu guards l, muxListener, and apiListener, which are swapped by
+	// config reloads while Stats() reads them from API handler goroutines.
+	listenMu    sync.Mutex
 	l           hlistener.Listener
+	muxListener mux.Listener // active mux listener (h2mux or h3mux)
 	apiListener net.Listener
-	f           forwarder.Forwarder
+
+	f forwarder.Forwarder
 
 	recentEvents eventlog.Recent
 
@@ -63,8 +69,6 @@ type Server struct {
 	dialer    net.Dialer
 	muxDialer mux.Dialer
 	g         routines.Group
-
-	muxListener mux.Listener // active mux listener (h2mux or h3mux)
 
 	reloadMu       sync.Mutex
 	lastConfigJSON []byte
@@ -128,18 +132,24 @@ func maxStreams(cfg *config.File) int {
 
 // findSession returns the outbound tunnel whose active session has the given
 // peer identity. An empty peerIdentity returns the top-level mainTunnel.
+// When no session is active, it falls back to the tunnel that last reached
+// this identity so OpenStream can dial on demand.
 func (s *Server) findSession(peerIdentity string) *tunnel {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if peerIdentity == "" {
 		return s.mainTunnel
 	}
+	var fallback *tunnel
 	for _, t := range s.identityTunnels {
 		if sess := t.getSession(); sess != nil && sess.PeerIdentity() == peerIdentity {
 			return t
 		}
+		if fallback == nil && t.lastIdentityValue() == peerIdentity {
+			fallback = t
+		}
 	}
-	return nil
+	return fallback
 }
 
 func (s *Server) getAllTunnels() []*tunnel {
@@ -175,7 +185,7 @@ func (s *Server) markSessionsStale() {
 
 // flushSessionMetrics accumulates a closing session's gRPC byte counters into
 // the server-level totals so Mux/TCP Traffic survive session reconnects.
-func (s *Server) flushSessionMetrics(t *tunnel, ss mux.Session) {
+func (s *Server) flushSessionMetrics(ss mux.Session) {
 	if m := ss.Stats(); m != nil {
 		s.stats.payloadBytesReceived.Add(m.BytesReceived.Load())
 		s.stats.payloadBytesSent.Add(m.BytesSent.Load())
@@ -213,8 +223,11 @@ type ServerStats struct {
 
 // Stats snapshots listener, traffic, and per-session metrics.
 func (s *Server) Stats() (stats ServerStats) {
-	if s.l != nil {
-		stats.Accepted, stats.Served = s.l.Stats()
+	s.listenMu.Lock()
+	l := s.l
+	s.listenMu.Unlock()
+	if l != nil {
+		stats.Accepted, stats.Served = l.Stats()
 	} else {
 		// h3mux path: hlistener is not used; read from unified atomic counters.
 		stats.Accepted = s.stats.accepted.Load()
@@ -311,9 +324,9 @@ func (s *Server) buildH3MuxDialer(cfg *config.File, tlscfg *tls.Config) *h3mux.H
 		MaxIdleTimeout:                 cfg.IdleTimeout(),
 		MaxIncomingStreams:             int64(cfg.Mux.MaxHalfOpen),
 		InitialConnectionReceiveWindow: uint64(cfg.Mux.SessionWindow),
-		MaxConnectionReceiveWindow:     64 << 20, // quic-go default: 15 MiB
+		MaxConnectionReceiveWindow:     64 << 20, // auto-tuning cap; quic-go default is 15 MiB
 		InitialStreamReceiveWindow:     uint64(cfg.Mux.StreamWindow),
-		MaxStreamReceiveWindow:         16 << 20, // quic-go default: 6 MiB
+		MaxStreamReceiveWindow:         16 << 20, // auto-tuning cap; quic-go default is 6 MiB
 	})
 }
 
@@ -329,46 +342,51 @@ func (s *Server) buildMuxDialer(cfg *config.File, tlscfg *tls.Config) mux.Dialer
 // cfg.MuxProtocol. It sets s.l (h2mux only) and s.muxListener, then
 // launches the accept goroutine.
 func (s *Server) startMuxListen(cfg *config.File, addr string) error {
+	var ml mux.Listener
+	var hl hlistener.Listener
 	if cfg.MuxProtocol == "h3mux" {
-		_, tlscfg := s.getConfig()
-		ml, err := h3mux.ListenMux(addr, &h3mux.Config{
-			TLSConfig:                      tlscfg,
+		// TLSConfigProvider fetches the current TLS config per connection so
+		// that certificate rotation takes effect without restarting the listener.
+		l, err := h3mux.ListenMux(addr, &h3mux.Config{
+			TLSConfigProvider:              func() *tls.Config { _, tlscfg := s.getConfig(); return tlscfg },
 			LocalID:                        cfg.Identity.Claim,
 			KeepAlivePeriod:                cfg.KeepAlive(),
 			HandshakeTimeout:               cfg.ConnectTimeout(),
 			MaxIdleTimeout:                 cfg.IdleTimeout(),
 			MaxIncomingStreams:             int64(cfg.Mux.MaxHalfOpen),
 			InitialConnectionReceiveWindow: uint64(cfg.Mux.SessionWindow),
-			MaxConnectionReceiveWindow:     64 << 20, // quic-go default: 15 MiB
+			MaxConnectionReceiveWindow:     64 << 20, // auto-tuning cap; quic-go default is 15 MiB
 			InitialStreamReceiveWindow:     uint64(cfg.Mux.StreamWindow),
-			MaxStreamReceiveWindow:         16 << 20, // quic-go default: 6 MiB
+			MaxStreamReceiveWindow:         16 << 20, // auto-tuning cap; quic-go default is 6 MiB
 		})
 		if err != nil {
 			return err
 		}
-		s.muxListener = ml
+		ml = l
 	} else {
 		l, err := s.Listen(addr)
 		if err != nil {
 			return err
 		}
 		startupStart, startupRate, startupFull := cfg.ParsedMaxStartups()
-		s.l = hlistener.Wrap(l, &hlistener.Config{
+		hl = hlistener.Wrap(l, &hlistener.Config{
 			Start:       uint32(startupStart),
 			Full:        uint32(startupFull),
 			Rate:        float64(startupRate) / 100.0,
 			MaxSessions: uint32(cfg.MaxSessions),
 			Stats:       s.ListenerStats,
 		})
-		s.muxListener = s.buildH2MuxListener(s.l, cfg)
+		ml = s.buildH2MuxListener(hl, cfg)
 	}
-	slog.Noticef("mux listen: %v", s.muxListener.Addr())
-	if err := s.g.Go(func() { s.serveMuxListener(s.muxListener) }); err != nil {
-		ioClose(s.muxListener)
-		s.muxListener = nil
-		s.l = nil
+	slog.Noticef("mux listen: %v", ml.Addr())
+	if err := s.g.Go(func() { s.serveMuxListener(ml) }); err != nil {
+		ioClose(ml)
 		return err
 	}
+	s.listenMu.Lock()
+	s.muxListener = ml
+	s.l = hl
+	s.listenMu.Unlock()
 	return nil
 }
 
@@ -526,7 +544,7 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
 		msg := fmt.Sprintf("%s: session closed", tag)
 		slog.Notice(msg)
 		s.recentEvents.Add(now, msg)
-		s.flushSessionMetrics(inbound, ss)
+		s.flushSessionMetrics(ss)
 		s.stats.numSessions.Add(^uint32(0))
 		s.stats.numSessionsFinalized.Add(1)
 		s.mu.Lock()
@@ -743,20 +761,22 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 	return errors.Join(errs...)
 }
 
-// reloadMuxListen restarts the MuxListen listener when its configuration changes.
-// Errors are logged; the reload continues regardless.
-func (s *Server) reloadMuxListen(cfg *config.File) error {
-	old, _ := s.getConfig()
+// reloadMuxListen restarts the MuxListen listener when its configuration
+// changed from old to cfg. Errors are logged; the reload continues regardless.
+func (s *Server) reloadMuxListen(old, cfg *config.File) error {
 	if cfg.MuxListen == old.MuxListen &&
 		cfg.MuxProtocol == old.MuxProtocol &&
 		cfg.MaxSessions == old.MaxSessions &&
 		cfg.MaxStartups == old.MaxStartups {
 		return nil
 	}
-	if s.muxListener != nil {
-		ioClose(s.muxListener)
-		s.muxListener = nil
-		s.l = nil
+	s.listenMu.Lock()
+	ml := s.muxListener
+	s.muxListener = nil
+	s.l = nil
+	s.listenMu.Unlock()
+	if ml != nil {
+		ioClose(ml)
 	}
 	if cfg.MuxListen == "" {
 		return nil
@@ -768,16 +788,18 @@ func (s *Server) reloadMuxListen(cfg *config.File) error {
 	return nil
 }
 
-// reloadAPIListen restarts the APIListen HTTP server when its address changes.
-// Errors are logged; the reload continues regardless.
-func (s *Server) reloadAPIListen(cfg *config.File) error {
-	old, _ := s.getConfig()
+// reloadAPIListen restarts the APIListen HTTP server when its address changed
+// from old to cfg. Errors are logged; the reload continues regardless.
+func (s *Server) reloadAPIListen(old, cfg *config.File) error {
 	if cfg.APIListen == old.APIListen {
 		return nil
 	}
-	if s.apiListener != nil {
-		ioClose(s.apiListener)
-		s.apiListener = nil
+	s.listenMu.Lock()
+	al := s.apiListener
+	s.apiListener = nil
+	s.listenMu.Unlock()
+	if al != nil {
+		ioClose(al)
 	}
 	if cfg.APIListen == "" {
 		return nil
@@ -797,7 +819,9 @@ func (s *Server) reloadAPIListen(cfg *config.File) error {
 		ioClose(l)
 		return fmt.Errorf("reload api listen goroutine: %w", err)
 	}
+	s.listenMu.Lock()
 	s.apiListener = l
+	s.listenMu.Unlock()
 	return nil
 }
 
@@ -847,6 +871,8 @@ func (s *Server) maintenanceLoop() {
 
 // Start brings up listeners, maintenance, and config-driven tunnels.
 func (s *Server) Start() error {
+	// Set before any serving goroutine starts; read concurrently by API handlers.
+	s.started = time.Now()
 	if s.cfg.MuxListen != "" {
 		c, _ := s.getConfig()
 		if err := s.startMuxListen(c, s.cfg.MuxListen); err != nil {
@@ -867,7 +893,9 @@ func (s *Server) Start() error {
 			ioClose(l)
 			return err
 		}
+		s.listenMu.Lock()
 		s.apiListener = l
+		s.listenMu.Unlock()
 	}
 	if err := s.loadTunnels(s.cfg); err != nil {
 		return err
@@ -875,20 +903,20 @@ func (s *Server) Start() error {
 	if err := s.g.Go(s.maintenanceLoop); err != nil {
 		return err
 	}
-	s.started = time.Now()
 	return nil
 }
 
 // Shutdown stops listeners, tunnels, sessions, and forwarders in that order.
 func (s *Server) Shutdown() error {
-	if s.muxListener != nil {
-		ioClose(s.muxListener)
-		s.muxListener = nil
-		s.l = nil
+	s.listenMu.Lock()
+	ml, al := s.muxListener, s.apiListener
+	s.muxListener, s.l, s.apiListener = nil, nil, nil
+	s.listenMu.Unlock()
+	if ml != nil {
+		ioClose(ml)
 	}
-	if s.apiListener != nil {
-		ioClose(s.apiListener)
-		s.apiListener = nil
+	if al != nil {
+		ioClose(al)
 	}
 	// Snapshot all listeners and tunnels before stopping.
 	s.mu.RLock()
@@ -951,12 +979,15 @@ func (s *Server) Shutdown() error {
 func (s *Server) ReloadConfig(cfg *config.File) error {
 	s.reloadMu.Lock()
 	defer s.reloadMu.Unlock()
-	// Skip reload when config is identical to the last applied snapshot.
+	// Skip reload when config is identical to the last successfully applied
+	// snapshot; remember it only on success so a failed reload can be retried
+	// with the same config.
+	var cfgJSON []byte
 	if b, err := json.Marshal(cfg); err == nil {
 		if bytes.Equal(s.lastConfigJSON, b) {
 			return nil
 		}
-		s.lastConfigJSON = b
+		cfgJSON = b
 	}
 	var errs []error
 	// 1. Build new TLS config; retain old one on failure.
@@ -966,30 +997,37 @@ func (s *Server) ReloadConfig(cfg *config.File) error {
 		newTLSCfg = nil
 		errs = append(errs, fmt.Errorf("reload TLS config: %w", err))
 	}
-	// 2. Mark all existing sessions as stale so they age out when idle.
-	s.markSessionsStale()
-	// 3. Reload listeners when addresses/limits change.
-	if err := s.reloadMuxListen(cfg); err != nil {
-		errs = append(errs, err)
-	}
-	if err := s.reloadAPIListen(cfg); err != nil {
-		errs = append(errs, err)
-	}
-	// 4. Sync config-driven tunnels.
-	if err := s.loadTunnels(cfg); err != nil {
-		errs = append(errs, err)
-	}
-	// 5. Atomically swap config; retain old TLS config if reload failed.
+	// 2. Swap the config snapshot first so that listeners or sessions
+	// (re)created by the following steps observe the new config and TLS
+	// material rather than the old ones.
 	s.cfgMu.Lock()
+	old := s.cfg
 	s.cfg = cfg
 	if newTLSCfg != nil {
 		s.tlscfg = newTLSCfg
 	}
 	s.muxDialer = s.buildMuxDialer(cfg, s.tlscfg)
 	s.cfgMu.Unlock()
+	// 3. Mark all existing sessions as stale so they age out when idle.
+	s.markSessionsStale()
+	// 4. Reload listeners when addresses/limits change.
+	if err := s.reloadMuxListen(old, cfg); err != nil {
+		errs = append(errs, err)
+	}
+	if err := s.reloadAPIListen(old, cfg); err != nil {
+		errs = append(errs, err)
+	}
+	// 5. Sync config-driven tunnels.
+	if err := s.loadTunnels(cfg); err != nil {
+		errs = append(errs, err)
+	}
 	s.recentEvents.Add(time.Now(), "config loaded")
 	slog.Notice("config loaded")
-	return errors.Join(errs...)
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+	s.lastConfigJSON = cfgJSON
+	return nil
 }
 
 // ListenerStats reports active sessions and mux handshakes still in progress.

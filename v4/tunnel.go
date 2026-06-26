@@ -32,6 +32,8 @@ type tunnel struct {
 	ss            mux.Session
 	idleSince     time.Time // when ss became stream-less (zero = not idle)
 	stale         bool      // marked after config reload; evicted when idle
+	idleEvicted   bool      // last close was an intentional idle eviction; skip auto-redial
+	lastIdentity  string    // peer identity of the most recent session (kept after close)
 	closeSig      chan struct{}
 	stopOnce      sync.Once
 	redialSig     chan struct{}
@@ -136,6 +138,14 @@ func (t *tunnel) tagValue() string {
 	return t.tag
 }
 
+// lastIdentityValue returns the peer identity of the most recent session,
+// which is retained after the session closes for dial-on-demand routing.
+func (t *tunnel) lastIdentityValue() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.lastIdentity
+}
+
 // Start launches the outbound redial loop for a config-driven tunnel.
 func (t *tunnel) Start() error {
 	if t.dialAddr != "" {
@@ -147,21 +157,27 @@ func (t *tunnel) Start() error {
 }
 
 // Stop closes the current session once and signals the run loop to exit.
+// The session is closed but not cleared here: the per-session watcher runs
+// finalizeSession, which owns all accounting (numSessions, metrics flush).
 func (t *tunnel) Stop() error {
 	t.stopOnce.Do(func() {
 		close(t.closeSig)
-		t.mu.Lock()
-		defer t.mu.Unlock()
-		if t.ss != nil {
-			ioClose(t.ss)
-			t.ss = nil
-		}
+		t.mu.RLock()
+		ss := t.ss
 		tag := t.tag
+		t.mu.RUnlock()
+		if ss != nil && !ss.IsClosed() {
+			_ = ss.Close()
+		}
 		slog.Debugf("%s: stop", tag)
 	})
 	return nil
 }
 
+// checkIdle evicts stale or idle sessions by closing them.  It never clears
+// t.ss itself: for outbound sessions the per-session watcher runs
+// finalizeSession, and for inbound sessions serveSession's defer does the
+// accounting, so closing is the only action required here.
 func (t *tunnel) checkIdle() {
 	cfg, _ := t.getConfig()
 	idleTimeout := cfg.IdleTimeout()
@@ -169,12 +185,7 @@ func (t *tunnel) checkIdle() {
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.ss == nil {
-		return
-	}
-	if t.ss.IsClosed() {
-		t.ss = nil
-		t.idleSince = time.Time{}
+	if t.ss == nil || t.ss.IsClosed() {
 		return
 	}
 	// evict stale sessions immediately when idle (no active streams)
@@ -187,8 +198,6 @@ func (t *tunnel) checkIdle() {
 		tag := t.tag
 		slog.Infof("%s: stale session evicted after reload", tag)
 		_ = t.ss.Close()
-		t.ss = nil
-		t.idleSince = time.Time{}
 		return
 	}
 	// update idle tracking
@@ -203,9 +212,10 @@ func (t *tunnel) checkIdle() {
 	if idleTimeout > 0 && !t.idleSince.IsZero() && now.Sub(t.idleSince) >= idleTimeout {
 		tag := t.tag
 		slog.Infof("%s: idle session evicted after %v", tag, now.Sub(t.idleSince))
+		// Suppress the automatic redial: the session is intentionally dropped
+		// and OpenStream dials on demand when traffic resumes.
+		t.idleEvicted = true
 		_ = t.ss.Close()
-		t.ss = nil
-		t.idleSince = time.Time{}
 	}
 }
 
@@ -216,7 +226,8 @@ func (t *tunnel) redial() {
 	}
 	defer t.s.ctx.cancel(ctx)
 	_, err := t.dial(ctx)
-	if err != nil && !errors.Is(err, ErrNoDialAddress) && !errors.Is(err, ErrDialInProgress) {
+	if err != nil && !errors.Is(err, ErrNoDialAddress) &&
+		!errors.Is(err, ErrDialInProgress) && !errors.Is(err, ErrTunnelStopped) {
 		redialCount := t.redialCount + 1
 		if redialCount > t.redialCount {
 			t.redialCount = redialCount
@@ -275,11 +286,12 @@ func (t *tunnel) schedule() <-chan time.Time {
 
 func (t *tunnel) run() {
 	defer func() {
-		t.mu.Lock()
-		defer t.mu.Unlock()
-		if t.ss != nil {
-			ioClose(t.ss)
-			t.ss = nil
+		// Close (but do not clear) the session; finalizeSession does the rest.
+		t.mu.RLock()
+		ss := t.ss
+		t.mu.RUnlock()
+		if ss != nil && !ss.IsClosed() {
+			_ = ss.Close()
 		}
 	}()
 	for {
@@ -306,9 +318,6 @@ func (t *tunnel) watchIdleSession(ss mux.Session) {
 	closeCh := ss.CloseChan()
 	groupCloseCh := t.s.g.CloseC()
 
-	cfg, _ := t.getConfig()
-	idleTimeout := cfg.IdleTimeout()
-
 	// idle tracks whether we already know NumStreams==0 (idleCh just fired) so
 	// we can skip the outer wait and go straight to (re)starting the timer.
 	idle := false
@@ -330,6 +339,9 @@ func (t *tunnel) watchIdleSession(ss mux.Session) {
 		if ss.IsClosed() {
 			return
 		}
+		// Re-read the timeout each round so config reloads take effect.
+		cfg, _ := t.getConfig()
+		idleTimeout := cfg.IdleTimeout()
 		if idleTimeout <= 0 {
 			// No idle timeout configured; only stale eviction needed (handled above).
 			continue
@@ -358,43 +370,60 @@ func (t *tunnel) watchIdleSession(ss mux.Session) {
 	}
 }
 
-func (t *tunnel) addSession(ss mux.Session, setupDur time.Duration) {
+// addSession installs ss as the tunnel's active session and registers the
+// idle watcher.  It returns false (closing nothing) when the tunnel has been
+// stopped, in which case the caller must close ss itself.  Every session
+// accepted here is finalized exactly once by finalizeSession.
+func (t *tunnel) addSession(ss mux.Session, setupDur time.Duration) bool {
 	now := time.Now()
 	t.mu.Lock()
-	hadConn := t.ss != nil && !t.ss.IsClosed()
+	select {
+	case <-t.closeSig:
+		// Stop() won the race against an in-flight dial; reject the session.
+		t.mu.Unlock()
+		return false
+	default:
+	}
+	if t.ss != nil && !t.ss.IsClosed() {
+		// Should not happen (dials are serialized); let its watcher finalize it.
+		_ = t.ss.Close()
+	}
 	t.ss = ss
 	t.updateTagLocked(ss, nil)
 	tag := t.tag
 	t.stale = false
-	if !hadConn {
-		t.s.stats.numSessions.Add(1)
-		t.s.stats.numSessionsCreated.Add(1)
-	}
+	t.idleEvicted = false
+	t.idleSince = time.Time{}
+	t.lastIdentity = ss.PeerIdentity()
 	t.lastChanged = now
 	t.mu.Unlock()
+	t.s.stats.numSessions.Add(1)
+	t.s.stats.numSessionsCreated.Add(1)
 
 	msg := fmt.Sprintf("%s: session established (setup: %s)", tag, formats.Duration(setupDur))
 	slog.Notice(msg)
 	t.s.recentEvents.Add(now, msg)
 	_ = t.s.g.Go(func() { t.watchIdleSession(ss) })
+	return true
 }
 
-func (t *tunnel) delSession(ss mux.Session) {
+// finalizeSession does the one-time accounting for a closed session: flushing
+// its metrics, decrementing counters, logging, and (when ss is still the
+// tunnel's current session) clearing tunnel state and scheduling a redial.
+// It must be called exactly once per session installed by addSession.
+func (t *tunnel) finalizeSession(ss mux.Session) {
 	now := time.Now()
 	t.mu.Lock()
-	if t.ss != ss {
-		t.mu.Unlock()
-		return
+	current := t.ss == ss
+	idleEvicted := t.idleEvicted
+	if current {
+		t.ss = nil
+		t.idleSince = time.Time{}
+		t.idleEvicted = false
+		t.lastChanged = now
 	}
 	tag := t.tag
-	msg := fmt.Sprintf("%s: session closed", tag)
-	t.s.flushSessionMetrics(t, ss)
-	t.ss = nil
-	t.idleSince = time.Time{}
-	t.s.stats.numSessions.Add(^uint32(0))
-	t.s.stats.numSessionsFinalized.Add(1)
-	t.lastChanged = now
-	if t.dialAddr != "" {
+	if current && !idleEvicted && t.dialAddr != "" {
 		select {
 		case t.redialSig <- struct{}{}:
 		default:
@@ -402,6 +431,10 @@ func (t *tunnel) delSession(ss mux.Session) {
 	}
 	t.mu.Unlock()
 
+	t.s.flushSessionMetrics(ss)
+	t.s.stats.numSessions.Add(^uint32(0))
+	t.s.stats.numSessionsFinalized.Add(1)
+	msg := fmt.Sprintf("%s: session closed", tag)
 	slog.Notice(msg)
 	t.s.recentEvents.Add(now, msg)
 }
@@ -415,10 +448,20 @@ func (t *tunnel) getSession() mux.Session {
 	return t.ss
 }
 
+// OpenStream opens a stream over the active session.  When no session is
+// active (e.g. after an idle eviction or before the redial loop reconnects),
+// it dials a new session on demand.  Dial-on-demand applies regardless of
+// NoRedial, which only disables the background redial loop.
 func (t *tunnel) OpenStream(ctx context.Context) (net.Conn, error) {
 	ss := t.getSession()
 	if ss == nil {
-		return nil, ErrNoSession
+		if t.dialAddr == "" {
+			return nil, ErrNoSession
+		}
+		var err error
+		if ss, err = t.dial(ctx); err != nil {
+			return nil, err
+		}
 	}
 	start := time.Now()
 	conn, err := ss.Open(ctx)
@@ -447,17 +490,17 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.mu.Lock()
-	t.updateTagLocked(ss, nil)
-	t.mu.Unlock()
-
-	t.addSession(ss, time.Since(start))
-	// When the session closes, trigger a redial.
+	if !t.addSession(ss, time.Since(start)) {
+		_ = ss.Close()
+		return nil, ErrTunnelStopped
+	}
+	// Finalize the session exactly once when it closes (accounting + redial).
 	if err := t.s.g.Go(func() {
-		defer t.delSession(ss)
 		<-ss.CloseChan()
+		t.finalizeSession(ss)
 	}); err != nil {
-		t.delSession(ss)
+		_ = ss.Close()
+		t.finalizeSession(ss)
 		return nil, err
 	}
 	// Close ss when the group shuts down, to unblock the accept loop.

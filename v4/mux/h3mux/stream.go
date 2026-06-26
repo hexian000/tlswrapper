@@ -4,6 +4,7 @@
 package h3mux
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"sync/atomic"
@@ -23,16 +24,41 @@ type quicConn struct {
 	localAddr  net.Addr
 	remoteAddr net.Addr
 
+	// stripMarker is set on accepted streams: the 1-byte open marker written
+	// by the opener's Open() is consumed before the first application read.
+	// Doing this lazily (instead of in Accept) keeps the session-level accept
+	// loop from blocking on a stream whose marker has not arrived yet.
+	stripMarker bool
+
 	// onClose is called exactly once when Close is called.
 	onClose   func(err error)
 	closeOnce atomic.Bool
 }
 
+func (c *quicConn) Read(b []byte) (int, error) {
+	if c.stripMarker {
+		var marker [1]byte
+		if _, err := io.ReadFull(c.Stream, marker[:]); err != nil {
+			return 0, fmt.Errorf("open marker read: %w", err)
+		}
+		c.stripMarker = false
+	}
+	return c.Stream.Read(b)
+}
+
 func (c *quicConn) LocalAddr() net.Addr  { return c.localAddr }
 func (c *quicConn) RemoteAddr() net.Addr { return c.remoteAddr }
 
-// Close closes the send direction of the stream and fires the onClose callback.
+// CloseWrite half-closes the send direction (sends FIN); reads continue.
+// quic.Stream.Close only closes the send side, matching CloseWrite semantics.
+func (c *quicConn) CloseWrite() error {
+	return c.Stream.Close()
+}
+
+// Close fully terminates the stream: it closes the send direction and stops
+// receiving (matching net.TCPConn.Close semantics), then fires onClose once.
 func (c *quicConn) Close() error {
+	c.Stream.CancelRead(0)
 	err := c.Stream.Close()
 	if c.closeOnce.CompareAndSwap(false, true) {
 		if c.onClose != nil {
@@ -85,6 +111,15 @@ func (c *countingConn) Write(b []byte) (int, error) {
 		c.errored.Store(true)
 	}
 	return n, err
+}
+
+// CloseWrite half-closes the write side when the underlying conn supports it
+// (quicConn always does); otherwise it falls back to a full Close.
+func (c *countingConn) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return c.Close()
 }
 
 func (c *countingConn) Close() error {
