@@ -48,12 +48,22 @@ class ScenarioResult:
     duration_seconds: float
 
 
-SCENARIOS = (
+_SCENARIOS_ALL = (
     Scenario("uplink", "Uplink"),
     Scenario("downlink", "Downlink"),
     Scenario("bidir", "Bidirectional"),
     Scenario("parallel", "Parallel Bidirectional"),
 )
+_SCENARIOS_SKIP_PARALLEL = {"h3mux"}
+
+
+def get_scenarios(protocol: str) -> Sequence[Scenario]:
+    skip_parallel = protocol in _SCENARIOS_SKIP_PARALLEL
+    return [
+        scenario
+        for scenario in _SCENARIOS_ALL
+        if not (skip_parallel and scenario.name == "parallel")
+    ]
 
 
 def log(message: str) -> None:
@@ -672,7 +682,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         time.sleep(args.startup_wait)
 
-        for scenario in SCENARIOS:
+        scenarios = get_scenarios(args.protocol)
+        for scenario in scenarios:
             commands = build_scenario_commands(
                 iperf3, scenario, args.duration, args.parallel)
             timeout_seconds = command_timeout_seconds(
