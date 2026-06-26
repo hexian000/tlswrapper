@@ -37,19 +37,25 @@ type h3Session struct {
 
 	closedCh  chan struct{}
 	closeOnce sync.Once
-	metrics   mux.SessionMetrics
+	metrics   *mux.SessionMetrics
 	idleCh    chan struct{}
 }
 
 // newH3Session creates an h3Session and starts its lifecycle goroutine.
 // conn and ctrl must both be alive. ctrl is the control stream (stream 0).
-func newH3Session(conn *quic.Conn, ctrl *quic.Stream, peerIdentity string, peerRejectsOpen bool, cfg *Config) *h3Session {
+// metrics may carry wire-byte counters already accumulated by the wire tracer
+// during connection setup; nil allocates a fresh set.
+func newH3Session(conn *quic.Conn, ctrl *quic.Stream, peerIdentity string, peerRejectsOpen bool, cfg *Config, metrics *mux.SessionMetrics) *h3Session {
+	if metrics == nil {
+		metrics = &mux.SessionMetrics{}
+	}
 	s := &h3Session{
 		conn:            conn,
 		ctrlStream:      ctrl,
 		cfg:             cfg,
 		peerIdentity:    peerIdentity,
 		peerRejectsOpen: peerRejectsOpen,
+		metrics:         metrics,
 		closedCh:        make(chan struct{}),
 		idleCh:          make(chan struct{}, 1),
 	}
@@ -98,7 +104,7 @@ func (s *h3Session) wrapStream(qs *quic.Stream, stripMarker bool) net.Conn {
 	inner.stripMarker = stripMarker
 	return &countingConn{
 		Conn:    inner,
-		metrics: &s.metrics,
+		metrics: s.metrics,
 	}
 }
 
@@ -177,7 +183,7 @@ func (s *h3Session) CloseChan() <-chan struct{} { return s.closedCh }
 func (s *h3Session) IdleChan() <-chan struct{} { return s.idleCh }
 
 // Stats returns the session's live metrics.
-func (s *h3Session) Stats() *mux.SessionMetrics { return &s.metrics }
+func (s *h3Session) Stats() *mux.SessionMetrics { return s.metrics }
 
 // PeerIdentity returns the remote identity claim from the handshake.
 func (s *h3Session) PeerIdentity() string { return s.peerIdentity }

@@ -4,6 +4,7 @@
 package h3mux_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -347,6 +348,92 @@ func TestH3MuxWrapperDialAndListen(t *testing.T) {
 
 	if got := cliSess.PeerIdentity(); got != "" {
 		t.Logf("cli.PeerIdentity() = %q", got)
+	}
+}
+
+// TestH3MuxWireMetrics verifies that sessions created via Dial and ListenMux
+// accumulate QUIC packet sizes into the WireLength counters, and that the
+// wire length covers at least the payload bytes transferred.
+func TestH3MuxWireMetrics(t *testing.T) {
+	serverTLS, clientTLS := generateSelfSignedTLS(t)
+
+	serverCfg := &Config{TLSConfig: serverTLS, LocalID: "srv"}
+	clientCfg := &Config{TLSConfig: clientTLS, LocalID: "cli"}
+
+	ml, err := ListenMux("127.0.0.1:0", serverCfg)
+	if err != nil {
+		t.Fatal("ListenMux:", err)
+	}
+	t.Cleanup(func() { _ = ml.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+
+	type srvResult struct {
+		sess mux.Session
+		err  error
+	}
+	srvCh := make(chan srvResult, 1)
+	go func() {
+		ss, err := ml.Accept()
+		if err != nil {
+			srvCh <- srvResult{nil, err}
+			return
+		}
+		err = ss.Handshake(ctx)
+		srvCh <- srvResult{ss, err}
+	}()
+
+	cliSess, err := Dial(ctx, ml.Addr().String(), clientCfg)
+	if err != nil {
+		t.Fatal("Dial:", err)
+	}
+	t.Cleanup(func() { _ = cliSess.Close() })
+	res := <-srvCh
+	if res.err != nil {
+		t.Fatal("Accept+Handshake:", res.err)
+	}
+	srvSess := res.sess
+	t.Cleanup(func() { _ = srvSess.Close() })
+
+	acceptCh := make(chan net.Conn, 1)
+	go func() {
+		conn, err := srvSess.Accept()
+		if err != nil {
+			t.Error("srv.Accept:", err)
+			close(acceptCh)
+			return
+		}
+		acceptCh <- conn
+	}()
+	cliConn, err := cliSess.Open(ctx)
+	if err != nil {
+		t.Fatal("cli.Open:", err)
+	}
+	srvConn, ok := <-acceptCh
+	if !ok {
+		t.FailNow()
+	}
+	payload := bytes.Repeat([]byte("wire metrics payload "), 1024)
+	transferAndVerify(t, cliConn, srvConn, payload)
+	_ = cliConn.Close()
+	_ = srvConn.Close()
+
+	for name, m := range map[string]*mux.SessionMetrics{"client": cliSess.Stats(), "server": srvSess.Stats()} {
+		if m == nil {
+			t.Fatalf("%s: Stats() = nil", name)
+		}
+		sent, received := m.WireLengthSent.Load(), m.WireLengthReceived.Load()
+		if sent == 0 || received == 0 {
+			t.Fatalf("%s: WireLengthSent=%d WireLengthReceived=%d, want both > 0", name, sent, received)
+		}
+	}
+	// The sender's wire bytes must cover at least the payload it pushed.
+	if got := cliSess.Stats().WireLengthSent.Load(); got < uint64(len(payload)) {
+		t.Fatalf("client WireLengthSent = %d, want >= %d", got, len(payload))
+	}
+	if got := srvSess.Stats().WireLengthReceived.Load(); got < uint64(len(payload)) {
+		t.Fatalf("server WireLengthReceived = %d, want >= %d", got, len(payload))
 	}
 }
 

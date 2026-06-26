@@ -81,8 +81,8 @@ func newQuicConn(s *quic.Stream, localAddr, remoteAddr net.Addr, onClose func(er
 
 // countingConn wraps a net.Conn and updates SessionMetrics on Read/Write/Close.
 // BytesSent/BytesReceived track application-layer bytes.
-// WireLengthSent/WireLengthReceived are left at zero: QUIC framing and
-// encryption overhead are not accessible at this level.
+// WireLengthSent/WireLengthReceived are not touched here: they are accumulated
+// at the QUIC packet level by the wire tracer (see wiretrace.go).
 // StreamsSucceeded/StreamsFailed are updated on Close based on whether any
 // Read or Write returned a non-EOF error during the stream's lifetime.
 type countingConn struct {

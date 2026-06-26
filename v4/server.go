@@ -49,7 +49,7 @@ type Server struct {
 	// listenMu guards l, muxListener, and apiListener, which are swapped by
 	// config reloads while Stats() reads them from API handler goroutines.
 	listenMu    sync.Mutex
-	l           hlistener.Listener
+	l           acceptStats  // accept counters of the active mux listener
 	muxListener mux.Listener // active mux listener (h2mux or h3mux)
 	apiListener net.Listener
 
@@ -229,7 +229,7 @@ func (s *Server) Stats() (stats ServerStats) {
 	if l != nil {
 		stats.Accepted, stats.Served = l.Stats()
 	} else {
-		// h3mux path: hlistener is not used; read from unified atomic counters.
+		// No mux listener active; read from unified atomic counters.
 		stats.Accepted = s.stats.accepted.Load()
 		stats.Served = s.stats.served.Load()
 	}
@@ -344,7 +344,8 @@ func (s *Server) buildMuxDialer(cfg *config.File, tlscfg *tls.Config) mux.Dialer
 // launches the accept goroutine.
 func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 	var ml mux.Listener
-	var hl hlistener.Listener
+	var lstats acceptStats
+	startupStart, startupRate, startupFull := cfg.ParsedMaxStartups()
 	if cfg.MuxProtocol == "h3mux" {
 		// TLSConfigProvider fetches the current TLS config per connection so
 		// that certificate rotation takes effect without restarting the listener.
@@ -364,14 +365,23 @@ func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 		if err != nil {
 			return err
 		}
-		ml = l
+		// QUIC has no TCP-level accept hook, so session/startup throttling is
+		// applied at the mux session level instead of via hlistener.
+		hml := newHardenedMuxListener(l, hardenedMuxListenerConfig{
+			Start:       uint32(startupStart),
+			Full:        uint32(startupFull),
+			Rate:        float64(startupRate) / 100.0,
+			MaxSessions: uint32(cfg.MaxSessions),
+			Stats:       s.ListenerStats,
+		})
+		ml = hml
+		lstats = hml
 	} else {
 		l, err := s.Listen(addr)
 		if err != nil {
 			return err
 		}
-		startupStart, startupRate, startupFull := cfg.ParsedMaxStartups()
-		hl = hlistener.Wrap(l, &hlistener.Config{
+		hl := hlistener.Wrap(l, &hlistener.Config{
 			Start:       uint32(startupStart),
 			Full:        uint32(startupFull),
 			Rate:        float64(startupRate) / 100.0,
@@ -379,6 +389,7 @@ func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 			Stats:       s.ListenerStats,
 		})
 		ml = s.buildH2MuxListener(hl, cfg)
+		lstats = hl
 	}
 	slog.Noticef("mux listen: %v", ml.Addr())
 	if err := s.g.Go(func() { s.serveMuxListener(ml) }); err != nil {
@@ -387,7 +398,7 @@ func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 	}
 	s.listenMu.Lock()
 	s.muxListener = ml
-	s.l = hl
+	s.l = lstats
 	s.listenMu.Unlock()
 	return nil
 }

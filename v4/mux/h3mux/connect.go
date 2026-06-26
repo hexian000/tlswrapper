@@ -12,9 +12,22 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/qlogwriter"
 
 	"github.com/hexian000/tlswrapper/v4/mux"
 )
+
+// wireMetricsKey is the context key under which ListenMux's ConnContext stores
+// the per-connection *mux.SessionMetrics consumed by the wire tracer and by
+// serverHandshake (via conn.Context()).
+type wireMetricsKey struct{}
+
+// sessionMetricsFromConn returns the metrics attached to conn's context by
+// ListenMux, or nil when the connection was not created through ListenMux.
+func sessionMetricsFromConn(conn *quic.Conn) *mux.SessionMetrics {
+	m, _ := conn.Context().Value(wireMetricsKey{}).(*mux.SessionMetrics)
+	return m
+}
 
 // Dial establishes a new QUIC connection to addr and performs the h3mux
 // client-side handshake.  The returned Session is ready to use.
@@ -22,11 +35,18 @@ import (
 // addr must be a host:port string resolvable as a UDP address.
 // cfg.TLSConfig must not be nil; the h3mux ALPN is added automatically.
 func Dial(ctx context.Context, addr string, cfg *Config) (mux.Session, error) {
-	conn, err := quic.DialAddr(ctx, addr, cfg.tlsClientConfig(), cfg.quicConfig())
+	// The session metrics are allocated up front so the wire tracer can count
+	// packet bytes from the very first handshake packet.
+	metrics := &mux.SessionMetrics{}
+	qcfg := cfg.quicConfig()
+	qcfg.Tracer = func(context.Context, bool, quic.ConnectionID) qlogwriter.Trace {
+		return newWireTrace(metrics)
+	}
+	conn, err := quic.DialAddr(ctx, addr, cfg.tlsClientConfig(), qcfg)
 	if err != nil {
 		return nil, fmt.Errorf("h3mux dial %s: %w", addr, err)
 	}
-	return clientHandshake(ctx, conn, cfg)
+	return clientHandshake(ctx, conn, cfg, metrics)
 }
 
 // NewSession wraps an already-established QUIC connection (server side) and
@@ -49,7 +69,7 @@ func applyHandshakeDeadline(ctx context.Context, ctrl *quic.Stream) {
 
 // clientHandshake opens the control stream, runs the client handshake, and
 // returns an h3Session.
-func clientHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Session, error) {
+func clientHandshake(ctx context.Context, conn *quic.Conn, cfg *Config, metrics *mux.SessionMetrics) (mux.Session, error) {
 	ctrl, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		_ = conn.CloseWithError(0, "handshake failed")
@@ -62,7 +82,7 @@ func clientHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Ses
 		return nil, err
 	}
 	_ = ctrl.SetDeadline(time.Time{})
-	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, cfg), nil
+	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, cfg, metrics), nil
 }
 
 // serverHandshake accepts the control stream, runs the server handshake, and
@@ -80,7 +100,7 @@ func serverHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Ses
 		return nil, err
 	}
 	_ = ctrl.SetDeadline(time.Time{})
-	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, cfg), nil
+	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, cfg, sessionMetricsFromConn(conn)), nil
 }
 
 // Listen creates a QUIC listener on addr using the h3mux server TLS config
@@ -118,22 +138,54 @@ func (h *H3Mux) NewSession(ctx context.Context, conn *quic.Conn) (mux.Session, e
 type H3Listener struct {
 	l   *quic.Listener
 	cfg *Config
+	// tr and pconn are set when the listener was created by ListenMux; they
+	// are owned by the listener and closed together with it.
+	tr    *quic.Transport
+	pconn net.PacketConn
 }
 
 // NewListener wraps l as a mux.Listener that upgrades each accepted QUIC
 // connection using the h3mux server-side handshake with cfg.
+// Listeners created this way report zero wire-length metrics; use ListenMux
+// to get per-session wire byte accounting.
 func NewListener(l *quic.Listener, cfg *Config) *H3Listener {
 	return &H3Listener{l: l, cfg: cfg}
 }
 
-// ListenMux is a convenience wrapper that calls Listen and wraps the result
-// with NewListener.
+// ListenMux listens for QUIC connections on addr and returns a mux.Listener.
+// It owns its UDP socket and QUIC transport so that each accepted connection
+// carries per-session wire-byte metrics: ConnContext attaches a fresh
+// SessionMetrics to the connection context and the wire tracer accumulates
+// QUIC packet sizes into it.
 func ListenMux(addr string, cfg *Config) (*H3Listener, error) {
-	l, err := Listen(addr, cfg)
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
 	}
-	return NewListener(l, cfg), nil
+	pconn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return nil, err
+	}
+	tr := &quic.Transport{
+		Conn: pconn,
+		ConnContext: func(ctx context.Context, _ *quic.ClientInfo) (context.Context, error) {
+			return context.WithValue(ctx, wireMetricsKey{}, &mux.SessionMetrics{}), nil
+		},
+	}
+	qcfg := cfg.quicConfig()
+	qcfg.Tracer = func(ctx context.Context, _ bool, _ quic.ConnectionID) qlogwriter.Trace {
+		if m, ok := ctx.Value(wireMetricsKey{}).(*mux.SessionMetrics); ok {
+			return newWireTrace(m)
+		}
+		return nil
+	}
+	l, err := tr.Listen(cfg.tlsServerConfig(), qcfg)
+	if err != nil {
+		_ = tr.Close()
+		_ = pconn.Close()
+		return nil, err
+	}
+	return &H3Listener{l: l, cfg: cfg, tr: tr, pconn: pconn}, nil
 }
 
 // compile-time interface checks.
@@ -284,5 +336,16 @@ func (l *H3Listener) Accept() (mux.Session, error) {
 // Addr returns the listener's local network address.
 func (l *H3Listener) Addr() net.Addr { return l.l.Addr() }
 
-// Close closes the underlying QUIC listener.
-func (l *H3Listener) Close() error { return l.l.Close() }
+// Close closes the underlying QUIC listener, and (when created by ListenMux)
+// the owned transport and UDP socket, terminating existing connections to
+// match the quic.ListenAddr single-use behaviour.
+func (l *H3Listener) Close() error {
+	err := l.l.Close()
+	if l.tr != nil {
+		_ = l.tr.Close()
+	}
+	if l.pconn != nil {
+		_ = l.pconn.Close()
+	}
+	return err
+}
