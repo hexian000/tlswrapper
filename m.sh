@@ -22,8 +22,6 @@ GOFLAGS="${GOFLAGS} -buildmode=exe -mod=readonly -trimpath -v"
 GCFLAGS="${GCFLAGS}"
 LDFLAGS="-X github.com/hexian000/tlswrapper/v4.Version=${VERSION}"
 
-cd "${MODROOT}"
-go mod vendor
 case "$1" in
 "c")
     # clean artifacts
@@ -32,6 +30,8 @@ case "$1" in
 "p")
     # build for profiling
     set -x
+    cd "${MODROOT}"
+    go mod vendor
     CGO_ENABLED=0 \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/" "${PACKAGE}"
@@ -40,8 +40,10 @@ case "$1" in
     ;;
 "r")
     # build for release
-    LDFLAGS="${LDFLAGS} -s -w"
     set -x
+    cd "${MODROOT}"
+    go mod vendor
+    LDFLAGS="${LDFLAGS} -s -w"
     CGO_ENABLED=0 \
         go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/" "${PACKAGE}"
@@ -49,9 +51,11 @@ case "$1" in
     ;;
 "d")
     # build for debug
+    set -x
+    cd "${MODROOT}"
+    go mod vendor
     GOFLAGS="${GOFLAGS} -race"
     GCFLAGS="${GCFLAGS} -N -l"
-    set -x
     go fmt ./... && go mod tidy
     go test ./...
     CGO_ENABLED=1 \
@@ -61,11 +65,15 @@ case "$1" in
     ;;
 "t")
     set -x
+    cd "${MODROOT}"
+    go mod vendor
     go fmt ./... && go mod tidy
     go test ./...
     ;;
 *)
     set -x
+    cd "${MODROOT}"
+    go mod vendor
     go build ${GOFLAGS} -gcflags "${GCFLAGS}" -ldflags "${LDFLAGS}" \
         -o "${OUTDIR}/" "${PACKAGE}"
     ls -lh "${OUTDIR}/"
