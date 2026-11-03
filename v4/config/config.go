@@ -39,6 +39,8 @@ type TLS struct {
 // SessionWindow and StreamWindow control the receive window sizes for
 // the transport-level flow control. 0 means use the internal default.
 type Mux struct {
+	// Optional best-effort UDP relay; compatible with multiplexd's config subset.
+	LossyMux LossyMux `json:"lossymux"`
 	// TCP socket options for the mux socket
 	TCP TCP `json:"tcp"`
 	// Transport-level connection receive window size in bytes (0 = internal default).
@@ -60,6 +62,15 @@ type Mux struct {
 	SendTimeout int `json:"send_timeout"`
 	// Session idle eviction timeout in seconds (0 = disabled)
 	IdleTimeout int `json:"idle_timeout"`
+}
+
+// LossyMux controls UDP listeners and the bilateral lossymux hello extension.
+type LossyMux struct {
+	Enabled bool `json:"enabled"`
+	// IdleTimeout is seconds without traffic in either direction before expiry.
+	IdleTimeout int `json:"idle_timeout"`
+	// Queue bounds datagrams waiting in each application-side session queue.
+	Queue int `json:"queue"`
 }
 
 // TCP holds TCP socket options.
@@ -134,6 +145,7 @@ var Default = File{
 	MaxStartups: "10:30:60",
 
 	Mux: Mux{
+		LossyMux: LossyMux{IdleTimeout: 60, Queue: 64},
 		TCP: TCP{
 			KeepAlive: false,
 			NoDelay:   true,

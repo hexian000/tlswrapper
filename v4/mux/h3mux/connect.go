@@ -35,6 +35,7 @@ func sessionMetricsFromConn(conn *quic.Conn) *mux.SessionMetrics {
 // addr must be a host:port string resolvable as a UDP address.
 // cfg.TLSConfig must not be nil; the h3mux ALPN is added automatically.
 func Dial(ctx context.Context, addr string, cfg *Config) (mux.Session, error) {
+	cfg = cfg.currentLossyMux()
 	// The session metrics are allocated up front so the wire tracer can count
 	// packet bytes from the very first handshake packet.
 	metrics := &mux.SessionMetrics{}
@@ -76,31 +77,32 @@ func clientHandshake(ctx context.Context, conn *quic.Conn, cfg *Config, metrics 
 		return nil, fmt.Errorf("%w: open control stream: %v", ErrHandshakeFailed, err)
 	}
 	applyHandshakeDeadline(ctx, ctrl)
-	peerID, peerRejectsOpen, err := doClientHandshake(ctrl, cfg.LocalID, cfg.RejectInbound)
+	peerID, peerRejectsOpen, peerLossyMux, err := doClientHandshake(ctrl, cfg.LocalID, cfg.RejectInbound, cfg.LossyMux)
 	if err != nil {
 		_ = conn.CloseWithError(0, "handshake failed")
 		return nil, err
 	}
 	_ = ctrl.SetDeadline(time.Time{})
-	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, cfg, metrics), nil
+	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, peerLossyMux, true, cfg, metrics), nil
 }
 
 // serverHandshake accepts the control stream, runs the server handshake, and
 // returns an h3Session.
 func serverHandshake(ctx context.Context, conn *quic.Conn, cfg *Config) (mux.Session, error) {
+	cfg = cfg.currentLossyMux()
 	ctrl, err := conn.AcceptStream(ctx)
 	if err != nil {
 		_ = conn.CloseWithError(0, "handshake failed")
 		return nil, fmt.Errorf("%w: accept control stream: %v", ErrHandshakeFailed, err)
 	}
 	applyHandshakeDeadline(ctx, ctrl)
-	peerID, peerRejectsOpen, err := doServerHandshake(ctrl, cfg.LocalID, cfg.RejectInbound)
+	peerID, peerRejectsOpen, peerLossyMux, err := doServerHandshake(ctrl, cfg.LocalID, cfg.RejectInbound, cfg.LossyMux)
 	if err != nil {
 		_ = conn.CloseWithError(0, "handshake failed")
 		return nil, err
 	}
 	_ = ctrl.SetDeadline(time.Time{})
-	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, cfg, sessionMetricsFromConn(conn)), nil
+	return newH3Session(conn, ctrl, peerID, peerRejectsOpen, peerLossyMux, false, cfg, sessionMetricsFromConn(conn)), nil
 }
 
 // Listen creates a QUIC listener on addr using the h3mux server TLS config
@@ -380,4 +382,13 @@ func (l *H3Listener) Close() error {
 		_ = l.pconn.Close()
 	}
 	return err
+}
+
+func (s *h3InboundSession) Datagrams() *mux.DatagramChannel {
+	if s.handshakeDone.Load() && s.ss != nil {
+		if ds, ok := s.ss.(mux.DatagramSession); ok {
+			return ds.Datagrams()
+		}
+	}
+	return nil
 }

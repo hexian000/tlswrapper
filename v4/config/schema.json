@@ -40,11 +40,11 @@
             "default": "h2mux"
         },
         "listen": {
-            "description": "Local TCP address to accept application traffic on.",
+            "description": "Local TCP address to accept application traffic on; UDP uses the same bound address when mux.lossymux.enabled is true.",
             "type": "string"
         },
         "connect": {
-            "description": "Forwarding target address for streams arriving from inbound ephemeral tunnels.",
+            "description": "Forwarding target address for inbound TCP streams and, when negotiated, UDP flows.",
             "type": "string"
         },
         "loglevel": {
@@ -200,6 +200,32 @@
                     "minimum": 0,
                     "maximum": 86400,
                     "default": 0
+                },
+                "lossymux": {
+                    "description": "Optional best-effort UDP relay. Active only when both peers offer the lossymux hello extension.",
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "description": "Offer lossymux and bind UDP beside listen and identity.listen; peer flows use connect over UDP.",
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "idle_timeout": {
+                            "description": "Seconds without a datagram in either direction before a UDP flow expires.",
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 86400,
+                            "default": 60
+                        },
+                        "queue": {
+                            "description": "Maximum messages waiting in each application-side session datagram queue. Transport buffers are additional.",
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535,
+                            "default": 64
+                        }
+                    },
+                    "additionalProperties": true
                 }
             },
             "additionalProperties": false

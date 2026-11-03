@@ -14,6 +14,7 @@ import (
 
 // ctxKeyTrackRPC is used as a context key to mark RPCs that should be tracked.
 type ctxKeyTrackRPC struct{}
+type datagramRPC struct{}
 
 // muxStatsHandler implements grpc/stats.Handler.  It filters events to the
 // Stream RPC only (ignoring Control) and accumulates them into metrics.
@@ -32,12 +33,25 @@ func (h *muxStatsHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) co
 	if info.FullMethodName == muxpb.Mux_Stream_FullMethodName {
 		return context.WithValue(ctx, ctxKeyTrackRPC{}, struct{}{})
 	}
+	if info.FullMethodName == muxpb.Mux_Datagrams_FullMethodName {
+		return context.WithValue(ctx, ctxKeyTrackRPC{}, datagramRPC{})
+	}
 	return ctx
 }
 
 // HandleRPC updates metrics for tracked (Stream) RPCs.
 func (h *muxStatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 	if ctx.Value(ctxKeyTrackRPC{}) == nil {
+		return
+	}
+
+	if _, ok := ctx.Value(ctxKeyTrackRPC{}).(datagramRPC); ok {
+		switch v := s.(type) {
+		case *stats.InPayload:
+			h.metrics.WireLengthReceived.Add(uint64(v.WireLength))
+		case *stats.OutPayload:
+			h.metrics.WireLengthSent.Add(uint64(v.WireLength))
+		}
 		return
 	}
 	switch v := s.(type) {

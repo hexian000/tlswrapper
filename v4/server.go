@@ -67,7 +67,8 @@ type Server struct {
 	muxListener mux.Listener // active mux listener (h2mux or h3mux)
 	apiListener net.Listener
 
-	f forwarder.Forwarder
+	f   forwarder.Forwarder
+	udp *udpRelay
 
 	recentEvents eventlog.Recent
 
@@ -87,7 +88,10 @@ type Server struct {
 	reloadMu       sync.Mutex
 	lastConfigJSON []byte
 
-	started time.Time
+	datagramMu      sync.Mutex
+	closedDatagrams map[string]mux.DatagramStats
+	activeDatagrams map[mux.Session]*mux.SessionMetrics
+	started         time.Time
 
 	stats struct {
 		numSessions          atomic.Uint32
@@ -111,6 +115,8 @@ func NewServer(cfg *config.File) (*Server, error) {
 	g := routines.NewGroup()
 	s := &Server{
 		cfg:             cfg,
+		closedDatagrams: make(map[string]mux.DatagramStats),
+		activeDatagrams: make(map[mux.Session]*mux.SessionMetrics),
 		identityTunnels: make([]*tunnel, 0),
 		identities:      make(map[string]*identityListener),
 		acceptedTunnels: make(map[mux.Session]*tunnel),
@@ -121,6 +127,7 @@ func NewServer(cfg *config.File) (*Server, error) {
 		recentEvents: eventlog.NewRecent(recentEventsSize),
 		g:            g,
 	}
+	s.udp = newUDPRelay(s)
 	s.ctx.timeout = func() time.Duration {
 		cfg, _ := s.getConfig()
 		return cfg.ConnectTimeout()
@@ -198,6 +205,19 @@ func (s *Server) markSessionsStale() {
 // the server-level totals so Mux/TCP Traffic survive session reconnects.
 func (s *Server) flushSessionMetrics(ss mux.Session) {
 	if m := ss.Stats(); m != nil {
+		s.datagramMu.Lock()
+		delete(s.activeDatagrams, ss)
+		d := m.DatagramStats()
+		if d != (mux.DatagramStats{}) {
+			if s.closedDatagrams == nil {
+				s.closedDatagrams = make(map[string]mux.DatagramStats)
+			}
+			id := ss.PeerIdentity()
+			total := s.closedDatagrams[id]
+			total.Add(d)
+			s.closedDatagrams[id] = total
+		}
+		s.datagramMu.Unlock()
 		s.stats.payloadBytesReceived.Add(m.BytesReceived.Load())
 		s.stats.payloadBytesSent.Add(m.BytesSent.Load())
 		s.stats.muxBytesReceived.Add(m.WireLengthReceived.Load())
@@ -214,6 +234,7 @@ type StreamLatencyStats struct {
 
 // ServerStats is the snapshot returned by Server.Stats.
 type ServerStats struct {
+	mux.DatagramStats
 	NumSessions                        uint32
 	NumSessionsCreated                 uint64
 	NumSessionsFinalized               uint64
@@ -246,6 +267,7 @@ func (s *Server) Stats() (stats ServerStats) {
 	}
 	allTunnels := s.getAllTunnels()
 	sessionMap := make(map[string]SessionStats)
+	identityDatagrams := make(map[string]mux.DatagramStats)
 	var latSamples []time.Duration
 	for _, t := range allTunnels {
 		v := t.Stats()
@@ -273,6 +295,40 @@ func (s *Server) Stats() (stats ServerStats) {
 				sessionMap[v.PeerIdentity] = v
 			}
 		}
+	}
+
+	s.datagramMu.Lock()
+	for ss, m := range s.activeDatagrams {
+		d := m.DatagramStats()
+		stats.DatagramStats.Add(d)
+		id := ss.PeerIdentity()
+		v := identityDatagrams[id]
+		v.Add(d)
+		identityDatagrams[id] = v
+		if id != "" {
+			if _, ok := sessionMap[id]; !ok {
+				sessionMap[id] = SessionStats{PeerIdentity: id}
+			}
+		}
+	}
+	for id, d := range s.closedDatagrams {
+		stats.DatagramStats.Add(d)
+		if id != "" {
+			v := identityDatagrams[id]
+			v.Add(d)
+			identityDatagrams[id] = v
+			if _, ok := sessionMap[id]; !ok {
+				sessionMap[id] = SessionStats{PeerIdentity: id}
+			}
+		}
+	}
+	s.datagramMu.Unlock()
+	if s.udp != nil {
+		stats.DatagramsDropped += s.udp.unrouted.Load()
+	}
+	for id, v := range sessionMap {
+		v.DatagramStats = identityDatagrams[id]
+		sessionMap[id] = v
 	}
 	for _, sstats := range sessionMap {
 		stats.sessions = append(stats.sessions, sstats)
@@ -332,6 +388,8 @@ func (s *Server) buildH3MuxDialer(cfg *config.File, tlscfg *tls.Config) *h3mux.H
 		ALPN:                           cfg.ALPN(),
 		LocalID:                        cfg.Identity.Claim,
 		RejectInbound:                  cfg.Connect == "",
+		LossyMux:                       cfg.Mux.LossyMux.Enabled,
+		DatagramQueue:                  cfg.Mux.LossyMux.Queue,
 		KeepAlivePeriod:                cfg.KeepAlive(),
 		HandshakeTimeout:               cfg.ConnectTimeout(),
 		MaxIdleTimeout:                 cfg.IdleTimeout(),
@@ -363,10 +421,13 @@ func (s *Server) startMuxListen(cfg *config.File, addr string) error {
 		// that certificate rotation takes effect without restarting the listener.
 		l, err := h3mux.ListenMux(addr, &h3mux.Config{
 			TLSConfigProvider:              func() *tls.Config { _, tlscfg := s.getConfig(); return tlscfg },
+			LossyMuxConfig:                 s.lossyMuxConfig,
 			ServerName:                     cfg.ServerName(),
 			ALPN:                           cfg.ALPN(),
 			LocalID:                        cfg.Identity.Claim,
 			RejectInbound:                  cfg.Connect == "",
+			LossyMux:                       cfg.Mux.LossyMux.Enabled,
+			DatagramQueue:                  cfg.Mux.LossyMux.Queue,
 			KeepAlivePeriod:                cfg.KeepAlive(),
 			HandshakeTimeout:               cfg.ConnectTimeout(),
 			MaxIdleTimeout:                 cfg.IdleTimeout(),
@@ -425,6 +486,8 @@ func (s *Server) buildH2MuxDialer(cfg *config.File, tlscfg *tls.Config) *h2mux.H
 		ALPN:          cfg.ALPN(),
 		LocalID:       cfg.Identity.Claim,
 		RejectInbound: cfg.Connect == "",
+		LossyMux:      cfg.Mux.LossyMux.Enabled,
+		DatagramQueue: cfg.Mux.LossyMux.Queue,
 		KeepAlive:     cfg.KeepAlive(),
 		PingTimeout:   cfg.PingTimeout(),
 		WriteTimeout:  cfg.SendTimeout(),
@@ -445,6 +508,9 @@ func (s *Server) buildH2MuxListener(l net.Listener, cfg *config.File) *h2mux.H2L
 		ALPN:                 cfg.ALPN(),
 		LocalID:              cfg.Identity.Claim,
 		RejectInbound:        cfg.Connect == "",
+		LossyMux:             cfg.Mux.LossyMux.Enabled,
+		DatagramQueue:        cfg.Mux.LossyMux.Queue,
+		LossyMuxConfig:       s.lossyMuxConfig,
 		WriteTimeout:         cfg.SendTimeout(),
 		SessionWindow:        int32(cfg.Mux.SessionWindow),
 		StreamWindow:         int32(cfg.Mux.StreamWindow),
@@ -568,12 +634,15 @@ func (s *Server) serveSession(ss mux.Session, setupDur time.Duration) {
 	s.mu.Unlock()
 	s.stats.numSessions.Add(1)
 	s.stats.numSessionsCreated.Add(1)
+	s.trackSessionDatagrams(ss)
+	s.udp.attach(ss)
 	_ = s.g.Go(func() { inbound.watchIdleSession(ss) })
 	defer func() {
 		now := time.Now()
 		msg := fmt.Sprintf("%s: session closed", tag)
 		slog.Notice(msg)
 		s.recentEvents.Add(now, msg)
+		s.udp.detachAndWait(ss)
 		s.flushSessionMetrics(ss)
 		s.stats.numSessions.Add(^uint32(0))
 		s.stats.numSessionsFinalized.Add(1)
@@ -805,11 +874,13 @@ func (s *Server) loadTunnels(cfg *config.File) error {
 // identity claim, RejectInbound) at build time, so any change to them requires
 // a restart; TLS material is excluded because it is fetched per connection.
 func (s *Server) reloadMuxListen(old, cfg *config.File) error {
+	oldMux, newMux := old.Mux, cfg.Mux
+	oldMux.LossyMux, newMux.LossyMux = config.LossyMux{}, config.LossyMux{}
 	if cfg.MuxListen == old.MuxListen &&
 		cfg.MuxProtocol == old.MuxProtocol &&
 		cfg.MaxSessions == old.MaxSessions &&
 		cfg.MaxStartups == old.MaxStartups &&
-		cfg.Mux == old.Mux &&
+		newMux == oldMux &&
 		cfg.Identity.Claim == old.Identity.Claim &&
 		cfg.Connect == old.Connect {
 		return nil
@@ -943,6 +1014,12 @@ func (s *Server) Start() error {
 	if err := s.loadTunnels(s.cfg); err != nil {
 		return err
 	}
+	if err := s.udp.syncListeners(s.cfg); err != nil {
+		return err
+	}
+	if err := s.g.Go(s.udp.run); err != nil {
+		return err
+	}
 	if err := s.g.Go(s.maintenanceLoop); err != nil {
 		return err
 	}
@@ -951,6 +1028,7 @@ func (s *Server) Start() error {
 
 // Shutdown stops listeners, tunnels, sessions, and forwarders in that order.
 func (s *Server) Shutdown() error {
+	s.udp.close()
 	s.listenMu.Lock()
 	ml, al := s.muxListener, s.apiListener
 	s.muxListener, s.l, s.apiListener = nil, nil, nil
@@ -1066,6 +1144,9 @@ func (s *Server) ReloadConfig(cfg *config.File) error {
 	if err := s.loadTunnels(cfg); err != nil {
 		errs = append(errs, err)
 	}
+	if err := s.udp.syncListeners(cfg); err != nil {
+		errs = append(errs, err)
+	}
 	s.recentEvents.Add(time.Now(), "config loaded")
 	slog.Notice("config loaded")
 	if err := errors.Join(errs...); err != nil {
@@ -1084,4 +1165,23 @@ func (s *Server) getConfig() (*config.File, *tls.Config) {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
 	return s.cfg, s.tlscfg
+}
+
+func (s *Server) lossyMuxConfig() (bool, int) {
+	cfg, _ := s.getConfig()
+	return cfg.Mux.LossyMux.Enabled, cfg.Mux.LossyMux.Queue
+}
+
+// Keep closing sessions in the live datagram snapshot until final accounting,
+// then move them to the archive under the same lock. Prometheus counters never
+// temporarily reset while a session is being finalized.
+func (s *Server) trackSessionDatagrams(ss mux.Session) {
+	if m := ss.Stats(); m != nil {
+		s.datagramMu.Lock()
+		if s.activeDatagrams == nil {
+			s.activeDatagrams = make(map[mux.Session]*mux.SessionMetrics)
+		}
+		s.activeDatagrams[ss] = m
+		s.datagramMu.Unlock()
+	}
 }

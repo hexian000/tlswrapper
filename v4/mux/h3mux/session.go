@@ -29,6 +29,7 @@ var openMarker = [1]byte{0}
 // Because QUIC is symmetric (both endpoints can open streams), there is no
 // distinction between client and server sessions.
 type h3Session struct {
+	dgrams          *mux.DatagramChannel
 	conn            *quic.Conn
 	ctrlStream      *quic.Stream
 	cfg             *Config
@@ -45,7 +46,7 @@ type h3Session struct {
 // conn and ctrl must both be alive. ctrl is the control stream (stream 0).
 // metrics may carry wire-byte counters already accumulated by the wire tracer
 // during connection setup; nil allocates a fresh set.
-func newH3Session(conn *quic.Conn, ctrl *quic.Stream, peerIdentity string, peerRejectsOpen bool, cfg *Config, metrics *mux.SessionMetrics) *h3Session {
+func newH3Session(conn *quic.Conn, ctrl *quic.Stream, peerIdentity string, peerRejectsOpen, peerLossyMux, client bool, cfg *Config, metrics *mux.SessionMetrics) *h3Session {
 	if metrics == nil {
 		metrics = &mux.SessionMetrics{}
 	}
@@ -58,6 +59,10 @@ func newH3Session(conn *quic.Conn, ctrl *quic.Stream, peerIdentity string, peerR
 		metrics:         metrics,
 		closedCh:        make(chan struct{}),
 		idleCh:          make(chan struct{}, 1),
+	}
+	s.dgrams = mux.NewDatagramChannel(cfg.LossyMux && peerLossyMux && conn.ConnectionState().SupportsDatagrams.Local && conn.ConnectionState().SupportsDatagrams.Remote, client, cfg.DatagramQueue, metrics)
+	if s.dgrams != nil {
+		s.startDatagrams()
 	}
 	go s.run()
 	return s
@@ -77,6 +82,7 @@ func (s *h3Session) run() {
 // close is the internal close: idempotent, safe to call from any goroutine.
 func (s *h3Session) close() {
 	s.closeOnce.Do(func() {
+		s.dgrams.Close()
 		close(s.closedCh)
 		_ = s.ctrlStream.Close()
 		_ = s.conn.CloseWithError(0, "")
@@ -196,3 +202,5 @@ func (s *h3Session) RemoteAddr() net.Addr { return s.conn.RemoteAddr() }
 
 // Handshake is a no-op: h3Session is already established.
 func (s *h3Session) Handshake(_ context.Context) error { return nil }
+
+func (s *h3Session) Datagrams() *mux.DatagramChannel { return s.dgrams }

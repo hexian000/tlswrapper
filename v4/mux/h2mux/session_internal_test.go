@@ -35,7 +35,7 @@ func (c *closeRecordConn) SetWriteDeadline(time.Time) error { return nil }
 // is closed rather than misrouted onto acceptCh as an inbound stream.
 func TestDeliverStreamAbandonedRequest(t *testing.T) {
 	ctrl := &mockControlStream{recvErr: io.EOF}
-	ss := newServerSession(ctrl, nil, nil, nil, "peer", false, nil, nil)
+	ss := newServerSession(ctrl, nil, nil, nil, "peer", false, nil, nil, nil)
 	defer ss.Close()
 
 	conn := &closeRecordConn{}
@@ -108,7 +108,7 @@ func TestServerSessionOpenDeliverConcurrent(t *testing.T) {
 		ridCh: make(chan string, n),
 		done:  make(chan struct{}),
 	}
-	ss := newServerSession(ctrl, nil, nil, nil, "peer", false, nil, nil)
+	ss := newServerSession(ctrl, nil, nil, nil, "peer", false, nil, nil, nil)
 
 	// Deliverer: for every request the server emits, deliver a fresh conn from a
 	// dedicated goroutine after a small jitter, so deliveries race concurrently
@@ -183,6 +183,7 @@ func TestClientSessionNilAddrs(t *testing.T) {
 		false,
 		nil, // metrics
 		nil, // idleNotify
+		nil,
 	)
 	defer ss.Close()
 
@@ -208,6 +209,7 @@ func TestServerSessionNilAddrs(t *testing.T) {
 		false,
 		nil, // metrics
 		nil, // idleNotify
+		nil,
 	)
 	defer ss.Close()
 

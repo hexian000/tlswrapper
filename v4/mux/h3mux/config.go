@@ -39,6 +39,12 @@ type Config struct {
 	ALPN string
 	// RejectInbound is advertised in the handshake: the peer should not Open() streams to us.
 	RejectInbound bool
+	// LossyMux offers the optional bilateral lossymux hello extension.
+	LossyMux bool
+	// DatagramQueue bounds each application datagram queue (0 uses 64).
+	DatagramQueue int
+	// LossyMuxConfig optionally supplies current extension settings for new sessions.
+	LossyMuxConfig func() (enabled bool, queue int)
 
 	// KeepAlivePeriod is how often to send QUIC keepalive pings.
 	// 0 uses the QUIC default (disabled unless MaxIdleTimeout is set).
@@ -82,6 +88,7 @@ func (c *Config) maxIncomingStreams() int64 {
 func (c *Config) quicConfig() *quic.Config {
 	qcfg := &quic.Config{
 		KeepAlivePeriod:    c.keepAlivePeriod(),
+		EnableDatagrams:    c.LossyMux,
 		MaxIncomingStreams: c.maxIncomingStreams(),
 		// Disallow unidirectional streams: h3mux only uses bidirectional streams.
 		MaxIncomingUniStreams: -1,
@@ -103,6 +110,15 @@ func (c *Config) quicConfig() *quic.Config {
 	}
 	if c.MaxConnectionReceiveWindow > 0 {
 		qcfg.MaxConnectionReceiveWindow = c.MaxConnectionReceiveWindow
+	}
+
+	if c.LossyMuxConfig != nil {
+		qcfg.GetConfigForClient = func(*quic.ClientInfo) (*quic.Config, error) {
+			next := qcfg.Clone()
+			next.GetConfigForClient = nil
+			next.EnableDatagrams, _ = c.LossyMuxConfig()
+			return next, nil
+		}
 	}
 	return qcfg
 }
@@ -160,4 +176,14 @@ func (c *Config) tlsServerConfig() *tls.Config {
 		}
 	}
 	return cfg
+}
+
+func (c *Config) currentLossyMux() *Config {
+	if c.LossyMuxConfig == nil {
+		return c
+	}
+	next := *c
+	next.LossyMux, next.DatagramQueue = c.LossyMuxConfig()
+	next.LossyMuxConfig = nil
+	return &next
 }

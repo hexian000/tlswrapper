@@ -4,6 +4,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,30 @@ import (
 
 	"github.com/hexian000/gosnippets/slog"
 )
+
+// UnmarshalJSON retains omission defaults while rejecting null for the typed
+// extension fields, just as the shared JSON schema does.
+func (l *LossyMux) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if fields == nil {
+		return fmt.Errorf("mux.lossymux must be an object")
+	}
+	for _, key := range []string{"enabled", "idle_timeout", "queue"} {
+		if raw, ok := fields[key]; ok && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return fmt.Errorf("mux.lossymux.%s must not be null", key)
+		}
+	}
+	type plain LossyMux
+	next := plain(*l)
+	if err := json.Unmarshal(data, &next); err != nil {
+		return err
+	}
+	*l = LossyMux(next)
+	return nil
+}
 
 // loadPEM resolves "@path" PEM references used by TLS fields.
 func loadPEM(s string) (string, error) {
@@ -170,6 +195,12 @@ func isLoopbackHost(host string) bool {
 
 // Validate checks declared values and clamps tunables into supported ranges.
 func (c *File) Validate() error {
+	if c.Mux.LossyMux.IdleTimeout < 1 || c.Mux.LossyMux.IdleTimeout > 86400 {
+		return fmt.Errorf("mux.lossymux.idle_timeout must be in [1, 86400]")
+	}
+	if c.Mux.LossyMux.Queue < 1 || c.Mux.LossyMux.Queue > 65535 {
+		return fmt.Errorf("mux.lossymux.queue must be in [1, 65535]")
+	}
 	if err := checkType(c.Type); err != nil {
 		return err
 	}

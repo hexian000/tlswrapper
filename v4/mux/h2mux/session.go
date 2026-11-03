@@ -25,7 +25,8 @@ var _ mux.Session = (*serverSession)(nil)
 
 // session holds the common state shared by clientSession and serverSession.
 type session struct {
-	ctrl controlStream
+	dgrams *mux.DatagramChannel
+	ctrl   controlStream
 
 	// onOpenRequest is called (in a new goroutine) when a server-initiated
 	// OpenRequest arrives. Set by clientSession constructor; nil on serverSession.
@@ -134,6 +135,8 @@ func (ss *session) CloseChan() <-chan struct{} { return ss.closedCh }
 
 func (ss *session) IdleChan() <-chan struct{} { return ss.idleNotify }
 
+func (ss *session) Datagrams() *mux.DatagramChannel { return ss.dgrams }
+
 func (ss *session) Stats() *mux.SessionMetrics { return ss.metrics }
 
 // PeerIdentity returns the remote identity claim.
@@ -167,7 +170,8 @@ func newClientSession(
 	peerIdentity string,
 	peerRejectsInbound bool,
 	metrics *mux.SessionMetrics,
-	idleNotify <-chan struct{}) *clientSession {
+	idleNotify <-chan struct{},
+	dgrams *mux.DatagramChannel) *clientSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
 	}
@@ -177,6 +181,7 @@ func newClientSession(
 	ss := &clientSession{
 		session: session{
 			ctrl:               ctrl,
+			dgrams:             dgrams,
 			pending:            make(map[string]chan net.Conn),
 			acceptCh:           make(chan net.Conn, 16),
 			peerRejectsInbound: peerRejectsInbound,
@@ -240,6 +245,7 @@ func (ss *clientSession) Open(ctx context.Context) (net.Conn, error) {
 
 func (ss *clientSession) Close() error {
 	ss.closeOnce.Do(func() {
+		ss.dgrams.Close()
 		close(ss.closedCh)
 		ss.streamCtxCancel()
 		if ss.cleanup != nil {
@@ -261,6 +267,7 @@ func newServerSession(
 	peerRejectsInbound bool,
 	metrics *mux.SessionMetrics,
 	idleNotify <-chan struct{},
+	dgrams *mux.DatagramChannel,
 ) *serverSession {
 	if localAddr == nil {
 		localAddr = h2Addr{"local"}
@@ -271,6 +278,7 @@ func newServerSession(
 	ss := &serverSession{
 		session: session{
 			ctrl:               ctrl,
+			dgrams:             dgrams,
 			pending:            make(map[string]chan net.Conn),
 			acceptCh:           make(chan net.Conn, 16),
 			peerRejectsInbound: peerRejectsInbound,
@@ -352,6 +360,7 @@ func (ss *serverSession) Open(ctx context.Context) (net.Conn, error) {
 
 func (ss *serverSession) Close() error {
 	ss.closeOnce.Do(func() {
+		ss.dgrams.Close()
 		close(ss.closedCh)
 		if ss.cleanup != nil {
 			ss.cleanup()

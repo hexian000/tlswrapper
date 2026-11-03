@@ -34,6 +34,12 @@ type Config struct {
 	ALPN string
 	// RejectInbound is advertised in the hello: the peer should not Open() streams to us.
 	RejectInbound bool
+	// LossyMux offers the optional bilateral lossymux hello extension.
+	LossyMux bool
+	// DatagramQueue bounds each application datagram queue (0 uses 64).
+	DatagramQueue int
+	// LossyMuxConfig optionally supplies current extension settings for new sessions.
+	LossyMuxConfig func() (enabled bool, queue int)
 
 	// Dialer is used by H2Mux.Dial to establish outbound TCP connections.
 	// The zero value (net.Dialer{}) uses the system default.
@@ -164,7 +170,7 @@ func (c *Config) grpcServerOptions() []grpc.ServerOption {
 			MinTime:             1 * time.Second,
 			PermitWithoutStream: true,
 		}),
-		grpc.MaxConcurrentStreams(c.maxConcurrentStreams()),
+		grpc.MaxConcurrentStreams(c.transportStreamLimit()),
 		grpc.ReadBufferSize(connBufferSize),
 		grpc.WriteBufferSize(connBufferSize),
 	}
@@ -175,4 +181,23 @@ func (c *Config) grpcServerOptions() []grpc.ServerOption {
 		opts = append(opts, grpc.StaticStreamWindowSize(window))
 	}
 	return opts
+}
+
+// Reserve the additional datagram RPC without reducing the existing stream budget.
+func (c *Config) transportStreamLimit() uint32 {
+	n := c.maxConcurrentStreams()
+	if c.LossyMux && n < math.MaxUint32 {
+		n++
+	}
+	return n
+}
+
+func (c *Config) currentLossyMux() *Config {
+	if c.LossyMuxConfig == nil {
+		return c
+	}
+	next := *c
+	next.LossyMux, next.DatagramQueue = c.LossyMuxConfig()
+	next.LossyMuxConfig = nil
+	return &next
 }

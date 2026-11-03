@@ -24,6 +24,7 @@ import (
 	"github.com/hexian000/gosnippets/formats"
 	"github.com/hexian000/gosnippets/slog"
 	"github.com/hexian000/tlswrapper/v4/config"
+	"github.com/hexian000/tlswrapper/v4/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -240,6 +241,9 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		formats.IECBytes(float64(stats.WireLengthReceived)), formats.IECBytes(float64(stats.WireLengthSent)))
 	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Stream Traffic",
 		formats.IECBytes(float64(stats.BytesReceived)), formats.IECBytes(float64(stats.BytesSent)))
+
+	fprintf(w, "%-20s: Rx %d, Tx %d, %d dropped, %d flows\n", "Datagrams", stats.DatagramsReceived, stats.DatagramsSent, stats.DatagramsDropped, stats.NumUDPFlows)
+	fprintf(w, "%-20s: Rx %s, Tx %s\n", "Datagram Traffic", formats.IECBytes(float64(stats.DatagramBytesReceived)), formats.IECBytes(float64(stats.DatagramBytesSent)))
 	rejected := stats.Accepted - stats.Served
 	fprintf(w, "%-20s: %d (%+d rejected)\n", "Listener Accepts",
 		stats.Served, rejected)
@@ -280,10 +284,18 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status := "offline"
 			if ss.Active {
 				status = fmt.Sprintf("%d streams", ss.NumStreams)
+				if ss.NumUDPFlows > 0 {
+					status += fmt.Sprintf(", %d UDP flows", ss.NumUDPFlows)
+				}
 			}
 			fprintf(w, "%-20s: %s %s\n", ss.PeerIdentity, ss.LastChanged.Format(slog.TimeLayout), status)
+		} else if ss.DatagramStats != (mux.DatagramStats{}) {
+			fprintf(w, "%-20s: offline\n", ss.PeerIdentity)
 		} else {
 			fprintf(w, "%-20s: never seen\n", ss.PeerIdentity)
+		}
+		if ss.DatagramStats != (mux.DatagramStats{}) {
+			fprintf(w, "  UDP: Rx %d, Tx %d, %d dropped\n", ss.DatagramsReceived, ss.DatagramsSent, ss.DatagramsDropped)
 		}
 	}
 
@@ -299,6 +311,7 @@ func (h *apiStatsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type serverMetricsCollector struct {
 	s *Server
 
+	datagramDescs       [8]*prometheus.Desc
 	uptimeDesc          *prometheus.Desc
 	sessionsDesc        *prometheus.Desc
 	streamsDesc         *prometheus.Desc
@@ -320,7 +333,8 @@ type serverMetricsCollector struct {
 
 func newServerMetricsCollector(s *Server) prometheus.Collector {
 	return &serverMetricsCollector{
-		s: s,
+		s:             s,
+		datagramDescs: newDatagramDescs(),
 		uptimeDesc: prometheus.NewDesc(
 			"tlswrapper_uptime_seconds",
 			"Server uptime in seconds.",
@@ -389,6 +403,9 @@ func newServerMetricsCollector(s *Server) prometheus.Collector {
 }
 
 func (c *serverMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
+	for _, d := range c.datagramDescs {
+		ch <- d
+	}
 	ch <- c.uptimeDesc
 	ch <- c.sessionsDesc
 	ch <- c.streamsDesc
@@ -410,6 +427,7 @@ func (c *serverMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	now := time.Now()
 	stats := c.s.Stats()
+	c.collectDatagrams(ch, stats.DatagramStats, "", false)
 
 	ch <- prometheus.MustNewConstMetric(c.uptimeDesc, prometheus.GaugeValue,
 		now.Sub(c.s.started).Seconds())
@@ -428,6 +446,7 @@ func (c *serverMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 	var numStreams uint32
 	for _, ss := range stats.sessions {
+		c.collectDatagrams(ch, ss.DatagramStats, ss.PeerIdentity, true)
 		up := 0.0
 		if ss.Active {
 			up = 1.0
@@ -514,4 +533,42 @@ func RunHTTPServer(l net.Listener, s *Server) error {
 		ErrorLog: slog.Wrap(slog.Default(), slog.LevelError),
 	}
 	return server.Serve(l)
+}
+
+func newDatagramDescs() (descs [8]*prometheus.Desc) {
+	names := []string{"datagrams_total", "datagram_bytes_total", "datagrams_dropped_total", "udp_flows"}
+	helps := []string{"Datagrams handed to or received from the transport.", "UDP payload bytes handed to or received from the transport.", "Locally observed datagram drops.", "Active UDP flows."}
+	for i := range descs {
+		labels := []string{}
+		prefix := "tlswrapper_"
+		if i >= 4 {
+			prefix += "session_"
+			labels = append(labels, "identity")
+		}
+		if i%4 < 2 {
+			labels = append(labels, "direction")
+		}
+		descs[i] = prometheus.NewDesc(prefix+names[i%4], helps[i%4], labels, nil)
+	}
+	return
+}
+
+func (c *serverMetricsCollector) collectDatagrams(ch chan<- prometheus.Metric, d mux.DatagramStats, id string, session bool) {
+	base := 0
+	labels := []string{}
+	if session {
+		base = 4
+		labels = append(labels, id)
+	}
+	for _, direction := range []string{"rx", "tx"} {
+		packets, bytes := d.DatagramsReceived, d.DatagramBytesReceived
+		if direction == "tx" {
+			packets, bytes = d.DatagramsSent, d.DatagramBytesSent
+		}
+		values := append(append([]string(nil), labels...), direction)
+		ch <- prometheus.MustNewConstMetric(c.datagramDescs[base], prometheus.CounterValue, float64(packets), values...)
+		ch <- prometheus.MustNewConstMetric(c.datagramDescs[base+1], prometheus.CounterValue, float64(bytes), values...)
+	}
+	ch <- prometheus.MustNewConstMetric(c.datagramDescs[base+2], prometheus.CounterValue, float64(d.DatagramsDropped), labels...)
+	ch <- prometheus.MustNewConstMetric(c.datagramDescs[base+3], prometheus.GaugeValue, float64(d.NumUDPFlows), labels...)
 }

@@ -10,6 +10,7 @@ Wrap TCP-based services with multiplexed mutual TLS tunnels over TCP or QUIC.
 
 - [Features](#features)
 - [Protocol Stack](#protocol-stack)
+- [UDP Relay](#udp-relay)
 - [Authentication Model](#authentication-model)
 - [Quick Start](#quick-start)
   - [Generating Key Pairs](#generating-key-pairs)
@@ -22,6 +23,7 @@ Wrap TCP-based services with multiplexed mutual TLS tunnels over TCP or QUIC.
 
 - **Multiplexed**: Multiple TCP streams share a single long-lived transport connection.
 - **Bidirectional Forwarding**: Each peer can expose local services and reach remote services over the same underlying connection.
+- **Best-effort UDP Relay**: Opt into the bilateral `lossymux` extension to forward UDP beside the existing TCP listeners, with bounded queues and visible drops.
 - **Pluggable Transport**: Choose between `h2mux` (gRPC over TCP+TLS, default) and `h3mux` (QUIC+TLS) via the `mux_protocol` config key.
 - **mTLS 1.3 Security**: Protect traffic with [mutual authenticated TLS](https://en.wikipedia.org/wiki/Mutual_authentication#mTLS), or run in plaintext on trusted links (h2mux only).
 - **Built-in Certificate Tool**: Generate RSA, ECDSA, or Ed25519 key pairs, either self-signed or signed by an existing key pair.
@@ -75,6 +77,68 @@ At runtime, tlswrapper maintains two tunnel lifecycles: config-driven tunnels lo
 ```
 
 h3mux requires TLS to be configured and uses UDP on the untrusted side. It may perform better on high-latency or lossy links.
+
+## UDP Relay
+
+Enable `mux.lossymux` on **both peers**:
+
+```json
+{
+    "mux": {
+        "lossymux": {
+            "enabled": true,
+            "idle_timeout": 60,
+            "queue": 64
+        }
+    }
+}
+```
+
+This object shares multiplexd's configuration subset: `enabled` defaults to
+`false`, `idle_timeout` is 1–86400 seconds (default 60), and `queue` is 1–65535
+(default 64). Out-of-range values are rejected. tlswrapper retains its own
+configuration MIME type and wire protocols; it does not connect to multiplexd.
+
+Each peer offers the optional extension in its hello's `extensions` namespace.
+Lossymux activates only when **both** hellos offer `lossymux: true`; missing or
+false means TCP-only operation. Existing peers that do not know the extension
+continue to forward TCP. h2mux uses protobuf hello extensions, and h3mux uses
+`"extensions": {"lossymux": true}` in its JSON hello.
+
+When enabled, a UDP socket is bound beside each `listen` and `identity.listen`
+TCP listener, on its actual host and port (including when the configured port
+is zero). UDP follows the same tunnel selection as TCP. Each client address:port
+is pinned to one session, and the remote peer forwards its flow to `connect`
+over UDP. Replies use the originating listener's socket. Flows expire after
+`idle_timeout` seconds without a packet in either direction and end on reconnect.
+
+Delivery is best effort. Full queues, unavailable sessions, oversized packets,
+and local relay errors drop packets without retry. Traffic arriving while a
+tunnel is offline requests demand redial, including with `no_redial`, and drops
+the triggering packet. `queue` bounds each application send/receive queue;
+transport and kernel buffers are additional.
+
+- **h2mux:** one dedicated bidirectional gRPC datagram RPC per negotiated session,
+  separate from the control RPC and TCP stream RPCs. The protocol accepts payloads
+  up to 65535 bytes; local UDP limits still apply. TCP retransmission and HTTP/2
+  flow control remain in effect.
+- **h3mux:** native QUIC DATAGRAMs, with no fragmentation or reliable fallback.
+  The payload plus a three-byte lossymux header must fit the current QUIC packet
+  size. Oversized packets are dropped; lost QUIC datagrams are not retransmitted.
+
+Reload reconciles UDP listeners immediately and applies queue/flow timeout changes
+live. Existing sessions keep their negotiated extension until reconnect. As with
+other tlswrapper reloads, they become stale and reconnect after TCP streams and
+UDP flows drain. Removed UDP listeners retain their socket for existing replies
+until those flows finish. Startup UDP bind errors fail startup; reload bind
+errors are reported and can be retried without interrupting TCP listeners.
+
+`/stats` reports datagrams, payload bytes, drops, and active flows. `/metrics`
+exposes `tlswrapper_datagrams_total`, `tlswrapper_datagram_bytes_total`,
+`tlswrapper_datagrams_dropped_total`, and `tlswrapper_udp_flows`, plus their
+`tlswrapper_session_*` counterparts by identity. Counters survive reconnects.
+Sent means handed to the transport; drop counters cover locally observed drops,
+not network or QUIC-internal losses.
 
 ## Authentication Model
 

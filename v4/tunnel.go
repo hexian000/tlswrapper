@@ -37,6 +37,7 @@ type tunnel struct {
 	lastIdentity  string    // peer identity of the most recent session (kept after close)
 	closeSig      chan struct{}
 	stopOnce      sync.Once
+	demandSig     chan struct{}
 	redialSig     chan struct{}
 	redialCount   int
 	dialMu        sync.Mutex
@@ -50,6 +51,7 @@ func newTunnel(dialAddr string, s *Server) *tunnel {
 		s:         s,
 		closeSig:  make(chan struct{}),
 		redialSig: make(chan struct{}, 1),
+		demandSig: make(chan struct{}, 1),
 	}
 	t.tag = t.buildTunnelTag(nil, nil)
 	return t
@@ -191,11 +193,12 @@ func (t *tunnel) checkIdle() {
 	}
 	// evict stale sessions immediately when idle (no active streams)
 	m := t.ss.Stats()
-	var numStreams int64
+	var numStreams, numFlows int64
 	if m != nil {
 		numStreams = m.NumStreams.Load()
+		numFlows = m.NumUDPFlows.Load()
 	}
-	if t.stale && numStreams == 0 {
+	if t.stale && numStreams == 0 && numFlows == 0 {
 		tag := t.tag
 		slog.Infof("%s: stale session evicted after reload", tag)
 		_ = t.ss.Close()
@@ -208,6 +211,11 @@ func (t *tunnel) checkIdle() {
 		}
 	} else {
 		t.idleSince = time.Time{}
+	}
+	if numStreams == 0 && m != nil {
+		if last := m.LastDatagram.Load(); last != 0 && time.Unix(0, last).After(t.idleSince) {
+			t.idleSince = time.Unix(0, last)
+		}
 	}
 	// evict if idle too long
 	if idleTimeout > 0 && !t.idleSince.IsZero() && now.Sub(t.idleSince) >= idleTimeout {
@@ -300,6 +308,10 @@ func (t *tunnel) run() {
 		select {
 		case <-t.closeSig:
 			return
+		case <-t.demandSig:
+			if t.getSession() == nil {
+				t.redial()
+			}
 		case <-t.redialSig:
 		case <-t.schedule():
 		case <-t.s.g.CloseC():
@@ -398,6 +410,8 @@ func (t *tunnel) addSession(ss mux.Session, setupDur time.Duration) bool {
 	t.lastIdentity = ss.PeerIdentity()
 	t.lastChanged = now
 	t.mu.Unlock()
+	t.s.trackSessionDatagrams(ss)
+	t.s.udp.attach(ss)
 	t.s.stats.numSessions.Add(1)
 	t.s.stats.numSessionsCreated.Add(1)
 
@@ -432,6 +446,7 @@ func (t *tunnel) finalizeSession(ss mux.Session) {
 	}
 	t.mu.Unlock()
 
+	t.s.udp.detachAndWait(ss)
 	t.s.flushSessionMetrics(ss)
 	t.s.stats.numSessions.Add(^uint32(0))
 	t.s.stats.numSessionsFinalized.Add(1)
@@ -531,6 +546,7 @@ func (t *tunnel) dial(ctx context.Context) (mux.Session, error) {
 
 // SessionStats snapshots the most recent session state for one tunnel key.
 type SessionStats struct {
+	mux.DatagramStats
 	PeerIdentity string
 	LastChanged  time.Time
 	Active       bool
@@ -557,9 +573,11 @@ func (t *tunnel) Stats() SessionStats {
 	var peerIdentity string
 	var streamsOpened, streamsAccepted, streamsSucceeded, streamsFailed, bytesSent, bytesReceived, wireLengthSent, wireLengthReceived uint64
 	var numStreams uint32
+	var datagrams mux.DatagramStats
 	if active {
 		peerIdentity = t.ss.PeerIdentity()
 		if m := t.ss.Stats(); m != nil {
+			datagrams = m.DatagramStats()
 			streamsOpened = uint64(m.StreamsOpened.Load())
 			streamsAccepted = uint64(m.StreamsAccepted.Load())
 			streamsSucceeded = uint64(m.StreamsSucceeded.Load())
@@ -573,6 +591,7 @@ func (t *tunnel) Stats() SessionStats {
 	}
 	p50, p90, p99, pmax, latOk := t.streamLatency.Percentiles()
 	return SessionStats{
+		DatagramStats:      datagrams,
 		PeerIdentity:       peerIdentity,
 		LastChanged:        t.lastChanged,
 		Active:             active,
@@ -586,5 +605,16 @@ func (t *tunnel) Stats() SessionStats {
 		WireLengthSent:     wireLengthSent,
 		WireLengthReceived: wireLengthReceived,
 		StreamLatency:      StreamLatencyStats{P50: p50, P90: p90, P99: p99, Max: pmax, Available: latOk},
+	}
+}
+
+// demandRedial coalesces UDP demand into the existing tunnel worker.
+func (t *tunnel) demandRedial() {
+	if t.dialAddr == "" {
+		return
+	}
+	select {
+	case t.demandSig <- struct{}{}:
+	default:
 	}
 }

@@ -245,6 +245,7 @@ func (l *oneConnListener) Addr() net.Addr { return l.addr }
 // Client performs the TLS handshake (if cfg.TLSConfig is non-nil) and the mux
 // protocol handshake over conn, returning a client-mode Session on success.
 func Client(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error) {
+	cfg = cfg.currentLossyMux()
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
 			return nil, err
@@ -295,16 +296,17 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 	type hsResult struct {
 		peerIdentity       string
 		peerRejectsInbound bool
+		peerLossyMux       bool
 		err                error
 	}
 	hsCh := make(chan hsResult, 1)
 	go func() {
-		peerIdentity, peerRejectsInbound, err := doClientHandshake(ctrlStream, cfg.LocalID, cfg.RejectInbound)
-		hsCh <- hsResult{peerIdentity, peerRejectsInbound, err}
+		peerIdentity, peerRejectsInbound, peerLossyMux, err := doClientHandshake(ctrlStream, cfg.LocalID, cfg.RejectInbound, cfg.LossyMux)
+		hsCh <- hsResult{peerIdentity, peerRejectsInbound, peerLossyMux, err}
 	}()
 
 	var peerIdentity string
-	var peerRejectsInbound bool
+	var peerRejectsInbound, peerLossyMux bool
 	select {
 	case res := <-hsCh:
 		if res.err != nil {
@@ -314,6 +316,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 		}
 		peerIdentity = res.peerIdentity
 		peerRejectsInbound = res.peerRejectsInbound
+		peerLossyMux = res.peerLossyMux
 	case <-ctx.Done():
 		cancel()
 		_ = cc.Close()
@@ -325,7 +328,7 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 		_ = cc.Close()
 	}
 
-	return newClientSession(
+	sess := newClientSession(
 		ctrlStream,
 		grpcClient,
 		sessionCtx,
@@ -336,7 +339,15 @@ func Client(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 		peerRejectsInbound,
 		&sh.metrics,
 		sh.idleNotify,
-	), nil
+		mux.NewDatagramChannel(cfg.LossyMux && peerLossyMux, true, cfg.DatagramQueue, &sh.metrics),
+	)
+	if sess.dgrams != nil {
+		if err := sess.startDatagrams(ctx); err != nil {
+			_ = sess.Close()
+			return nil, err
+		}
+	}
+	return sess, nil
 }
 
 // muxServer is the gRPC server-side implementation for one mux session.
@@ -348,13 +359,15 @@ type muxServer struct {
 	sh         *muxStatsHandler
 
 	// ready delivers the serverSession to Server() after the handshake succeeds.
-	ready chan *serverSession
+	ready   chan *serverSession
+	cleanup func()
 
 	// sess is set by Control() after handshake; Stream() handlers wait on sessReady.
-	mu          sync.RWMutex
-	ctrlStarted bool // a Control RPC has been received; reject duplicates
-	sess        *serverSession
-	sessReady   chan struct{} // closed once sess is set
+	mu               sync.RWMutex
+	datagramsStarted bool
+	ctrlStarted      bool // a Control RPC has been received; reject duplicates
+	sess             *serverSession
+	sessReady        chan struct{} // closed once sess is set
 }
 
 func newMuxServer(cfg *Config, localAddr, remoteAddr net.Addr, sh *muxStatsHandler) *muxServer {
@@ -380,19 +393,20 @@ func (svc *muxServer) Control(stream muxpb.Mux_ControlServer) error {
 	}
 	svc.ctrlStarted = true
 	svc.mu.Unlock()
-	peerIdentity, peerRejectsInbound, err := doServerHandshake(stream, svc.cfg.LocalID, svc.cfg.RejectInbound)
+	peerIdentity, peerRejectsInbound, peerLossyMux, err := doServerHandshake(stream, svc.cfg.LocalID, svc.cfg.RejectInbound, svc.cfg.LossyMux)
 	if err != nil {
 		return err
 	}
 
 	sess := newServerSession(
 		stream,
-		nil, // cleanup wired after grpcSrv reference is available in Server()
+		svc.cleanup,
 		svc.localAddr, svc.remoteAddr,
 		peerIdentity,
 		peerRejectsInbound,
 		&svc.sh.metrics,
 		svc.sh.idleNotify,
+		mux.NewDatagramChannel(svc.cfg.LossyMux && peerLossyMux, false, svc.cfg.DatagramQueue, &svc.sh.metrics),
 	)
 
 	svc.mu.Lock()
@@ -449,6 +463,7 @@ func (svc *muxServer) Stream(stream muxpb.Mux_StreamServer) error {
 // the mux protocol handshake from the client, returning a server-mode Session
 // on success.
 func Server(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error) {
+	cfg = cfg.currentLossyMux()
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
 			return nil, err
@@ -466,6 +481,7 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 	sh := newMuxStatsHandler()
 	svc := newMuxServer(cfg, conn.LocalAddr(), conn.RemoteAddr(), sh)
 	grpcSrv := grpc.NewServer(append(cfg.grpcServerOptions(), grpc.StatsHandler(sh))...)
+	svc.cleanup = func() { grpcSrv.Stop() }
 	muxpb.RegisterMuxServer(grpcSrv, svc)
 
 	listener := newOneConnListener(conn)
@@ -477,8 +493,6 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 
 	select {
 	case sess := <-svc.ready:
-		// Wire up cleanup: stopping the gRPC server closes all streams.
-		sess.cleanup = func() { grpcSrv.Stop() }
 		_ = conn.SetDeadline(time.Time{})
 		return sess, nil
 	case <-ctx.Done():
@@ -492,4 +506,15 @@ func Server(ctx context.Context, conn net.Conn, cfg *Config) (mux.Session, error
 	case <-serveDone:
 		return nil, ErrHandshakeFailed
 	}
+}
+
+// Datagrams is visible only after Handshake; inspecting optional capabilities
+// must never trigger an implicit handshake on an accepted connection.
+func (s *h2InboundSession) Datagrams() *mux.DatagramChannel {
+	if s.handshakeDone.Load() && s.ss != nil {
+		if ds, ok := s.ss.(mux.DatagramSession); ok {
+			return ds.Datagrams()
+		}
+	}
+	return nil
 }

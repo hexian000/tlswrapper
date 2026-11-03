@@ -70,7 +70,7 @@ func TestDoClientHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{serverHelloMsg("srv", false)},
 		}
-		peerIdentity, reject, err := doClientHandshake(ms, "cli", false)
+		peerIdentity, reject, _, err := doClientHandshake(ms, "cli", false, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func TestDoClientHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{serverHelloMsg("srv", true)},
 		}
-		_, reject, err := doClientHandshake(ms, "cli", false)
+		_, reject, _, err := doClientHandshake(ms, "cli", false, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -110,7 +110,7 @@ func TestDoClientHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{serverHelloMsg("srv", false)},
 		}
-		_, _, err := doClientHandshake(ms, "cli", true)
+		_, _, _, err := doClientHandshake(ms, "cli", true, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -125,7 +125,7 @@ func TestDoClientHandshake(t *testing.T) {
 
 	t.Run("send-error", func(t *testing.T) {
 		ms := &mockControlStream{sendErr: io.ErrClosedPipe}
-		_, _, err := doClientHandshake(ms, "cli", false)
+		_, _, _, err := doClientHandshake(ms, "cli", false, false)
 		if err == nil {
 			t.Fatal("expected error when Send fails")
 		}
@@ -133,7 +133,7 @@ func TestDoClientHandshake(t *testing.T) {
 
 	t.Run("recv-error", func(t *testing.T) {
 		ms := &mockControlStream{recvErr: io.ErrUnexpectedEOF}
-		_, _, err := doClientHandshake(ms, "cli", false)
+		_, _, _, err := doClientHandshake(ms, "cli", false, false)
 		if err == nil {
 			t.Fatal("expected error when Recv fails")
 		}
@@ -144,7 +144,7 @@ func TestDoClientHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{clientHelloMsg("other", false)},
 		}
-		_, _, err := doClientHandshake(ms, "cli", false)
+		_, _, _, err := doClientHandshake(ms, "cli", false, false)
 		if !errors.Is(err, errUnexpectedMessage) {
 			t.Fatalf("got %v, want errUnexpectedMessage", err)
 		}
@@ -156,7 +156,7 @@ func TestDoServerHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{clientHelloMsg("cli", false)},
 		}
-		peerIdentity, reject, err := doServerHandshake(ms, "srv", false)
+		peerIdentity, reject, _, err := doServerHandshake(ms, "srv", false, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -183,7 +183,7 @@ func TestDoServerHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{clientHelloMsg("cli", true)},
 		}
-		_, reject, err := doServerHandshake(ms, "srv", false)
+		_, reject, _, err := doServerHandshake(ms, "srv", false, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,7 +196,7 @@ func TestDoServerHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{clientHelloMsg("cli", false)},
 		}
-		_, _, err := doServerHandshake(ms, "srv", true)
+		_, _, _, err := doServerHandshake(ms, "srv", true, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -211,7 +211,7 @@ func TestDoServerHandshake(t *testing.T) {
 
 	t.Run("recv-error", func(t *testing.T) {
 		ms := &mockControlStream{recvErr: io.ErrUnexpectedEOF}
-		_, _, err := doServerHandshake(ms, "srv", false)
+		_, _, _, err := doServerHandshake(ms, "srv", false, false)
 		if err == nil {
 			t.Fatal("expected error when Recv fails")
 		}
@@ -222,7 +222,7 @@ func TestDoServerHandshake(t *testing.T) {
 		ms := &mockControlStream{
 			msgs: []*muxpb.ControlMessage{serverHelloMsg("other", false)},
 		}
-		_, _, err := doServerHandshake(ms, "srv", false)
+		_, _, _, err := doServerHandshake(ms, "srv", false, false)
 		if !errors.Is(err, errUnexpectedMessage) {
 			t.Fatalf("got %v, want errUnexpectedMessage", err)
 		}
@@ -233,7 +233,7 @@ func TestDoServerHandshake(t *testing.T) {
 			msgs:    []*muxpb.ControlMessage{clientHelloMsg("cli", false)},
 			sendErr: io.ErrClosedPipe,
 		}
-		_, _, err := doServerHandshake(ms, "srv", false)
+		_, _, _, err := doServerHandshake(ms, "srv", false, false)
 		if err == nil {
 			t.Fatal("expected error when Send fails")
 		}

@@ -12,16 +12,24 @@ message Chunk {
   bytes data = 1;
 }
 
+// Extensions contains optional hello capabilities. Lossymux is active only when
+// both hellos offer true. Absent/false means TCP-only; unknown fields are ignored.
+message Extensions {
+  bool lossymux = 1;
+}
+
 // ClientHello is sent by the client as the first message on the Control stream.
 message ClientHello {
   string identity       = 1;
   bool   reject_inbound = 2;
+  Extensions extensions = 3;
 }
 
 // ServerHello is sent by the server in response to ClientHello on the Control stream.
 message ServerHello {
   string identity       = 1;
   bool   reject_inbound = 2;
+  Extensions extensions = 3;
 }
 
 // OpenRequest is sent by the server on the Control stream to ask the client to
@@ -39,6 +47,16 @@ message ControlMessage {
     ServerHello server_hello = 2;
     OpenRequest open_request = 3;
   }
+}
+
+// Datagram is one best-effort UDP payload or flow closure, never a TCP stream.
+// flow_id is 1..65535 (client odd, server even), separate from stream IDs.
+// An empty data field with close=false is an empty UDP packet. close=true
+// requires empty data. Invalid IDs/shapes are silently discarded.
+message Datagram {
+  uint32 flow_id = 1;
+  bytes data = 2;
+  bool close = 3;
 }
 
 // Mux provides logical stream multiplexing over one gRPC connection.
@@ -59,4 +77,7 @@ service Mux {
   // Server-initiated: client sets x-mux-request-id metadata to the
   // request_id from the OpenRequest message received on Control.
   rpc Stream(stream Chunk) returns (stream Chunk);
+
+  // One channel per session, opened only after bilateral lossymux negotiation.
+  rpc Datagrams(stream Datagram) returns (stream Datagram);
 }

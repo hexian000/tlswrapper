@@ -10,11 +10,17 @@ import (
 	"io"
 )
 
-// handshakeMsg is the single-round-trip identity exchange over the control stream.
-// It is encoded as 4-byte big-endian length prefix followed by JSON.
+// helloExtensions holds optional capabilities; absent and false mean not offered.
+type helloExtensions struct {
+	LossyMux bool `json:"lossymux,omitempty"`
+}
+
+// handshakeMsg is the single-round-trip hello exchange over the control stream.
+// It is encoded as a 4-byte big-endian length prefix followed by JSON.
 type handshakeMsg struct {
-	Identity      string `json:"identity,omitempty"`
-	RejectInbound bool   `json:"reject_inbound,omitempty"`
+	Extensions    *helloExtensions `json:"extensions,omitempty"`
+	Identity      string           `json:"identity,omitempty"`
+	RejectInbound bool             `json:"reject_inbound,omitempty"`
 }
 
 const maxHandshakeMsgSize = 4096
@@ -62,34 +68,43 @@ func readHandshake(r io.Reader) (handshakeMsg, error) {
 
 // doClientHandshake performs the client side of the h3mux handshake over ctrl.
 // It sends a ClientHello then waits for a ServerHello.
-// Returns the peer's identity and whether the peer rejects inbound streams.
-func doClientHandshake(ctrl io.ReadWriter, localID string, rejectInbound bool) (string, bool, error) {
+// Returns the peer identity, inbound rejection, and lossymux offer.
+func doClientHandshake(ctrl io.ReadWriter, localID string, rejectInbound, lossyMux bool) (string, bool, bool, error) {
 	// Send ClientHello
-	hello := handshakeMsg{Identity: localID, RejectInbound: rejectInbound}
+	hello := handshakeMsg{Identity: localID, RejectInbound: rejectInbound, Extensions: offeredExtensions(lossyMux)}
 	if err := writeHandshake(ctrl, hello); err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
 	// Receive ServerHello
 	reply, err := readHandshake(ctrl)
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
-	return reply.Identity, reply.RejectInbound, nil
+	return reply.Identity, reply.RejectInbound, reply.Extensions.lossyMux(), nil
 }
 
 // doServerHandshake performs the server side of the h3mux handshake over ctrl.
 // It waits for a ClientHello then sends a ServerHello.
-// Returns the peer's identity and whether the peer rejects inbound streams.
-func doServerHandshake(ctrl io.ReadWriter, localID string, rejectInbound bool) (string, bool, error) {
+// Returns the peer identity, inbound rejection, and lossymux offer.
+func doServerHandshake(ctrl io.ReadWriter, localID string, rejectInbound, lossyMux bool) (string, bool, bool, error) {
 	// Receive ClientHello
 	hello, err := readHandshake(ctrl)
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
 	// Send ServerHello
-	reply := handshakeMsg{Identity: localID, RejectInbound: rejectInbound}
+	reply := handshakeMsg{Identity: localID, RejectInbound: rejectInbound, Extensions: offeredExtensions(lossyMux)}
 	if err := writeHandshake(ctrl, reply); err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
-	return hello.Identity, hello.RejectInbound, nil
+	return hello.Identity, hello.RejectInbound, hello.Extensions.lossyMux(), nil
 }
+
+func offeredExtensions(enabled bool) *helloExtensions {
+	if !enabled {
+		return nil
+	}
+	return &helloExtensions{LossyMux: true}
+}
+
+func (e *helloExtensions) lossyMux() bool { return e != nil && e.LossyMux }

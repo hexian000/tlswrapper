@@ -16,13 +16,14 @@ type controlStream interface {
 }
 
 // doClientHandshake sends ClientHello and waits for ServerHello on the control stream.
-// Returns peerIdentity and peerRejectsInbound parsed from the ServerHello.
-func doClientHandshake(ctrl controlStream, localID string, rejectInbound bool) (peerIdentity string, peerRejectsInbound bool, err error) {
+// Returns the peer identity, inbound rejection, and optional lossymux offer.
+func doClientHandshake(ctrl controlStream, localID string, rejectInbound, lossyMux bool) (peerIdentity string, peerRejectsInbound, peerLossyMux bool, err error) {
 	if err = ctrl.Send(&muxpb.ControlMessage{
 		Body: &muxpb.ControlMessage_ClientHello{
 			ClientHello: &muxpb.ClientHello{
 				Identity:      localID,
 				RejectInbound: rejectInbound,
+				Extensions:    offeredExtensions(lossyMux),
 			},
 		},
 	}); err != nil {
@@ -40,12 +41,13 @@ func doClientHandshake(ctrl controlStream, localID string, rejectInbound bool) (
 	}
 	peerIdentity = ack.ServerHello.GetIdentity()
 	peerRejectsInbound = ack.ServerHello.GetRejectInbound()
+	peerLossyMux = ack.ServerHello.GetExtensions().GetLossymux()
 	return
 }
 
 // doServerHandshake waits for ClientHello and replies with ServerHello on the control stream.
-// Returns peerIdentity and peerRejectsInbound parsed from the ClientHello.
-func doServerHandshake(ctrl controlStream, localID string, rejectInbound bool) (peerIdentity string, peerRejectsInbound bool, err error) {
+// Returns the peer identity, inbound rejection, and optional lossymux offer.
+func doServerHandshake(ctrl controlStream, localID string, rejectInbound, lossyMux bool) (peerIdentity string, peerRejectsInbound, peerLossyMux bool, err error) {
 	msg, err := ctrl.Recv()
 	if err != nil {
 		return
@@ -57,14 +59,23 @@ func doServerHandshake(ctrl controlStream, localID string, rejectInbound bool) (
 	}
 	peerIdentity = hello.ClientHello.GetIdentity()
 	peerRejectsInbound = hello.ClientHello.GetRejectInbound()
+	peerLossyMux = hello.ClientHello.GetExtensions().GetLossymux()
 
 	err = ctrl.Send(&muxpb.ControlMessage{
 		Body: &muxpb.ControlMessage_ServerHello{
 			ServerHello: &muxpb.ServerHello{
 				Identity:      localID,
 				RejectInbound: rejectInbound,
+				Extensions:    offeredExtensions(lossyMux),
 			},
 		},
 	})
 	return
+}
+
+func offeredExtensions(enabled bool) *muxpb.Extensions {
+	if !enabled {
+		return nil
+	}
+	return &muxpb.Extensions{Lossymux: true}
 }
